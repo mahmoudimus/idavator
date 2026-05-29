@@ -12,7 +12,16 @@ readme = "README.md"
 dependencies = ["llvmlite>=0.44.0", "numpy>=2.0.0", "typer>=0.10.0"]
 
 [project.optional-dependencies]
-dev = []
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ida: requires IDA Pro idalib (skipped when unavailable)",
+]
+addopts = "-ra"
 
 [project.scripts]
 idavator = "idavator.cli:app"

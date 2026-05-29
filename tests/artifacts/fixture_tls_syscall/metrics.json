@@ -1,0 +1,27 @@
+{
+  "case": "fixture_tls_syscall",
+  "metrics": {
+    "bytes": 947,
+    "calls": 3,
+    "concurrency_metadata": true,
+    "declares": 3,
+    "define_names_hash": "ebe5079c2c588800e0e4bf477c5fc3a86c8766c39f72fabbc747612e772e93c3",
+    "defines": 1,
+    "fingerprint": "e3d73e5bfe737905e6dcd53c973894b05941dac43c6fdc3dd01cf2c645ada1d4",
+    "futex_metadata": 1,
+    "globals": 1,
+    "lines": 28,
+    "loads": 0,
+    "stores": 0,
+    "syscall_calls": 1,
+    "tls_read_calls": 1,
+    "tls_read_metadata": 1,
+    "tls_write_calls": 1,
+    "virtual_fs": true
+  },
+  "passes": [
+    "concurrency"
+  ],
+  "source": "tests/fixtures/tls_syscall_sample.ll passes=concurrency",
+  "version": 1
+}

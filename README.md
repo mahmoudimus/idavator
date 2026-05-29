@@ -1,5 +1,9 @@
 <h1 align="center">🧠 IDAvator - Ride the elevator to lift between microcode and machine.</h1>
 
+<p align="center">
+<a href="https://github.com/mahmoudimus/idavator/actions/workflows/python.yml"><img src="https://github.com/mahmoudimus/idavator/actions/workflows/python.yml/badge.svg" alt="idavator tests" /></a>
+</p>
+
 <h4 align="center">
 <p>
 <a href=#about>About</a> |
@@ -86,6 +90,23 @@ Available passes:
 | `verify` | Parses and verifies the final LLVM IR with llvmlite |
 
 For older scripts, `--annotate-concurrency` is still accepted and enables the `concurrency` pass.
+
+### Regression baselines (pytest)
+
+Metric baselines live under `tests/artifacts/` and compare lift/pass output without
+requiring full IR text diffs. Refresh them after intentional improvements:
+
+```bash
+pip install -e ".[dev]"
+pytest --baseline-update
+pytest
+```
+
+IDA-backed lift checks run only when idalib is available:
+
+```bash
+pytest -m ida
+```
 
 ### IDA plugin (GUI)
 

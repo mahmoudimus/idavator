@@ -1,0 +1,25 @@
+{
+  "case": "cp_lift",
+  "metrics": {
+    "bytes": 1265188,
+    "calls": 1995,
+    "concurrency_metadata": false,
+    "declares": 132,
+    "define_names_hash": "8211b0043b1bde994460fc7282c506eec5f7ed0160db2854fb5c8dff3ccd35e6",
+    "defines": 575,
+    "fingerprint": "6c4ffb4e00d7fcf9c439cc0531895c306a18470ec5e6a75185f6f8e33af7670e",
+    "futex_metadata": 0,
+    "globals": 478,
+    "lines": 37562,
+    "loads": 6638,
+    "stores": 4038,
+    "syscall_calls": 0,
+    "tls_read_calls": 49,
+    "tls_read_metadata": 0,
+    "tls_write_calls": 0,
+    "virtual_fs": true
+  },
+  "passes": [],
+  "source": "tests/fixtures/cp_lift.ll",
+  "version": 1
+}

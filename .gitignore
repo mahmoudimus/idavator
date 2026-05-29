@@ -41,3 +41,20 @@ docs/
 .tmp/
 
 pyrefly.toml
+
+# pytest artifacts
+tests/reports/
+.pytest_cache/
+
+# Lift output / scratch artifacts
+out/
+
+# IDA Pro databases
+*.idb
+*.i64
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.$$$
