@@ -1,0 +1,13 @@
+{
+    "IDAMetadataDescriptorVersion": 1,
+    "plugin": {
+        "name": "idavator",
+        "entryPoint": "idavator.gui",
+        "categories": [
+            "decompilation"
+        ],
+        "idaVersions": ">=9.0",
+        "description": "IDAvator is a bi-directional bridge between IDA Pro's Hex-Rays microcode and LLVM IR. It lets you lift decompiler microcode into LLVM for analysis, optimization, or deobfuscation. Then, drop it back into IDA, patched and ready for further exploration.",
+        "version": "0.1.0"
+    }
+}

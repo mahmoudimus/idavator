@@ -15,9 +15,10 @@
 ### Features
 
 | Action | Command | Description |
-|:--|:--|:--|
-| **Lift** | `idavator ida2llvm` | Convert Hex-Rays microcode (`mba_t`) into LLVM IR. |
-| **Drop** | `idavator llvm2ida` | Translate LLVM IR back into IDA, patching binary code or updating microcode. |
+| :-- | :-- | :-- |
+| **Lift** | `idavator ida2llvm` | Headless: microcode (`mba_t`) → LLVM IR via idalib. |
+| **Drop** | IDA plugin (GUI) | **Edit → IDAvator → Apply LLVM IR...** (microcode drop; patch/export WIP). |
+| **Lift (interactive)** | IDA plugin (GUI) | **Edit → IDAvator → Lifting Viewer** (`Ctrl+Alt+L`). |
 | **Optimize** | Use `opt` or any LLVM pass pipeline | Apply LLVM analyses or transformations (e.g., constant propagation, CFG cleanup). |
 | **Deobfuscate** | Combine with IDAvator’s switch-flattening or simplification passes | Simplify complex control flow graphs. |
 | **Patch / Rebuild** | Patch directly in IDA or export `.o` / `.bin` | Choose live patching or external reconstruction. |
@@ -38,25 +39,79 @@
 
 ## QuickStart
 
-### ida2llvm
+### Install
 
 ```bash
-idat -c -A -S"ida2llvm.py [binary].ll" binary
+pip install -e .
 ```
 
+Requires Python `>= 3.10`, IDA Pro 9+ with idalib, and dependencies from `pyproject.toml` (llvmlite, numpy, typer).
+
+### Lift (ida2llvm)
+
+Lift a binary to LLVM IR (headless via idalib):
+
 ```bash
-python llvm2ida.py binary [binary].ll
+idavator ida2llvm -f binary -o output.ll
+```
+
+| Option | Description |
+| :-- | :-- |
+| `-f`, `--file` | Input binary to analyze |
+| `-o`, `--output` | Output LLVM IR path (`.ll`) |
+| `--target` | Target triple: `host` (default) or `ida` |
+| `--ir-pass`, `--ir-passes` | Comma-separated post-lift IR pass pipeline |
+| `--annotate-concurrency` | Compatibility alias for `--ir-pass concurrency` |
+| `--log-type` | Log destination: `file` (default) or `console` (stderr) |
+| `--log-file` | Log file path when `--log-type=file` (default: `idavator.log`) |
+| `-v`, `--verbose` | Enable DEBUG logging |
+
+```bash
+idavator ida2llvm -f binary -o output.ll --log-type console -v
+```
+
+Logging is configured before the lift module loads, so early messages use the chosen destination.
+
+Run post-lift IR passes while writing the output:
+
+```bash
+idavator ida2llvm -f binary -o output.ll --ir-pass concurrency,verify
+```
+
+Available passes:
+
+| Pass | Description |
+| :-- | :-- |
+| `concurrency` | Appends metadata for recognized TLS helper calls, syscalls, and futex syscalls |
+| `verify` | Parses and verifies the final LLVM IR with llvmlite |
+
+For older scripts, `--annotate-concurrency` is still accepted and enables the `concurrency` pass.
+
+### IDA plugin (GUI)
+
+Install the package into IDA’s Python (`pip install -e .` from this repo), then load the plugin via `ida-plugin.json` (IDA 9+).
+
+| Menu | Hotkey | Purpose |
+| :-- | :-- | :-- |
+| **Edit → IDAvator → Lifting Viewer** | `Ctrl+Alt+L` | Interactive lift: add functions, declare-only toggle, preview IR, save `.ll` |
+| **Edit → IDAvator → Apply LLVM IR...** | | Drop optimized `.ll` back into the open database (microcode) |
+
+Headless batch lift remains CLI-only (`idavator ida2llvm`). Drop is not on the CLI.
+
+Workflow:
+
+1. Lift in IDA (viewer) or headless (`idavator ida2llvm -f binary -o output.ll`).
+2. Optimize LLVM offline (`opt`, custom passes).
+3. **Edit → IDAvator → Apply LLVM IR...** on the same database.
+
+```bash
+pip install -e .
+python -m idavator ida2llvm -f binary -o output.ll
 ```
 
 ### Requirements
 
-- Ensure you have Python (`>= 3.11`) and llvmlite installed on your system.
-
-```bash
-pip install llvmlite
-```
-
-- ida2llvm and llvm2ida are tested only in IDA-9.0+
+- Python `>= 3.10`, llvmlite, and IDA Pro 9+ with idalib
 
 ## Acknowledgements
 

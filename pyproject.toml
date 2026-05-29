@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=77.0.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "idavator"
+requires-python = ">= 3.10"
+dynamic = ["version"]
+authors = [{ name = "Mahmoud Abdelkader", email = "mabdelkader@gmail.com" }]
+description = "IDAvator is a bi-directional bridge between IDA Pro's Hex-Rays microcode and LLVM IR. It lets you lift decompiler microcode into LLVM for analysis, optimization, or deobfuscation. Then, drop it back into IDA, patched and ready for further exploration."
+readme = "README.md"
+dependencies = ["llvmlite>=0.44.0", "numpy>=2.0.0", "typer>=0.10.0"]
+
+[project.optional-dependencies]
+dev = []
+
+[project.scripts]
+idavator = "idavator.cli:app"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "idavator.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["src/idavator"]
+omit = ["*/__pycache__/*"]

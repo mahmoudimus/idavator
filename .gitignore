@@ -1,0 +1,43 @@
+**/__pycache__/
+**/.idea/
+**/.vscode/
+**/venv/
+**~
+**.pyc
+**.log
+
+# AI tools
+.cursorindexignore
+.cursorignore
+.cursorrules
+.cursor/
+.claude/
+.codesight/
+
+# AI CLI Crap
+GEMINI.md
+CLAUDE.md
+CODEX.md
+ANTHROPIC.md
+
+
+# C
+build/
+c*?_debug/
+
+# ionide
+.fake
+
+# Secrets
+.env
+_indexable
+
+# Auto-downloaded IDA SDK
+.ida-sdk/
+
+
+# docs
+docs/
+.tmp/
+
+pyrefly.toml
