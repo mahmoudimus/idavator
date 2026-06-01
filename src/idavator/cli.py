@@ -114,9 +114,14 @@ def lift_binary_to_llvm(
     verbose: bool = False,
     annotate_concurrency: bool = False,
     ir_passes: tuple[str, ...] = (),
+    fidelity_db: str | None = "fidelity.db",
+    circle_json: str | None = None,
 ) -> bool:
     """Lift a binary to LLVM IR via idalib (headless CLI entry point)."""
-    from .ida2llvm import BIN2LLVMController, ptext, refreshed_funcs
+    from . import ida2llvm
+    from .circle_types import CircleTypes
+    from .ida2llvm import BIN2LLVMController, fidelity_emitter, ptext, refreshed_funcs
+    from .persistence import FidelityStore, fidelity_summary
 
     if target_mode not in ("host", "ida"):
         logging.error("Invalid target_mode '%s'. Must be 'host' or 'ida'", target_mode)
@@ -127,13 +132,33 @@ def lift_binary_to_llvm(
     else:
         logging.getLogger().setLevel(logging.INFO)
 
+    store: FidelityStore | None = None
     try:
         ptext.clear()
         refreshed_funcs.clear()
+        ida2llvm.type_providers = []  # reset any stale lift-time type providers
+
+        if fidelity_db:
+            # Drop any stale subscription from a prior lift, then attach this run's
+            # store so fidelity events are drained asynchronously to sqlite3.
+            fidelity_emitter.clear()
+            store = FidelityStore()
+            store.subscribe(fidelity_emitter)
+            store.start(fidelity_db, binary=input_binary, output=output_llvm_ir)
 
         with idapro_database(input_binary):
             bin2llvm = BIN2LLVMController(target_mode=target_mode)
             bin2llvm.initialize()
+            if circle_json:
+                # Register a CiRCLE type provider, building recovered struct types
+                # into the lift's module/context.
+                provider = CircleTypes.from_json(circle_json, bin2llvm.m)
+                ida2llvm.type_providers.append(provider)
+                logging.info(
+                    "Loaded %d CiRCLE structs from %s",
+                    len(provider.struct_types),
+                    circle_json,
+                )
             bin2llvm.insertAllFunctions()
             bin2llvm.save_to_file(
                 output_llvm_ir,
@@ -150,6 +175,18 @@ def lift_binary_to_llvm(
             "Failed to lift binary: %s\n%s", e, "".join(traceback.format_exc())
         )
         return False
+
+    finally:
+        if store is not None:
+            # Drain + join so the db is durable before we read the summary.
+            store.stop()
+            summary = fidelity_summary(fidelity_db, store.run_id)
+            logging.info(
+                "Fidelity ledger (run %s -> %s): %s",
+                store.run_id,
+                fidelity_db,
+                summary or "no fidelity loss recorded",
+            )
 
 
 @app.command()
@@ -172,6 +209,16 @@ def ida2llvm(
         "--ir-pass",
         "--ir-passes",
         help="Comma-separated IR pass pipeline (available: concurrency, verify)",
+    ),
+    fidelity_db: str = typer.Option(
+        "fidelity.db",
+        "--fidelity-db",
+        help="sqlite3 path for the fidelity-loss ledger (accumulates one run per lift)",
+    ),
+    circle_json: str | None = typer.Option(
+        None,
+        "--circle-json",
+        help="CiRCLE circle_result.json to type recovered struct-pointer locals",
     ),
     log_type: str | None = typer.Option(
         None,
@@ -206,6 +253,8 @@ def ida2llvm(
         verbose=verbose_flag,
         annotate_concurrency=annotate_concurrency,
         ir_passes=parse_ir_passes(ir_passes),
+        fidelity_db=fidelity_db,
+        circle_json=circle_json,
     )
     if not success:
         sys.exit(1)

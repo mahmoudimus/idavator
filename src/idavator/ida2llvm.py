@@ -21,6 +21,16 @@ import ida_typeinf
 import idaapi
 import idautils
 
+from idavator.events import EventEmitter
+from idavator.persistence import (
+    FIDELITY_EVENT,
+    SEVERITY_CORRUPTION,
+    SEVERITY_HARD_FAIL,
+    SEVERITY_IMPRECISION,
+    FidelityEvent,
+)
+from idavator.type_providers import TypeProvider, resolve_lvar_type
+
 # ============================================================================
 # Global Configuration & Cache Constants
 # ============================================================================
@@ -34,6 +44,26 @@ FS_SEGMENT_SIZE = 0x10000  # 64KB
 
 # Default fallback value for float extraction failures
 DEFAULT_FLOAT_VALUE = 1.0
+
+# Fidelity ledger: each lossy lift decision is emitted here and persisted
+# asynchronously to sqlite3 (see idavator.persistence). The store subscribes to
+# this emitter in lift_binary_to_llvm and drains on stop().
+fidelity_emitter = EventEmitter()
+
+# Lift-time type providers (e.g. CiRCLE struct recovery). Populated by
+# lift_binary_to_llvm from outside; empty by default (no behavior change). Consulted
+# when allocating function locals to type recovered struct pointers.
+type_providers: list[TypeProvider] = []
+
+
+def _emit_fidelity(kind, severity, *, function=None, ea=None, detail=None):
+    """Emit a single fidelity-loss event onto the module-global emitter."""
+    fidelity_emitter.emit(
+        FIDELITY_EVENT,
+        FidelityEvent(
+            kind=kind, severity=severity, function=function, ea=ea, detail=detail
+        ),
+    )
 
 
 def lift_tif(tif: ida_typeinf.tinfo_t, width: int = -1) -> ir.Type:
@@ -104,6 +134,9 @@ def lift_tif(tif: ida_typeinf.tinfo_t, width: int = -1) -> ir.Type:
                     type_name,
                     len(element_types),
                 )
+                _emit_fidelity(
+                    "varstruct_truncated", SEVERITY_IMPRECISION, detail=type_name
+                )
         return context.get_identified_type(type_name)
 
     elif tif.is_bool():
@@ -148,6 +181,11 @@ def lift_tif(tif: ida_typeinf.tinfo_t, width: int = -1) -> ir.Type:
         size_bits = tif.get_size() * 8
         # Prevent creating excessively large integer types (limited to 128 bits)
         if size_bits > 128 or size_bits <= 0:
+            _emit_fidelity(
+                "type_fallback_ptrsize",
+                SEVERITY_IMPRECISION,
+                detail=f"arithmetic size_bits={size_bits}",
+            )
             return ir.IntType(ptrsize)
         return ir.IntType(size_bits)
 
@@ -155,9 +193,20 @@ def lift_tif(tif: ida_typeinf.tinfo_t, width: int = -1) -> ir.Type:
         if width != -1:
             # Prevent creating excessively large arrays (limited to 1MB)
             if width > 1024 * 1024 or width <= 0:
+                _emit_fidelity(
+                    "type_fallback_ptrsize",
+                    SEVERITY_IMPRECISION,
+                    detail=f"oversized width={width}",
+                )
                 return ir.IntType(ptrsize)
+            _emit_fidelity(
+                "type_fallback_bytearray", SEVERITY_IMPRECISION, detail=f"width={width}"
+            )
             return ir.ArrayType(ir.IntType(8), width)
         else:
+            _emit_fidelity(
+                "type_fallback_ptrsize", SEVERITY_IMPRECISION, detail="unknown type"
+            )
             return ir.IntType(ptrsize)
 
 
@@ -182,8 +231,18 @@ def typecast(
     """
     if not hasattr(src, "type"):
         logging.warning("cannot cast non-LLVM value %r to %s", src, dst_type)
+        _emit_fidelity(
+            "value_zero_substituted",
+            SEVERITY_CORRUPTION,
+            detail=f"non-LLVM src -> {dst_type}",
+        )
         return _zero_initializer_for_type(dst_type)
     if isinstance(src.type, ir.VoidType):
+        _emit_fidelity(
+            "value_zero_substituted",
+            SEVERITY_CORRUPTION,
+            detail=f"void src -> {dst_type}",
+        )
         return _zero_initializer_for_type(dst_type)
     if src.type != dst_type:
         if isinstance(src.type, ir.PointerType) and isinstance(
@@ -352,7 +411,15 @@ def lift_type_from_address(ea: int, pfunc=None):
         ida_funcs.get_func(ea) is not None
         and ida_segment.segtype(ea) & ida_segment.SEG_XTRN
     ):
-        # Assume a function that returns void and takes variadic arguments
+        # Prefer the real prototype IDA already has for this import (libc imports
+        # are typed via IDA's type libraries, e.g. strlen -> size_t(const char *)).
+        imported = ida_typeinf.tinfo_t()
+        if ida_nalt.get_tinfo(imported, ea) and (
+            imported.is_func() or imported.is_funcptr()
+        ):
+            return imported
+
+        # No real type available: synthesize a variadic void(...) as a last resort.
         ida_func_details = ida_typeinf.func_type_data_t()
         void = ida_typeinf.tinfo_t()
         void.create_simple_type(ida_typeinf.BTF_VOID)
@@ -361,6 +428,12 @@ def lift_type_from_address(ea: int, pfunc=None):
 
         function_tinfo = ida_typeinf.tinfo_t()
         function_tinfo.create_func(ida_func_details)
+        _emit_fidelity(
+            "import_sig_synthesized",
+            SEVERITY_IMPRECISION,
+            ea=ea,
+            function=ida_name.get_name(ea) or None,
+        )
         return function_tinfo
 
     if ea in ptext:
@@ -375,6 +448,12 @@ def lift_type_from_address(ea: int, pfunc=None):
     has_tinfo = ida_nalt.get_tinfo(tif, ea)
     if not has_tinfo:
         ida_typeinf.guess_tinfo(tif, ea)
+        _emit_fidelity(
+            "type_guessed",
+            SEVERITY_IMPRECISION,
+            ea=ea,
+            function=ida_name.get_name(ea) or None,
+        )
     return tif
 
 
@@ -509,7 +588,11 @@ def _lift_from_address(module: ir.Module, ea: int, typ: ir.Type):
             for lvar in list(pfunc.lvars):
                 if lvar.is_result_var:
                     continue
-                arg_t = lift_tif(lvar.tif)
+                # Prefer a provider-supplied type for this local (e.g. CiRCLE
+                # struct recovery); fall back to the IDA-derived type otherwise.
+                arg_t = resolve_lvar_type(type_providers, ea, lvar.name)
+                if arg_t is None:
+                    arg_t = lift_tif(lvar.tif)
                 res.lvars[lvar.name] = builder.alloca(arg_t, name=lvar.name)
                 if lvar.is_arg_var:
                     names.append(lvar.name)
@@ -1196,6 +1279,13 @@ def lift_mop(
 
             if f_arg is None:
                 logging.warning("call argument lift failed for %s", arg.dstr())
+                nested = arg.d.dstr() if arg.t == ida_hexrays.mop_d else ""
+                _emit_fidelity(
+                    "value_zero_substituted",
+                    SEVERITY_CORRUPTION,
+                    function=getattr(blk.parent, "name", None),
+                    detail=f"call arg mopt={arg.t} nested[{nested}] -> {typ}",
+                )
                 f_arg = _zero_initializer_for_type(typ)
             f_arg = typecast(f_arg, typ, builder)
             f_args.append(f_arg)
@@ -1245,6 +1335,9 @@ def lift_mop(
                 "Failed to extract float value: %s, using default %s",
                 e,
                 DEFAULT_FLOAT_VALUE,
+            )
+            _emit_fidelity(
+                "float_default_substituted", SEVERITY_CORRUPTION, detail=str(e)
             )
             fp = DEFAULT_FLOAT_VALUE
         typ = float_type(mop.size)
@@ -1517,7 +1610,11 @@ def lift_insn(
             d = storecast(l, d, builder)
             return typing.cast(ir.Instruction, _store_as(l, d, blk, builder))
         case ida_hexrays.m_ldx:  # 0x02, ldx {l=sel, r=off}, d load value from memory
-            if not need(r, "r") or not need(d, "d"):
+            # A value-context ldx (e.g. a memory-load passed as a call argument) has
+            # no destination operand; only the address `r` is required. `d.size` is
+            # still valid, and storecast/_store_as both handle a None destination by
+            # returning the loaded value, so a missing `d` must not abort the lift.
+            if not need(r, "r"):
                 return None
             typ = (
                 float_type(ida_insn.d.size)
@@ -1958,6 +2055,12 @@ def lift_insn(
                 l, r, d, builder.fdiv, blk, builder, ida_insn
             )
         case _:
+            _emit_fidelity(
+                "not_implemented",
+                SEVERITY_HARD_FAIL,
+                ea=ida_insn.ea,
+                detail=ida_insn.dstr(),
+            )
             raise NotImplementedError(f"not implemented opcode: {ida_insn.dstr()}")
 
 
