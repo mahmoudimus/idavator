@@ -3025,74 +3025,72 @@ define i32 @"set_char_quoting"(%"quoting_options"* %".1", i8 %".2", i32 %".3")
   br i1 %".13", label %"@3", label %"@2"
 "@2":
   %".15" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".16" = bitcast %"quoting_options"* %".15" to i8*
-  %".17" = bitcast %"quoting_options"** %"v3" to i8*
-  %".18" = call i8* @"memcpy"(i8* %".17", i8* %".16", i64 56)
+  store %"quoting_options"* %".15", %"quoting_options"** %"v3"
   br label %"@4"
 "@3":
-  %".20" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".21" = bitcast %"quoting_options"** %"v3" to i32**
-  store i32* %".20", i32** %".21"
+  %".18" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".19" = bitcast %"quoting_options"** %"v3" to i32**
+  store i32* %".18", i32** %".19"
   br label %"@4"
 "@4":
-  %".24" = load %"quoting_options"*, %"quoting_options"** %"v3"
-  %".25" = bitcast %"quoting_options"* %".24" to i8*
-  %".26" = getelementptr i8, i8* %".25", i64 8
-  %".27" = bitcast i8* %".26" to %"quoting_options"*
-  %".28" = load i8, i8* %"c"
-  %".29" = ashr i8 %".28", 5
-  %".30" = zext i8 %".29" to i64
-  %".31" = mul i64 4, %".30"
-  %".32" = bitcast %"quoting_options"* %".27" to i8*
-  %".33" = getelementptr i8, i8* %".32", i64 %".31"
-  %".34" = bitcast i8* %".33" to %"quoting_options"*
-  %".35" = bitcast %"quoting_options"* %".34" to i32*
-  %".36" = load i32, i32* %".35"
-  %".37" = load i8, i8* %"c"
-  %".38" = and i8 %".37", 31
-  %".39" = zext i8 %".38" to i32
-  %".40" = ashr i32 %".36", %".39"
-  %".41" = and i32 %".40", 1
-  store i32 %".41", i32* %"r"
-  %".43" = load i32, i32* %"r"
-  %".44" = bitcast i32* %"i" to i8*
-  %".45" = load i8, i8* %".44"
-  %".46" = and i8 %".45", 1
-  %".47" = zext i8 %".46" to i32
-  %".48" = xor i32 %".43", %".47"
-  %".49" = load i8, i8* %"c"
-  %".50" = and i8 %".49", 31
-  %".51" = zext i8 %".50" to i32
-  %".52" = shl i32 %".48", %".51"
-  %".53" = load %"quoting_options"*, %"quoting_options"** %"v3"
-  %".54" = bitcast %"quoting_options"* %".53" to i8*
-  %".55" = getelementptr i8, i8* %".54", i64 8
-  %".56" = bitcast i8* %".55" to %"quoting_options"*
-  %".57" = load i8, i8* %"c"
-  %".58" = ashr i8 %".57", 5
-  %".59" = zext i8 %".58" to i64
-  %".60" = mul i64 4, %".59"
-  %".61" = bitcast %"quoting_options"* %".56" to i8*
-  %".62" = getelementptr i8, i8* %".61", i64 %".60"
-  %".63" = bitcast i8* %".62" to %"quoting_options"*
-  %".64" = bitcast %"quoting_options"* %".63" to i32*
-  %".65" = load i32, i32* %".64"
-  %".66" = xor i32 %".52", %".65"
-  %".67" = load %"quoting_options"*, %"quoting_options"** %"v3"
-  %".68" = bitcast %"quoting_options"* %".67" to i8*
-  %".69" = getelementptr i8, i8* %".68", i64 8
-  %".70" = bitcast i8* %".69" to %"quoting_options"*
-  %".71" = load i8, i8* %"c"
-  %".72" = ashr i8 %".71", 5
-  %".73" = zext i8 %".72" to i64
-  %".74" = mul i64 4, %".73"
-  %".75" = bitcast %"quoting_options"* %".70" to i8*
-  %".76" = getelementptr i8, i8* %".75", i64 %".74"
-  %".77" = bitcast i8* %".76" to %"quoting_options"*
-  %".78" = bitcast %"quoting_options"* %".77" to i32*
-  store i32 %".66", i32* %".78"
-  %".80" = load i32, i32* %"r"
-  store i32 %".80", i32* %"funcresult"
+  %".22" = load %"quoting_options"*, %"quoting_options"** %"v3"
+  %".23" = bitcast %"quoting_options"* %".22" to i8*
+  %".24" = getelementptr i8, i8* %".23", i64 8
+  %".25" = bitcast i8* %".24" to %"quoting_options"*
+  %".26" = load i8, i8* %"c"
+  %".27" = ashr i8 %".26", 5
+  %".28" = zext i8 %".27" to i64
+  %".29" = mul i64 4, %".28"
+  %".30" = bitcast %"quoting_options"* %".25" to i8*
+  %".31" = getelementptr i8, i8* %".30", i64 %".29"
+  %".32" = bitcast i8* %".31" to %"quoting_options"*
+  %".33" = bitcast %"quoting_options"* %".32" to i32*
+  %".34" = load i32, i32* %".33"
+  %".35" = load i8, i8* %"c"
+  %".36" = and i8 %".35", 31
+  %".37" = zext i8 %".36" to i32
+  %".38" = ashr i32 %".34", %".37"
+  %".39" = and i32 %".38", 1
+  store i32 %".39", i32* %"r"
+  %".41" = load i32, i32* %"r"
+  %".42" = bitcast i32* %"i" to i8*
+  %".43" = load i8, i8* %".42"
+  %".44" = and i8 %".43", 1
+  %".45" = zext i8 %".44" to i32
+  %".46" = xor i32 %".41", %".45"
+  %".47" = load i8, i8* %"c"
+  %".48" = and i8 %".47", 31
+  %".49" = zext i8 %".48" to i32
+  %".50" = shl i32 %".46", %".49"
+  %".51" = load %"quoting_options"*, %"quoting_options"** %"v3"
+  %".52" = bitcast %"quoting_options"* %".51" to i8*
+  %".53" = getelementptr i8, i8* %".52", i64 8
+  %".54" = bitcast i8* %".53" to %"quoting_options"*
+  %".55" = load i8, i8* %"c"
+  %".56" = ashr i8 %".55", 5
+  %".57" = zext i8 %".56" to i64
+  %".58" = mul i64 4, %".57"
+  %".59" = bitcast %"quoting_options"* %".54" to i8*
+  %".60" = getelementptr i8, i8* %".59", i64 %".58"
+  %".61" = bitcast i8* %".60" to %"quoting_options"*
+  %".62" = bitcast %"quoting_options"* %".61" to i32*
+  %".63" = load i32, i32* %".62"
+  %".64" = xor i32 %".50", %".63"
+  %".65" = load %"quoting_options"*, %"quoting_options"** %"v3"
+  %".66" = bitcast %"quoting_options"* %".65" to i8*
+  %".67" = getelementptr i8, i8* %".66", i64 8
+  %".68" = bitcast i8* %".67" to %"quoting_options"*
+  %".69" = load i8, i8* %"c"
+  %".70" = ashr i8 %".69", 5
+  %".71" = zext i8 %".70" to i64
+  %".72" = mul i64 4, %".71"
+  %".73" = bitcast %"quoting_options"* %".68" to i8*
+  %".74" = getelementptr i8, i8* %".73", i64 %".72"
+  %".75" = bitcast i8* %".74" to %"quoting_options"*
+  %".76" = bitcast %"quoting_options"* %".75" to i32*
+  store i32 %".64", i32* %".76"
+  %".78" = load i32, i32* %"r"
+  store i32 %".78", i32* %"funcresult"
   br label %"@5"
 "@5":
   %".8" = load i32, i32* %"funcresult"
@@ -3129,248 +3127,242 @@ define i8* @"quotearg_n_options"(i32 %".1", i8* %".2", i64 %".3", %"quoting_opti
   %".16" = load i32, i32* %".15"
   store i32 %".16", i32* %"e"
   %".18" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
-  %".19" = bitcast %"slotvec"* %".18" to i8*
-  %".20" = bitcast %"slotvec"** %"sv" to i8*
-  %".21" = call i8* @"memcpy"(i8* %".20", i8* %".19", i64 16)
-  %".22" = load i32, i32* %"n"
-  %".23" = icmp sge i32 %".22", 0
-  br i1 %".23", label %"@3", label %"@2"
+  store %"slotvec"* %".18", %"slotvec"** %"sv"
+  %".20" = load i32, i32* %"n"
+  %".21" = icmp sge i32 %".20", 0
+  br i1 %".21", label %"@3", label %"@2"
 "@2":
-  %".25" = call i8* @"abort"()
+  %".23" = call i8* @"abort"()
   br label %"@3"
 "@3":
-  %".27" = load i32, i32* %"n"
-  %".28" = load i32, i32* @"nslots"
-  %".29" = icmp slt i32 %".27", %".28"
-  br i1 %".29", label %"@12", label %"@4"
+  %".25" = load i32, i32* %"n"
+  %".26" = load i32, i32* @"nslots"
+  %".27" = icmp slt i32 %".25", %".26"
+  br i1 %".27", label %"@12", label %"@4"
 "@4":
-  %".31" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
-  %".32" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  %".33" = bitcast i1* %"preallocated" to i8*
-  %".34" = ptrtoint %"slotvec"* %".31" to i64
-  %".35" = ptrtoint i64* %".32" to i64
-  %".36" = icmp eq i64 %".34", %".35"
-  %".37" = select  i1 %".36", i8 1, i8 0
-  store i8 %".37", i8* %".33"
-  %".39" = load i32, i32* %"n"
-  %".40" = icmp ne i32 %".39", 2147483647
-  br i1 %".40", label %"@6", label %"@5"
+  %".29" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
+  %".30" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  %".31" = bitcast i1* %"preallocated" to i8*
+  %".32" = ptrtoint %"slotvec"* %".29" to i64
+  %".33" = ptrtoint i64* %".30" to i64
+  %".34" = icmp eq i64 %".32", %".33"
+  %".35" = select  i1 %".34", i8 1, i8 0
+  store i8 %".35", i8* %".31"
+  %".37" = load i32, i32* %"n"
+  %".38" = icmp ne i32 %".37", 2147483647
+  br i1 %".38", label %"@6", label %"@5"
 "@5":
-  %".42" = call i8* @"xalloc_die"()
+  %".40" = call i8* @"xalloc_die"()
   br label %"@6"
 "@6":
-  %".44" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
-  %".45" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  %".46" = ptrtoint %"slotvec"* %".44" to i64
-  %".47" = ptrtoint i64* %".45" to i64
-  %".48" = icmp ne i64 %".46", %".47"
-  br i1 %".48", label %"@8", label %"@7"
+  %".42" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
+  %".43" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  %".44" = ptrtoint %"slotvec"* %".42" to i64
+  %".45" = ptrtoint i64* %".43" to i64
+  %".46" = icmp ne i64 %".44", %".45"
+  br i1 %".46", label %"@8", label %"@7"
 "@7":
-  %".50" = bitcast %"slotvec"** %"v4" to i64*
-  store i64 0, i64* %".50"
+  %".48" = bitcast %"slotvec"** %"v4" to i64*
+  store i64 0, i64* %".48"
   br label %"@9"
 "@8":
-  %".53" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
-  %".54" = bitcast %"slotvec"* %".53" to i8*
-  %".55" = bitcast %"slotvec"** %"v4" to i8*
-  %".56" = call i8* @"memcpy"(i8* %".55", i8* %".54", i64 16)
+  %".51" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
+  store %"slotvec"* %".51", %"slotvec"** %"v4"
   br label %"@9"
 "@9":
-  %".58" = bitcast %"slotvec"** %"v4" to i8**
-  %".59" = load i8*, i8** %".58"
-  %".60" = load i32, i32* %"n"
-  %".61" = add i32 %".60", 1
-  %".62" = zext i32 %".61" to i64
-  %".63" = mul i64 16, %".62"
-  %".64" = call i8* @"xrealloc"(i8* %".59", i64 %".63")
-  %".65" = bitcast %"slotvec"** %"sv" to i8**
-  store i8* %".64", i8** %".65"
-  %".67" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".68" = bitcast %"slotvec"* %".67" to i8*
-  %".69" = bitcast %"slotvec"** @"slotvec_0" to i8*
-  %".70" = call i8* @"memcpy"(i8* %".69", i8* %".68", i64 16)
-  %".71" = bitcast i1* %"preallocated" to i8*
-  %".72" = load i8, i8* %".71"
-  %".73" = icmp eq i8 %".72", 0
-  br i1 %".73", label %"@11", label %"@10"
+  %".54" = bitcast %"slotvec"** %"v4" to i8**
+  %".55" = load i8*, i8** %".54"
+  %".56" = load i32, i32* %"n"
+  %".57" = add i32 %".56", 1
+  %".58" = zext i32 %".57" to i64
+  %".59" = mul i64 16, %".58"
+  %".60" = call i8* @"xrealloc"(i8* %".55", i64 %".59")
+  %".61" = bitcast %"slotvec"** %"sv" to i8**
+  store i8* %".60", i8** %".61"
+  %".63" = load %"slotvec"*, %"slotvec"** %"sv"
+  store %"slotvec"* %".63", %"slotvec"** @"slotvec_0"
+  %".65" = bitcast i1* %"preallocated" to i8*
+  %".66" = load i8, i8* %".65"
+  %".67" = icmp eq i8 %".66", 0
+  br i1 %".67", label %"@11", label %"@10"
 "@10":
-  %".75" = load i64, i64* @"data_240a8"
-  %".76" = bitcast i8** %"v5" to i64*
-  store i64 %".75", i64* %".76"
-  %".78" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  %".79" = load i64, i64* %".78"
-  %".80" = bitcast %"slotvec"** %"sv" to i64*
-  store i64 %".79", i64* %".80"
-  %".82" = load i8*, i8** %"v5"
-  %".83" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".84" = bitcast %"slotvec"* %".83" to i8*
-  %".85" = getelementptr i8, i8* %".84", i64 8
-  %".86" = bitcast i8* %".85" to %"slotvec"*
-  %".87" = bitcast %"slotvec"* %".86" to i8**
-  store i8* %".82", i8** %".87"
+  %".69" = load i64, i64* @"data_240a8"
+  %".70" = bitcast i8** %"v5" to i64*
+  store i64 %".69", i64* %".70"
+  %".72" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  %".73" = load i64, i64* %".72"
+  %".74" = bitcast %"slotvec"** %"sv" to i64*
+  store i64 %".73", i64* %".74"
+  %".76" = load i8*, i8** %"v5"
+  %".77" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".78" = bitcast %"slotvec"* %".77" to i8*
+  %".79" = getelementptr i8, i8* %".78", i64 8
+  %".80" = bitcast i8* %".79" to %"slotvec"*
+  %".81" = bitcast %"slotvec"* %".80" to i8**
+  store i8* %".76", i8** %".81"
   br label %"@11"
 "@11":
-  %".90" = load i32, i32* @"nslots"
-  %".91" = zext i32 %".90" to i64
-  %".92" = mul i64 16, %".91"
-  %".93" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".94" = bitcast %"slotvec"* %".93" to i8*
-  %".95" = getelementptr i8, i8* %".94", i64 %".92"
-  %".96" = bitcast i8* %".95" to %"slotvec"*
-  %".97" = bitcast %"slotvec"* %".96" to i8*
-  %".98" = load i32, i32* %"n"
-  %".99" = add i32 %".98", 1
-  %".100" = load i32, i32* @"nslots"
-  %".101" = sub i32 %".99", %".100"
-  %".102" = zext i32 %".101" to i64
-  %".103" = mul i64 16, %".102"
-  %".104" = trunc i64 %".103" to i32
-  %".105" = call i8* @"memset"(i8* %".97", i32 0, i32 %".104")
-  %".106" = load i32, i32* %"n"
-  %".107" = add i32 %".106", 1
-  store i32 %".107", i32* @"nslots"
+  %".84" = load i32, i32* @"nslots"
+  %".85" = zext i32 %".84" to i64
+  %".86" = mul i64 16, %".85"
+  %".87" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".88" = bitcast %"slotvec"* %".87" to i8*
+  %".89" = getelementptr i8, i8* %".88", i64 %".86"
+  %".90" = bitcast i8* %".89" to %"slotvec"*
+  %".91" = bitcast %"slotvec"* %".90" to i8*
+  %".92" = load i32, i32* %"n"
+  %".93" = add i32 %".92", 1
+  %".94" = load i32, i32* @"nslots"
+  %".95" = sub i32 %".93", %".94"
+  %".96" = zext i32 %".95" to i64
+  %".97" = mul i64 16, %".96"
+  %".98" = trunc i64 %".97" to i32
+  %".99" = call i8* @"memset"(i8* %".91", i32 0, i32 %".98")
+  %".100" = load i32, i32* %"n"
+  %".101" = add i32 %".100", 1
+  store i32 %".101", i32* @"nslots"
   br label %"@12"
 "@12":
-  %".110" = load i32, i32* %"n"
-  %".111" = zext i32 %".110" to i64
-  %".112" = mul i64 16, %".111"
-  %".113" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".114" = bitcast %"slotvec"* %".113" to i8*
-  %".115" = getelementptr i8, i8* %".114", i64 %".112"
-  %".116" = bitcast i8* %".115" to %"slotvec"*
-  %".117" = bitcast %"slotvec"* %".116" to i64*
-  %".118" = load i64, i64* %".117"
-  store i64 %".118", i64* %"sizea"
-  %".120" = load i32, i32* %"n"
-  %".121" = zext i32 %".120" to i64
-  %".122" = mul i64 16, %".121"
-  %".123" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".124" = bitcast %"slotvec"* %".123" to i8*
-  %".125" = getelementptr i8, i8* %".124", i64 %".122"
-  %".126" = bitcast i8* %".125" to %"slotvec"*
-  %".127" = bitcast %"slotvec"* %".126" to i8*
-  %".128" = getelementptr i8, i8* %".127", i64 8
-  %".129" = bitcast i8* %".128" to %"slotvec"*
-  %".130" = bitcast %"slotvec"* %".129" to i64*
-  %".131" = load i64, i64* %".130"
-  %".132" = bitcast i8** %"val" to i64*
-  store i64 %".131", i64* %".132"
-  %".134" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".135" = bitcast %"quoting_options"* %".134" to i8*
-  %".136" = getelementptr i8, i8* %".135", i64 4
-  %".137" = bitcast i8* %".136" to %"quoting_options"*
-  %".138" = bitcast %"quoting_options"* %".137" to i32*
-  %".139" = load i32, i32* %".138"
-  %".140" = or i32 %".139", 1
-  store i32 %".140", i32* %"flags"
-  %".142" = load i8*, i8** %"val"
-  %".143" = load i64, i64* %"sizea"
-  %".144" = load i8*, i8** %"arg"
-  %".145" = load i64, i64* %"argsize"
-  %".146" = bitcast %"quoting_options"** %"options" to i32*
-  %".147" = load i32, i32* %".146"
-  %".148" = load i32, i32* %"flags"
-  %".149" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".150" = bitcast %"quoting_options"* %".149" to i8*
-  %".151" = getelementptr i8, i8* %".150", i64 8
-  %".152" = bitcast i8* %".151" to %"quoting_options"*
-  %".153" = bitcast %"quoting_options"* %".152" to i32*
-  %".154" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".155" = bitcast %"quoting_options"* %".154" to i8*
-  %".156" = getelementptr i8, i8* %".155", i64 40
-  %".157" = bitcast i8* %".156" to %"quoting_options"*
-  %".158" = bitcast %"quoting_options"* %".157" to i64*
-  %".159" = load i64, i64* %".158"
-  %".160" = inttoptr i64 %".159" to i8*
-  %".161" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".162" = bitcast %"quoting_options"* %".161" to i8*
-  %".163" = getelementptr i8, i8* %".162", i64 48
-  %".164" = bitcast i8* %".163" to %"quoting_options"*
-  %".165" = bitcast %"quoting_options"* %".164" to i64*
-  %".166" = load i64, i64* %".165"
-  %".167" = inttoptr i64 %".166" to i8*
-  %".168" = call i64 @"quotearg_buffer_restyled"(i8* %".142", i64 %".143", i8* %".144", i64 %".145", i32 %".147", i32 %".148", i32* %".153", i8* %".160", i8* %".167")
-  store i64 %".168", i64* %"qsize"
-  %".170" = load i64, i64* %"sizea"
-  %".171" = load i64, i64* %"qsize"
-  %".172" = icmp ugt i64 %".170", %".171"
-  br i1 %".172", label %"@16", label %"@13"
+  %".104" = load i32, i32* %"n"
+  %".105" = zext i32 %".104" to i64
+  %".106" = mul i64 16, %".105"
+  %".107" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".108" = bitcast %"slotvec"* %".107" to i8*
+  %".109" = getelementptr i8, i8* %".108", i64 %".106"
+  %".110" = bitcast i8* %".109" to %"slotvec"*
+  %".111" = bitcast %"slotvec"* %".110" to i64*
+  %".112" = load i64, i64* %".111"
+  store i64 %".112", i64* %"sizea"
+  %".114" = load i32, i32* %"n"
+  %".115" = zext i32 %".114" to i64
+  %".116" = mul i64 16, %".115"
+  %".117" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".118" = bitcast %"slotvec"* %".117" to i8*
+  %".119" = getelementptr i8, i8* %".118", i64 %".116"
+  %".120" = bitcast i8* %".119" to %"slotvec"*
+  %".121" = bitcast %"slotvec"* %".120" to i8*
+  %".122" = getelementptr i8, i8* %".121", i64 8
+  %".123" = bitcast i8* %".122" to %"slotvec"*
+  %".124" = bitcast %"slotvec"* %".123" to i64*
+  %".125" = load i64, i64* %".124"
+  %".126" = bitcast i8** %"val" to i64*
+  store i64 %".125", i64* %".126"
+  %".128" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".129" = bitcast %"quoting_options"* %".128" to i8*
+  %".130" = getelementptr i8, i8* %".129", i64 4
+  %".131" = bitcast i8* %".130" to %"quoting_options"*
+  %".132" = bitcast %"quoting_options"* %".131" to i32*
+  %".133" = load i32, i32* %".132"
+  %".134" = or i32 %".133", 1
+  store i32 %".134", i32* %"flags"
+  %".136" = load i8*, i8** %"val"
+  %".137" = load i64, i64* %"sizea"
+  %".138" = load i8*, i8** %"arg"
+  %".139" = load i64, i64* %"argsize"
+  %".140" = bitcast %"quoting_options"** %"options" to i32*
+  %".141" = load i32, i32* %".140"
+  %".142" = load i32, i32* %"flags"
+  %".143" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".144" = bitcast %"quoting_options"* %".143" to i8*
+  %".145" = getelementptr i8, i8* %".144", i64 8
+  %".146" = bitcast i8* %".145" to %"quoting_options"*
+  %".147" = bitcast %"quoting_options"* %".146" to i32*
+  %".148" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".149" = bitcast %"quoting_options"* %".148" to i8*
+  %".150" = getelementptr i8, i8* %".149", i64 40
+  %".151" = bitcast i8* %".150" to %"quoting_options"*
+  %".152" = bitcast %"quoting_options"* %".151" to i64*
+  %".153" = load i64, i64* %".152"
+  %".154" = inttoptr i64 %".153" to i8*
+  %".155" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".156" = bitcast %"quoting_options"* %".155" to i8*
+  %".157" = getelementptr i8, i8* %".156", i64 48
+  %".158" = bitcast i8* %".157" to %"quoting_options"*
+  %".159" = bitcast %"quoting_options"* %".158" to i64*
+  %".160" = load i64, i64* %".159"
+  %".161" = inttoptr i64 %".160" to i8*
+  %".162" = call i64 @"quotearg_buffer_restyled"(i8* %".136", i64 %".137", i8* %".138", i64 %".139", i32 %".141", i32 %".142", i32* %".147", i8* %".154", i8* %".161")
+  store i64 %".162", i64* %"qsize"
+  %".164" = load i64, i64* %"sizea"
+  %".165" = load i64, i64* %"qsize"
+  %".166" = icmp ugt i64 %".164", %".165"
+  br i1 %".166", label %"@16", label %"@13"
 "@13":
-  %".174" = load i64, i64* %"qsize"
-  %".175" = add i64 %".174", 1
-  store i64 %".175", i64* %"size"
-  %".177" = load i64, i64* %"qsize"
-  %".178" = add i64 %".177", 1
-  %".179" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".180" = load i32, i32* %"n"
-  %".181" = zext i32 %".180" to i64
-  %".182" = mul i64 16, %".181"
-  %".183" = bitcast %"slotvec"* %".179" to i8*
-  %".184" = getelementptr i8, i8* %".183", i64 %".182"
-  %".185" = bitcast i8* %".184" to %"slotvec"*
-  %".186" = bitcast %"slotvec"* %".185" to i64*
-  store i64 %".178", i64* %".186"
-  %".188" = load i8*, i8** %"val"
-  %".189" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
-  %".190" = ptrtoint i8* %".188" to i64
-  %".191" = ptrtoint i8* %".189" to i64
-  %".192" = icmp eq i64 %".190", %".191"
-  br i1 %".192", label %"@15", label %"@14"
+  %".168" = load i64, i64* %"qsize"
+  %".169" = add i64 %".168", 1
+  store i64 %".169", i64* %"size"
+  %".171" = load i64, i64* %"qsize"
+  %".172" = add i64 %".171", 1
+  %".173" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".174" = load i32, i32* %"n"
+  %".175" = zext i32 %".174" to i64
+  %".176" = mul i64 16, %".175"
+  %".177" = bitcast %"slotvec"* %".173" to i8*
+  %".178" = getelementptr i8, i8* %".177", i64 %".176"
+  %".179" = bitcast i8* %".178" to %"slotvec"*
+  %".180" = bitcast %"slotvec"* %".179" to i64*
+  store i64 %".172", i64* %".180"
+  %".182" = load i8*, i8** %"val"
+  %".183" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
+  %".184" = ptrtoint i8* %".182" to i64
+  %".185" = ptrtoint i8* %".183" to i64
+  %".186" = icmp eq i64 %".184", %".185"
+  br i1 %".186", label %"@15", label %"@14"
 "@14":
-  %".194" = load i8*, i8** %"val"
-  %".195" = call i8* @"__imp_free"(i8* %".194")
+  %".188" = load i8*, i8** %"val"
+  %".189" = call i8* @"__imp_free"(i8* %".188")
   br label %"@15"
 "@15":
-  %".197" = load i64, i64* %"size"
-  %".198" = call i8* @"xcharalloc"(i64 %".197")
-  store i8* %".198", i8** %"val"
-  %".200" = load i8*, i8** %"val"
-  %".201" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".202" = load i32, i32* %"n"
-  %".203" = zext i32 %".202" to i64
-  %".204" = mul i64 16, %".203"
-  %".205" = bitcast %"slotvec"* %".201" to i8*
-  %".206" = getelementptr i8, i8* %".205", i64 %".204"
-  %".207" = bitcast i8* %".206" to %"slotvec"*
-  %".208" = bitcast %"slotvec"* %".207" to i8*
-  %".209" = getelementptr i8, i8* %".208", i64 8
-  %".210" = bitcast i8* %".209" to %"slotvec"*
-  %".211" = bitcast %"slotvec"* %".210" to i8**
-  store i8* %".200", i8** %".211"
-  %".213" = load i8*, i8** %"val"
-  %".214" = load i64, i64* %"size"
-  %".215" = load i8*, i8** %"arg"
-  %".216" = load i64, i64* %"argsize"
-  %".217" = bitcast %"quoting_options"** %"options" to i32*
-  %".218" = load i32, i32* %".217"
-  %".219" = load i32, i32* %"flags"
-  %".220" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".221" = bitcast %"quoting_options"* %".220" to i8*
-  %".222" = getelementptr i8, i8* %".221", i64 8
-  %".223" = bitcast i8* %".222" to %"quoting_options"*
-  %".224" = bitcast %"quoting_options"* %".223" to i32*
-  %".225" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".226" = bitcast %"quoting_options"* %".225" to i8*
-  %".227" = getelementptr i8, i8* %".226", i64 40
-  %".228" = bitcast i8* %".227" to %"quoting_options"*
-  %".229" = bitcast %"quoting_options"* %".228" to i64*
-  %".230" = load i64, i64* %".229"
-  %".231" = inttoptr i64 %".230" to i8*
-  %".232" = load %"quoting_options"*, %"quoting_options"** %"options"
-  %".233" = bitcast %"quoting_options"* %".232" to i8*
-  %".234" = getelementptr i8, i8* %".233", i64 48
-  %".235" = bitcast i8* %".234" to %"quoting_options"*
-  %".236" = bitcast %"quoting_options"* %".235" to i64*
-  %".237" = load i64, i64* %".236"
-  %".238" = inttoptr i64 %".237" to i8*
-  %".239" = call i64 @"quotearg_buffer_restyled"(i8* %".213", i64 %".214", i8* %".215", i64 %".216", i32 %".218", i32 %".219", i32* %".224", i8* %".231", i8* %".238")
+  %".191" = load i64, i64* %"size"
+  %".192" = call i8* @"xcharalloc"(i64 %".191")
+  store i8* %".192", i8** %"val"
+  %".194" = load i8*, i8** %"val"
+  %".195" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".196" = load i32, i32* %"n"
+  %".197" = zext i32 %".196" to i64
+  %".198" = mul i64 16, %".197"
+  %".199" = bitcast %"slotvec"* %".195" to i8*
+  %".200" = getelementptr i8, i8* %".199", i64 %".198"
+  %".201" = bitcast i8* %".200" to %"slotvec"*
+  %".202" = bitcast %"slotvec"* %".201" to i8*
+  %".203" = getelementptr i8, i8* %".202", i64 8
+  %".204" = bitcast i8* %".203" to %"slotvec"*
+  %".205" = bitcast %"slotvec"* %".204" to i8**
+  store i8* %".194", i8** %".205"
+  %".207" = load i8*, i8** %"val"
+  %".208" = load i64, i64* %"size"
+  %".209" = load i8*, i8** %"arg"
+  %".210" = load i64, i64* %"argsize"
+  %".211" = bitcast %"quoting_options"** %"options" to i32*
+  %".212" = load i32, i32* %".211"
+  %".213" = load i32, i32* %"flags"
+  %".214" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".215" = bitcast %"quoting_options"* %".214" to i8*
+  %".216" = getelementptr i8, i8* %".215", i64 8
+  %".217" = bitcast i8* %".216" to %"quoting_options"*
+  %".218" = bitcast %"quoting_options"* %".217" to i32*
+  %".219" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".220" = bitcast %"quoting_options"* %".219" to i8*
+  %".221" = getelementptr i8, i8* %".220", i64 40
+  %".222" = bitcast i8* %".221" to %"quoting_options"*
+  %".223" = bitcast %"quoting_options"* %".222" to i64*
+  %".224" = load i64, i64* %".223"
+  %".225" = inttoptr i64 %".224" to i8*
+  %".226" = load %"quoting_options"*, %"quoting_options"** %"options"
+  %".227" = bitcast %"quoting_options"* %".226" to i8*
+  %".228" = getelementptr i8, i8* %".227", i64 48
+  %".229" = bitcast i8* %".228" to %"quoting_options"*
+  %".230" = bitcast %"quoting_options"* %".229" to i64*
+  %".231" = load i64, i64* %".230"
+  %".232" = inttoptr i64 %".231" to i8*
+  %".233" = call i64 @"quotearg_buffer_restyled"(i8* %".207", i64 %".208", i8* %".209", i64 %".210", i32 %".212", i32 %".213", i32* %".218", i8* %".225", i8* %".232")
   br label %"@16"
 "@16":
-  %".241" = load i32, i32* %"e"
-  %".242" = call i32* @"__errno_location"()
-  store i32 %".241", i32* %".242"
-  %".244" = load i8*, i8** %"val"
-  store i8* %".244", i8** %"funcresult"
+  %".235" = load i32, i32* %"e"
+  %".236" = call i32* @"__errno_location"()
+  store i32 %".235", i32* %".236"
+  %".238" = load i8*, i8** %"val"
+  store i8* %".238", i8** %"funcresult"
   br label %"@17"
 "@17":
   %".12" = load i8*, i8** %"funcresult"
@@ -6257,9 +6249,7 @@ define %"quoting_options"* @"quoting_options_from_style"(%"quoting_options"* %".
   %".52" = bitcast %"quoting_options"* %".51" to i64*
   store i64 0, i64* %".52"
   %".54" = load %"quoting_options"*, %"quoting_options"** %"retstr"
-  %".55" = bitcast %"quoting_options"* %".54" to i8*
-  %".56" = bitcast %"quoting_options"** %"funcresult" to i8*
-  %".57" = call i8* @"memcpy"(i8* %".56", i8* %".55", i64 56)
+  store %"quoting_options"* %".54", %"quoting_options"** %"funcresult"
   br label %"@4"
 "@4":
   %".6" = load %"quoting_options"*, %"quoting_options"** %"funcresult"
@@ -34748,28 +34738,24 @@ define %"quoting_options"* @"clone_quoting_options"(%"quoting_options"* %".1")
   br i1 %".12", label %"@3", label %"@2"
 "@2":
   %".14" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".15" = bitcast %"quoting_options"* %".14" to i8*
-  %".16" = bitcast %"quoting_options"** %"v1" to i8*
-  %".17" = call i8* @"memcpy"(i8* %".16", i8* %".15", i64 56)
+  store %"quoting_options"* %".14", %"quoting_options"** %"v1"
   br label %"@4"
 "@3":
-  %".19" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".20" = bitcast %"quoting_options"** %"v1" to i32**
-  store i32* %".19", i32** %".20"
+  %".17" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".18" = bitcast %"quoting_options"** %"v1" to i32**
+  store i32* %".17", i32** %".18"
   br label %"@4"
 "@4":
-  %".23" = bitcast %"quoting_options"** %"v1" to i8**
-  %".24" = load i8*, i8** %".23"
-  %".25" = call i8* @"xmemdup"(i8* %".24", i64 56)
-  %".26" = bitcast %"quoting_options"** %"p" to i8**
-  store i8* %".25", i8** %".26"
-  %".28" = load i32, i32* %"e"
-  %".29" = call i32* @"__errno_location"()
-  store i32 %".28", i32* %".29"
-  %".31" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".32" = bitcast %"quoting_options"* %".31" to i8*
-  %".33" = bitcast %"quoting_options"** %"funcresult" to i8*
-  %".34" = call i8* @"memcpy"(i8* %".33", i8* %".32", i64 56)
+  %".21" = bitcast %"quoting_options"** %"v1" to i8**
+  %".22" = load i8*, i8** %".21"
+  %".23" = call i8* @"xmemdup"(i8* %".22", i64 56)
+  %".24" = bitcast %"quoting_options"** %"p" to i8**
+  store i8* %".23", i8** %".24"
+  %".26" = load i32, i32* %"e"
+  %".27" = call i32* @"__errno_location"()
+  store i32 %".26", i32* %".27"
+  %".29" = load %"quoting_options"*, %"quoting_options"** %"p"
+  store %"quoting_options"* %".29", %"quoting_options"** %"funcresult"
   br label %"@5"
 "@5":
   %".4" = load %"quoting_options"*, %"quoting_options"** %"funcresult"
@@ -34791,19 +34777,17 @@ define i32 @"get_quoting_style"(%"quoting_options"* %".1")
   br i1 %".9", label %"@3", label %"@2"
 "@2":
   %".11" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".12" = bitcast %"quoting_options"* %".11" to i8*
-  %".13" = bitcast %"quoting_options"** %"v1" to i8*
-  %".14" = call i8* @"memcpy"(i8* %".13", i8* %".12", i64 56)
+  store %"quoting_options"* %".11", %"quoting_options"** %"v1"
   br label %"@4"
 "@3":
-  %".16" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".17" = bitcast %"quoting_options"** %"v1" to i32**
-  store i32* %".16", i32** %".17"
+  %".14" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".15" = bitcast %"quoting_options"** %"v1" to i32**
+  store i32* %".14", i32** %".15"
   br label %"@4"
 "@4":
-  %".20" = bitcast %"quoting_options"** %"v1" to i32*
-  %".21" = load i32, i32* %".20"
-  store i32 %".21", i32* %"funcresult"
+  %".18" = bitcast %"quoting_options"** %"v1" to i32*
+  %".19" = load i32, i32* %".18"
+  store i32 %".19", i32* %"funcresult"
   br label %"@5"
 "@5":
   %".4" = load i32, i32* %"funcresult"
@@ -34827,19 +34811,17 @@ define i8* @"set_quoting_style"(%"quoting_options"* %".1", i32 %".2")
   br i1 %".11", label %"@3", label %"@2"
 "@2":
   %".13" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".14" = bitcast %"quoting_options"* %".13" to i8*
-  %".15" = bitcast %"quoting_options"** %"v2" to i8*
-  %".16" = call i8* @"memcpy"(i8* %".15", i8* %".14", i64 56)
+  store %"quoting_options"* %".13", %"quoting_options"** %"v2"
   br label %"@4"
 "@3":
-  %".18" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".19" = bitcast %"quoting_options"** %"v2" to i32**
-  store i32* %".18", i32** %".19"
+  %".16" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".17" = bitcast %"quoting_options"** %"v2" to i32**
+  store i32* %".16", i32** %".17"
   br label %"@4"
 "@4":
-  %".22" = load i32, i32* %"s"
-  %".23" = bitcast %"quoting_options"** %"v2" to i32*
-  store i32 %".22", i32* %".23"
+  %".20" = load i32, i32* %"s"
+  %".21" = bitcast %"quoting_options"** %"v2" to i32*
+  store i32 %".20", i32* %".21"
   br label %"@5"
 "@5":
   %".6" = load i8*, i8** %"funcresult"
@@ -34859,35 +34841,33 @@ define i32 @"set_quoting_flags"(%"quoting_options"* %".1", i32 %".2")
   br label %"@1"
 "@1":
   %".9" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".10" = bitcast %"quoting_options"* %".9" to i8*
-  %".11" = bitcast %"quoting_options"** %"oa" to i8*
-  %".12" = call i8* @"memcpy"(i8* %".11", i8* %".10", i64 56)
-  %".13" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".14" = ptrtoint %"quoting_options"* %".13" to i64
-  %".15" = icmp ne i64 %".14", 0
-  br i1 %".15", label %"@3", label %"@2"
+  store %"quoting_options"* %".9", %"quoting_options"** %"oa"
+  %".11" = load %"quoting_options"*, %"quoting_options"** %"o"
+  %".12" = ptrtoint %"quoting_options"* %".11" to i64
+  %".13" = icmp ne i64 %".12", 0
+  br i1 %".13", label %"@3", label %"@2"
 "@2":
-  %".17" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".18" = bitcast %"quoting_options"** %"oa" to i32**
-  store i32* %".17", i32** %".18"
+  %".15" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".16" = bitcast %"quoting_options"** %"oa" to i32**
+  store i32* %".15", i32** %".16"
   br label %"@3"
 "@3":
-  %".21" = load %"quoting_options"*, %"quoting_options"** %"oa"
-  %".22" = bitcast %"quoting_options"* %".21" to i8*
-  %".23" = getelementptr i8, i8* %".22", i64 4
-  %".24" = bitcast i8* %".23" to %"quoting_options"*
-  %".25" = bitcast %"quoting_options"* %".24" to i32*
-  %".26" = load i32, i32* %".25"
-  store i32 %".26", i32* %"r"
-  %".28" = load i32, i32* %"i"
-  %".29" = load %"quoting_options"*, %"quoting_options"** %"oa"
-  %".30" = bitcast %"quoting_options"* %".29" to i8*
-  %".31" = getelementptr i8, i8* %".30", i64 4
-  %".32" = bitcast i8* %".31" to %"quoting_options"*
-  %".33" = bitcast %"quoting_options"* %".32" to i32*
-  store i32 %".28", i32* %".33"
-  %".35" = load i32, i32* %"r"
-  store i32 %".35", i32* %"funcresult"
+  %".19" = load %"quoting_options"*, %"quoting_options"** %"oa"
+  %".20" = bitcast %"quoting_options"* %".19" to i8*
+  %".21" = getelementptr i8, i8* %".20", i64 4
+  %".22" = bitcast i8* %".21" to %"quoting_options"*
+  %".23" = bitcast %"quoting_options"* %".22" to i32*
+  %".24" = load i32, i32* %".23"
+  store i32 %".24", i32* %"r"
+  %".26" = load i32, i32* %"i"
+  %".27" = load %"quoting_options"*, %"quoting_options"** %"oa"
+  %".28" = bitcast %"quoting_options"* %".27" to i8*
+  %".29" = getelementptr i8, i8* %".28", i64 4
+  %".30" = bitcast i8* %".29" to %"quoting_options"*
+  %".31" = bitcast %"quoting_options"* %".30" to i32*
+  store i32 %".26", i32* %".31"
+  %".33" = load i32, i32* %"r"
+  store i32 %".33", i32* %"funcresult"
   br label %"@4"
 "@4":
   %".6" = load i32, i32* %"funcresult"
@@ -34908,48 +34888,46 @@ define i8* @"set_custom_quoting"(%"quoting_options"* %".1", i8* %".2", i8* %".3"
   br label %"@1"
 "@1":
   %".11" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".12" = bitcast %"quoting_options"* %".11" to i8*
-  %".13" = bitcast %"quoting_options"** %"oa" to i8*
-  %".14" = call i8* @"memcpy"(i8* %".13", i8* %".12", i64 56)
-  %".15" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".16" = ptrtoint %"quoting_options"* %".15" to i64
-  %".17" = icmp ne i64 %".16", 0
-  br i1 %".17", label %"@3", label %"@2"
+  store %"quoting_options"* %".11", %"quoting_options"** %"oa"
+  %".13" = load %"quoting_options"*, %"quoting_options"** %"o"
+  %".14" = ptrtoint %"quoting_options"* %".13" to i64
+  %".15" = icmp ne i64 %".14", 0
+  br i1 %".15", label %"@3", label %"@2"
 "@2":
-  %".19" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".20" = bitcast %"quoting_options"** %"oa" to i32**
-  store i32* %".19", i32** %".20"
+  %".17" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".18" = bitcast %"quoting_options"** %"oa" to i32**
+  store i32* %".17", i32** %".18"
   br label %"@3"
 "@3":
-  %".23" = bitcast %"quoting_options"** %"oa" to i32*
-  store i32 10, i32* %".23"
-  %".25" = load i8*, i8** %"left_quote"
-  %".26" = ptrtoint i8* %".25" to i64
-  %".27" = icmp eq i64 %".26", 0
-  br i1 %".27", label %"@5", label %"@4"
+  %".21" = bitcast %"quoting_options"** %"oa" to i32*
+  store i32 10, i32* %".21"
+  %".23" = load i8*, i8** %"left_quote"
+  %".24" = ptrtoint i8* %".23" to i64
+  %".25" = icmp eq i64 %".24", 0
+  br i1 %".25", label %"@5", label %"@4"
 "@4":
-  %".29" = load i8*, i8** %"right_quote"
-  %".30" = ptrtoint i8* %".29" to i64
-  %".31" = icmp ne i64 %".30", 0
-  br i1 %".31", label %"@6", label %"@5"
+  %".27" = load i8*, i8** %"right_quote"
+  %".28" = ptrtoint i8* %".27" to i64
+  %".29" = icmp ne i64 %".28", 0
+  br i1 %".29", label %"@6", label %"@5"
 "@5":
-  %".33" = call i8* @"abort"()
+  %".31" = call i8* @"abort"()
   br label %"@6"
 "@6":
-  %".35" = load i8*, i8** %"left_quote"
-  %".36" = load %"quoting_options"*, %"quoting_options"** %"oa"
-  %".37" = bitcast %"quoting_options"* %".36" to i8*
-  %".38" = getelementptr i8, i8* %".37", i64 40
-  %".39" = bitcast i8* %".38" to %"quoting_options"*
-  %".40" = bitcast %"quoting_options"* %".39" to i8**
-  store i8* %".35", i8** %".40"
-  %".42" = load i8*, i8** %"right_quote"
-  %".43" = load %"quoting_options"*, %"quoting_options"** %"oa"
-  %".44" = bitcast %"quoting_options"* %".43" to i8*
-  %".45" = getelementptr i8, i8* %".44", i64 48
-  %".46" = bitcast i8* %".45" to %"quoting_options"*
-  %".47" = bitcast %"quoting_options"* %".46" to i8**
-  store i8* %".42", i8** %".47"
+  %".33" = load i8*, i8** %"left_quote"
+  %".34" = load %"quoting_options"*, %"quoting_options"** %"oa"
+  %".35" = bitcast %"quoting_options"* %".34" to i8*
+  %".36" = getelementptr i8, i8* %".35", i64 40
+  %".37" = bitcast i8* %".36" to %"quoting_options"*
+  %".38" = bitcast %"quoting_options"* %".37" to i8**
+  store i8* %".33", i8** %".38"
+  %".40" = load i8*, i8** %"right_quote"
+  %".41" = load %"quoting_options"*, %"quoting_options"** %"oa"
+  %".42" = bitcast %"quoting_options"* %".41" to i8*
+  %".43" = getelementptr i8, i8* %".42", i64 48
+  %".44" = bitcast i8* %".43" to %"quoting_options"*
+  %".45" = bitcast %"quoting_options"* %".44" to i8**
+  store i8* %".40", i8** %".45"
   br label %"@7"
 "@7":
   %".8" = load i8*, i8** %"funcresult"
@@ -34984,61 +34962,57 @@ define i64 @"quotearg_buffer"(i8* %".1", i64 %".2", i8* %".3", i64 %".4", %"quot
   br i1 %".19", label %"@3", label %"@2"
 "@2":
   %".21" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".22" = bitcast %"quoting_options"* %".21" to i8*
-  %".23" = bitcast %"quoting_options"** %"v5" to i8*
-  %".24" = call i8* @"memcpy"(i8* %".23", i8* %".22", i64 56)
+  store %"quoting_options"* %".21", %"quoting_options"** %"v5"
   br label %"@4"
 "@3":
-  %".26" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".27" = bitcast %"quoting_options"** %"v5" to i32**
-  store i32* %".26", i32** %".27"
+  %".24" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".25" = bitcast %"quoting_options"** %"v5" to i32**
+  store i32* %".24", i32** %".25"
   br label %"@4"
 "@4":
-  %".30" = load %"quoting_options"*, %"quoting_options"** %"v5"
-  %".31" = bitcast %"quoting_options"* %".30" to i8*
-  %".32" = bitcast %"quoting_options"** %"p" to i8*
-  %".33" = call i8* @"memcpy"(i8* %".32", i8* %".31", i64 56)
-  %".34" = call i32* @"__errno_location"()
-  %".35" = load i32, i32* %".34"
-  store i32 %".35", i32* %"e"
-  %".37" = load i8*, i8** %"buffer"
-  %".38" = load i64, i64* %"buffersize"
-  %".39" = load i8*, i8** %"arg"
-  %".40" = load i64, i64* %"argsize"
-  %".41" = bitcast %"quoting_options"** %"p" to i32*
-  %".42" = load i32, i32* %".41"
-  %".43" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".44" = bitcast %"quoting_options"* %".43" to i8*
-  %".45" = getelementptr i8, i8* %".44", i64 4
-  %".46" = bitcast i8* %".45" to %"quoting_options"*
-  %".47" = bitcast %"quoting_options"* %".46" to i32*
-  %".48" = load i32, i32* %".47"
-  %".49" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".50" = bitcast %"quoting_options"* %".49" to i8*
-  %".51" = getelementptr i8, i8* %".50", i64 8
-  %".52" = bitcast i8* %".51" to %"quoting_options"*
-  %".53" = bitcast %"quoting_options"* %".52" to i32*
-  %".54" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".55" = bitcast %"quoting_options"* %".54" to i8*
-  %".56" = getelementptr i8, i8* %".55", i64 40
-  %".57" = bitcast i8* %".56" to %"quoting_options"*
-  %".58" = bitcast %"quoting_options"* %".57" to i64*
-  %".59" = load i64, i64* %".58"
-  %".60" = inttoptr i64 %".59" to i8*
-  %".61" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".62" = bitcast %"quoting_options"* %".61" to i8*
-  %".63" = getelementptr i8, i8* %".62", i64 48
-  %".64" = bitcast i8* %".63" to %"quoting_options"*
-  %".65" = bitcast %"quoting_options"* %".64" to i64*
-  %".66" = load i64, i64* %".65"
-  %".67" = inttoptr i64 %".66" to i8*
-  %".68" = call i64 @"quotearg_buffer_restyled"(i8* %".37", i64 %".38", i8* %".39", i64 %".40", i32 %".42", i32 %".48", i32* %".53", i8* %".60", i8* %".67")
-  store i64 %".68", i64* %"r"
-  %".70" = load i32, i32* %"e"
-  %".71" = call i32* @"__errno_location"()
-  store i32 %".70", i32* %".71"
-  %".73" = load i64, i64* %"r"
-  store i64 %".73", i64* %"funcresult"
+  %".28" = load %"quoting_options"*, %"quoting_options"** %"v5"
+  store %"quoting_options"* %".28", %"quoting_options"** %"p"
+  %".30" = call i32* @"__errno_location"()
+  %".31" = load i32, i32* %".30"
+  store i32 %".31", i32* %"e"
+  %".33" = load i8*, i8** %"buffer"
+  %".34" = load i64, i64* %"buffersize"
+  %".35" = load i8*, i8** %"arg"
+  %".36" = load i64, i64* %"argsize"
+  %".37" = bitcast %"quoting_options"** %"p" to i32*
+  %".38" = load i32, i32* %".37"
+  %".39" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".40" = bitcast %"quoting_options"* %".39" to i8*
+  %".41" = getelementptr i8, i8* %".40", i64 4
+  %".42" = bitcast i8* %".41" to %"quoting_options"*
+  %".43" = bitcast %"quoting_options"* %".42" to i32*
+  %".44" = load i32, i32* %".43"
+  %".45" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".46" = bitcast %"quoting_options"* %".45" to i8*
+  %".47" = getelementptr i8, i8* %".46", i64 8
+  %".48" = bitcast i8* %".47" to %"quoting_options"*
+  %".49" = bitcast %"quoting_options"* %".48" to i32*
+  %".50" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".51" = bitcast %"quoting_options"* %".50" to i8*
+  %".52" = getelementptr i8, i8* %".51", i64 40
+  %".53" = bitcast i8* %".52" to %"quoting_options"*
+  %".54" = bitcast %"quoting_options"* %".53" to i64*
+  %".55" = load i64, i64* %".54"
+  %".56" = inttoptr i64 %".55" to i8*
+  %".57" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".58" = bitcast %"quoting_options"* %".57" to i8*
+  %".59" = getelementptr i8, i8* %".58", i64 48
+  %".60" = bitcast i8* %".59" to %"quoting_options"*
+  %".61" = bitcast %"quoting_options"* %".60" to i64*
+  %".62" = load i64, i64* %".61"
+  %".63" = inttoptr i64 %".62" to i8*
+  %".64" = call i64 @"quotearg_buffer_restyled"(i8* %".33", i64 %".34", i8* %".35", i64 %".36", i32 %".38", i32 %".44", i32* %".49", i8* %".56", i8* %".63")
+  store i64 %".64", i64* %"r"
+  %".66" = load i32, i32* %"e"
+  %".67" = call i32* @"__errno_location"()
+  store i32 %".66", i32* %".67"
+  %".69" = load i64, i64* %"r"
+  store i64 %".69", i64* %"funcresult"
   br label %"@5"
 "@5":
   %".14" = load i64, i64* %"funcresult"
@@ -35096,110 +35070,106 @@ define i8* @"quotearg_alloc_mem"(i8* %".1", i64 %".2", i64* %".3", %"quoting_opt
   br i1 %".16", label %"@3", label %"@2"
 "@2":
   %".18" = load %"quoting_options"*, %"quoting_options"** %"o"
-  %".19" = bitcast %"quoting_options"* %".18" to i8*
-  %".20" = bitcast %"quoting_options"** %"v4" to i8*
-  %".21" = call i8* @"memcpy"(i8* %".20", i8* %".19", i64 56)
+  store %"quoting_options"* %".18", %"quoting_options"** %"v4"
   br label %"@4"
 "@3":
-  %".23" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
-  %".24" = bitcast %"quoting_options"** %"v4" to i32**
-  store i32* %".23", i32** %".24"
+  %".21" = getelementptr %"quoting_options", %"quoting_options"* @"default_quoting_options", i32 0, i32 0
+  %".22" = bitcast %"quoting_options"** %"v4" to i32**
+  store i32* %".21", i32** %".22"
   br label %"@4"
 "@4":
-  %".27" = load %"quoting_options"*, %"quoting_options"** %"v4"
-  %".28" = bitcast %"quoting_options"* %".27" to i8*
-  %".29" = bitcast %"quoting_options"** %"p" to i8*
-  %".30" = call i8* @"memcpy"(i8* %".29", i8* %".28", i64 56)
-  %".31" = call i32* @"__errno_location"()
-  %".32" = load i32, i32* %".31"
-  store i32 %".32", i32* %"e"
-  %".34" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".35" = bitcast %"quoting_options"* %".34" to i8*
-  %".36" = getelementptr i8, i8* %".35", i64 4
-  %".37" = bitcast i8* %".36" to %"quoting_options"*
-  %".38" = bitcast %"quoting_options"* %".37" to i32*
-  %".39" = load i32, i32* %".38"
-  %".40" = load i64*, i64** %"size"
-  %".41" = ptrtoint i64* %".40" to i64
-  %".42" = icmp eq i64 %".41", 0
-  %".43" = select  i1 %".42", i8 1, i8 0
-  %".44" = zext i8 %".43" to i32
-  %".45" = or i32 %".39", %".44"
-  store i32 %".45", i32* %"flags"
-  %".47" = inttoptr i64 0 to i8*
-  %".48" = load i8*, i8** %"arg"
-  %".49" = load i64, i64* %"argsize"
-  %".50" = bitcast %"quoting_options"** %"p" to i32*
-  %".51" = load i32, i32* %".50"
-  %".52" = load i32, i32* %"flags"
-  %".53" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".54" = bitcast %"quoting_options"* %".53" to i8*
-  %".55" = getelementptr i8, i8* %".54", i64 8
-  %".56" = bitcast i8* %".55" to %"quoting_options"*
-  %".57" = bitcast %"quoting_options"* %".56" to i32*
-  %".58" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".59" = bitcast %"quoting_options"* %".58" to i8*
-  %".60" = getelementptr i8, i8* %".59", i64 40
-  %".61" = bitcast i8* %".60" to %"quoting_options"*
-  %".62" = bitcast %"quoting_options"* %".61" to i64*
-  %".63" = load i64, i64* %".62"
-  %".64" = inttoptr i64 %".63" to i8*
-  %".65" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".66" = bitcast %"quoting_options"* %".65" to i8*
-  %".67" = getelementptr i8, i8* %".66", i64 48
-  %".68" = bitcast i8* %".67" to %"quoting_options"*
-  %".69" = bitcast %"quoting_options"* %".68" to i64*
-  %".70" = load i64, i64* %".69"
-  %".71" = inttoptr i64 %".70" to i8*
-  %".72" = call i64 @"quotearg_buffer_restyled"(i8* %".47", i64 0, i8* %".48", i64 %".49", i32 %".51", i32 %".52", i32* %".57", i8* %".64", i8* %".71")
-  %".73" = add i64 %".72", 1
-  store i64 %".73", i64* %"bufsize"
+  %".25" = load %"quoting_options"*, %"quoting_options"** %"v4"
+  store %"quoting_options"* %".25", %"quoting_options"** %"p"
+  %".27" = call i32* @"__errno_location"()
+  %".28" = load i32, i32* %".27"
+  store i32 %".28", i32* %"e"
+  %".30" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".31" = bitcast %"quoting_options"* %".30" to i8*
+  %".32" = getelementptr i8, i8* %".31", i64 4
+  %".33" = bitcast i8* %".32" to %"quoting_options"*
+  %".34" = bitcast %"quoting_options"* %".33" to i32*
+  %".35" = load i32, i32* %".34"
+  %".36" = load i64*, i64** %"size"
+  %".37" = ptrtoint i64* %".36" to i64
+  %".38" = icmp eq i64 %".37", 0
+  %".39" = select  i1 %".38", i8 1, i8 0
+  %".40" = zext i8 %".39" to i32
+  %".41" = or i32 %".35", %".40"
+  store i32 %".41", i32* %"flags"
+  %".43" = inttoptr i64 0 to i8*
+  %".44" = load i8*, i8** %"arg"
+  %".45" = load i64, i64* %"argsize"
+  %".46" = bitcast %"quoting_options"** %"p" to i32*
+  %".47" = load i32, i32* %".46"
+  %".48" = load i32, i32* %"flags"
+  %".49" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".50" = bitcast %"quoting_options"* %".49" to i8*
+  %".51" = getelementptr i8, i8* %".50", i64 8
+  %".52" = bitcast i8* %".51" to %"quoting_options"*
+  %".53" = bitcast %"quoting_options"* %".52" to i32*
+  %".54" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".55" = bitcast %"quoting_options"* %".54" to i8*
+  %".56" = getelementptr i8, i8* %".55", i64 40
+  %".57" = bitcast i8* %".56" to %"quoting_options"*
+  %".58" = bitcast %"quoting_options"* %".57" to i64*
+  %".59" = load i64, i64* %".58"
+  %".60" = inttoptr i64 %".59" to i8*
+  %".61" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".62" = bitcast %"quoting_options"* %".61" to i8*
+  %".63" = getelementptr i8, i8* %".62", i64 48
+  %".64" = bitcast i8* %".63" to %"quoting_options"*
+  %".65" = bitcast %"quoting_options"* %".64" to i64*
+  %".66" = load i64, i64* %".65"
+  %".67" = inttoptr i64 %".66" to i8*
+  %".68" = call i64 @"quotearg_buffer_restyled"(i8* %".43", i64 0, i8* %".44", i64 %".45", i32 %".47", i32 %".48", i32* %".53", i8* %".60", i8* %".67")
+  %".69" = add i64 %".68", 1
+  store i64 %".69", i64* %"bufsize"
+  %".71" = load i64, i64* %"bufsize"
+  %".72" = call i8* @"xcharalloc"(i64 %".71")
+  store i8* %".72", i8** %"buf"
+  %".74" = load i8*, i8** %"buf"
   %".75" = load i64, i64* %"bufsize"
-  %".76" = call i8* @"xcharalloc"(i64 %".75")
-  store i8* %".76", i8** %"buf"
-  %".78" = load i8*, i8** %"buf"
-  %".79" = load i64, i64* %"bufsize"
-  %".80" = load i8*, i8** %"arg"
-  %".81" = load i64, i64* %"argsize"
-  %".82" = bitcast %"quoting_options"** %"p" to i32*
-  %".83" = load i32, i32* %".82"
-  %".84" = load i32, i32* %"flags"
-  %".85" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".86" = bitcast %"quoting_options"* %".85" to i8*
-  %".87" = getelementptr i8, i8* %".86", i64 8
-  %".88" = bitcast i8* %".87" to %"quoting_options"*
-  %".89" = bitcast %"quoting_options"* %".88" to i32*
-  %".90" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".91" = bitcast %"quoting_options"* %".90" to i8*
-  %".92" = getelementptr i8, i8* %".91", i64 40
-  %".93" = bitcast i8* %".92" to %"quoting_options"*
-  %".94" = bitcast %"quoting_options"* %".93" to i64*
-  %".95" = load i64, i64* %".94"
-  %".96" = inttoptr i64 %".95" to i8*
-  %".97" = load %"quoting_options"*, %"quoting_options"** %"p"
-  %".98" = bitcast %"quoting_options"* %".97" to i8*
-  %".99" = getelementptr i8, i8* %".98", i64 48
-  %".100" = bitcast i8* %".99" to %"quoting_options"*
-  %".101" = bitcast %"quoting_options"* %".100" to i64*
-  %".102" = load i64, i64* %".101"
-  %".103" = inttoptr i64 %".102" to i8*
-  %".104" = call i64 @"quotearg_buffer_restyled"(i8* %".78", i64 %".79", i8* %".80", i64 %".81", i32 %".83", i32 %".84", i32* %".89", i8* %".96", i8* %".103")
-  %".105" = load i32, i32* %"e"
-  %".106" = call i32* @"__errno_location"()
-  store i32 %".105", i32* %".106"
-  %".108" = load i64*, i64** %"size"
-  %".109" = ptrtoint i64* %".108" to i64
-  %".110" = icmp eq i64 %".109", 0
-  br i1 %".110", label %"@6", label %"@5"
+  %".76" = load i8*, i8** %"arg"
+  %".77" = load i64, i64* %"argsize"
+  %".78" = bitcast %"quoting_options"** %"p" to i32*
+  %".79" = load i32, i32* %".78"
+  %".80" = load i32, i32* %"flags"
+  %".81" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".82" = bitcast %"quoting_options"* %".81" to i8*
+  %".83" = getelementptr i8, i8* %".82", i64 8
+  %".84" = bitcast i8* %".83" to %"quoting_options"*
+  %".85" = bitcast %"quoting_options"* %".84" to i32*
+  %".86" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".87" = bitcast %"quoting_options"* %".86" to i8*
+  %".88" = getelementptr i8, i8* %".87", i64 40
+  %".89" = bitcast i8* %".88" to %"quoting_options"*
+  %".90" = bitcast %"quoting_options"* %".89" to i64*
+  %".91" = load i64, i64* %".90"
+  %".92" = inttoptr i64 %".91" to i8*
+  %".93" = load %"quoting_options"*, %"quoting_options"** %"p"
+  %".94" = bitcast %"quoting_options"* %".93" to i8*
+  %".95" = getelementptr i8, i8* %".94", i64 48
+  %".96" = bitcast i8* %".95" to %"quoting_options"*
+  %".97" = bitcast %"quoting_options"* %".96" to i64*
+  %".98" = load i64, i64* %".97"
+  %".99" = inttoptr i64 %".98" to i8*
+  %".100" = call i64 @"quotearg_buffer_restyled"(i8* %".74", i64 %".75", i8* %".76", i64 %".77", i32 %".79", i32 %".80", i32* %".85", i8* %".92", i8* %".99")
+  %".101" = load i32, i32* %"e"
+  %".102" = call i32* @"__errno_location"()
+  store i32 %".101", i32* %".102"
+  %".104" = load i64*, i64** %"size"
+  %".105" = ptrtoint i64* %".104" to i64
+  %".106" = icmp eq i64 %".105", 0
+  br i1 %".106", label %"@6", label %"@5"
 "@5":
-  %".112" = load i64, i64* %"bufsize"
-  %".113" = sub i64 %".112", 1
-  %".114" = bitcast i64** %"size" to i64*
-  store i64 %".113", i64* %".114"
+  %".108" = load i64, i64* %"bufsize"
+  %".109" = sub i64 %".108", 1
+  %".110" = bitcast i64** %"size" to i64*
+  store i64 %".109", i64* %".110"
   br label %"@6"
 "@6":
-  %".117" = load i8*, i8** %"buf"
-  store i8* %".117", i8** %"funcresult"
+  %".113" = load i8*, i8** %"buf"
+  store i8* %".113", i8** %"funcresult"
   br label %"@7"
 "@7":
   %".11" = load i8*, i8** %"funcresult"
@@ -35215,75 +35185,73 @@ define i8* @"quotearg_free"()
   br label %"@1"
 "@1":
   %".5" = load %"slotvec"*, %"slotvec"** @"slotvec_0"
-  %".6" = bitcast %"slotvec"* %".5" to i8*
-  %".7" = bitcast %"slotvec"** %"sv" to i8*
-  %".8" = call i8* @"memcpy"(i8* %".7", i8* %".6", i64 16)
+  store %"slotvec"* %".5", %"slotvec"** %"sv"
   store i32 1, i32* %"i"
   br label %"@3"
 "@2":
-  %".11" = load i32, i32* %"i"
-  %".12" = zext i32 %".11" to i64
-  %".13" = mul i64 16, %".12"
-  %".14" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".15" = bitcast %"slotvec"* %".14" to i8*
-  %".16" = getelementptr i8, i8* %".15", i64 %".13"
-  %".17" = bitcast i8* %".16" to %"slotvec"*
-  %".18" = bitcast %"slotvec"* %".17" to i8*
-  %".19" = getelementptr i8, i8* %".18", i64 8
-  %".20" = bitcast i8* %".19" to %"slotvec"*
-  %".21" = bitcast %"slotvec"* %".20" to i64*
-  %".22" = load i64, i64* %".21"
-  %".23" = inttoptr i64 %".22" to i8*
-  %".24" = call i8* @"__imp_free"(i8* %".23")
-  %".25" = load i32, i32* %"i"
-  %".26" = add i32 %".25", 1
-  store i32 %".26", i32* %"i"
+  %".9" = load i32, i32* %"i"
+  %".10" = zext i32 %".9" to i64
+  %".11" = mul i64 16, %".10"
+  %".12" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".13" = bitcast %"slotvec"* %".12" to i8*
+  %".14" = getelementptr i8, i8* %".13", i64 %".11"
+  %".15" = bitcast i8* %".14" to %"slotvec"*
+  %".16" = bitcast %"slotvec"* %".15" to i8*
+  %".17" = getelementptr i8, i8* %".16", i64 8
+  %".18" = bitcast i8* %".17" to %"slotvec"*
+  %".19" = bitcast %"slotvec"* %".18" to i64*
+  %".20" = load i64, i64* %".19"
+  %".21" = inttoptr i64 %".20" to i8*
+  %".22" = call i8* @"__imp_free"(i8* %".21")
+  %".23" = load i32, i32* %"i"
+  %".24" = add i32 %".23", 1
+  store i32 %".24", i32* %"i"
   br label %"@3"
 "@3":
-  %".29" = load i32, i32* %"i"
-  %".30" = load i32, i32* @"nslots"
-  %".31" = icmp slt i32 %".29", %".30"
-  br i1 %".31", label %"@2", label %"@4"
+  %".27" = load i32, i32* %"i"
+  %".28" = load i32, i32* @"nslots"
+  %".29" = icmp slt i32 %".27", %".28"
+  br i1 %".29", label %"@2", label %"@4"
 "@4":
-  %".33" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".34" = bitcast %"slotvec"* %".33" to i8*
-  %".35" = getelementptr i8, i8* %".34", i64 8
-  %".36" = bitcast i8* %".35" to %"slotvec"*
-  %".37" = bitcast %"slotvec"* %".36" to i64*
-  %".38" = load i64, i64* %".37"
-  %".39" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
-  %".40" = ptrtoint i8* %".39" to i64
-  %".41" = icmp eq i64 %".38", %".40"
-  br i1 %".41", label %"@6", label %"@5"
+  %".31" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".32" = bitcast %"slotvec"* %".31" to i8*
+  %".33" = getelementptr i8, i8* %".32", i64 8
+  %".34" = bitcast i8* %".33" to %"slotvec"*
+  %".35" = bitcast %"slotvec"* %".34" to i64*
+  %".36" = load i64, i64* %".35"
+  %".37" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
+  %".38" = ptrtoint i8* %".37" to i64
+  %".39" = icmp eq i64 %".36", %".38"
+  br i1 %".39", label %"@6", label %"@5"
 "@5":
-  %".43" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".44" = bitcast %"slotvec"* %".43" to i8*
-  %".45" = getelementptr i8, i8* %".44", i64 8
-  %".46" = bitcast i8* %".45" to %"slotvec"*
-  %".47" = bitcast %"slotvec"* %".46" to i64*
-  %".48" = load i64, i64* %".47"
-  %".49" = inttoptr i64 %".48" to i8*
-  %".50" = call i8* @"__imp_free"(i8* %".49")
-  %".51" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  store i64 256, i64* %".51"
-  %".53" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
-  %".54" = bitcast i64* @"data_240a8" to i8**
-  store i8* %".53", i8** %".54"
+  %".41" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".42" = bitcast %"slotvec"* %".41" to i8*
+  %".43" = getelementptr i8, i8* %".42", i64 8
+  %".44" = bitcast i8* %".43" to %"slotvec"*
+  %".45" = bitcast %"slotvec"* %".44" to i64*
+  %".46" = load i64, i64* %".45"
+  %".47" = inttoptr i64 %".46" to i8*
+  %".48" = call i8* @"__imp_free"(i8* %".47")
+  %".49" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  store i64 256, i64* %".49"
+  %".51" = getelementptr [256 x i8], [256 x i8]* @"slot0", i32 0, i32 0
+  %".52" = bitcast i64* @"data_240a8" to i8**
+  store i8* %".51", i8** %".52"
   br label %"@6"
 "@6":
-  %".57" = load %"slotvec"*, %"slotvec"** %"sv"
-  %".58" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  %".59" = ptrtoint %"slotvec"* %".57" to i64
-  %".60" = ptrtoint i64* %".58" to i64
-  %".61" = icmp eq i64 %".59", %".60"
-  br i1 %".61", label %"@8", label %"@7"
+  %".55" = load %"slotvec"*, %"slotvec"** %"sv"
+  %".56" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  %".57" = ptrtoint %"slotvec"* %".55" to i64
+  %".58" = ptrtoint i64* %".56" to i64
+  %".59" = icmp eq i64 %".57", %".58"
+  br i1 %".59", label %"@8", label %"@7"
 "@7":
-  %".63" = bitcast %"slotvec"** %"sv" to i8**
-  %".64" = load i8*, i8** %".63"
-  %".65" = call i8* @"__imp_free"(i8* %".64")
-  %".66" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
-  %".67" = bitcast %"slotvec"** @"slotvec_0" to i64**
-  store i64* %".66", i64** %".67"
+  %".61" = bitcast %"slotvec"** %"sv" to i8**
+  %".62" = load i8*, i8** %".61"
+  %".63" = call i8* @"__imp_free"(i8* %".62")
+  %".64" = getelementptr %"slotvec", %"slotvec"* @"slotvec0", i32 0, i32 0
+  %".65" = bitcast %"slotvec"** @"slotvec_0" to i64**
+  store i64* %".64", i64** %".65"
   br label %"@8"
 "@8":
   store i32 1, i32* @"nslots"

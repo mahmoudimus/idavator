@@ -1410,7 +1410,21 @@ def _store_as(
 
     with suppress(AttributeError):
         l_pointee = getattr(l_type, "pointee", None)
-        if l_pointee and isinstance(l_pointee, (ir.IdentifiedStructType, ir.ArrayType)):
+        # A struct/array-pointer VALUE (`l`) reaches this store in two very different
+        # IDA constructs that must NOT be conflated:
+        #   (a) pointer copy   `p = q`  -- the destination is a POINTER SLOT (`T**`):
+        #       store the 8-byte pointer through it, exactly like the native
+        #       `v3 = o` alias. The 128/129 lifter memcpys in examples/cp.ll are this
+        #       case (e.g. set_char_quoting's `memcpy(v3_slot, *o, 56)` clobbering the
+        #       pointer slot and severing the write-through to the caller's struct).
+        #   (b) in-place copy  `*p = *q` -- the destination ADDRESSES THE AGGREGATE
+        #       (`d_pointee` is the struct/array itself): a genuine byte-copy.
+        # Only (b) is a real memcpy; gate on the destination pointee, not `l`.
+        if (
+            l_pointee
+            and isinstance(l_pointee, (ir.IdentifiedStructType, ir.ArrayType))
+            and not isinstance(d_pointee, ir.PointerType)
+        ):
             dest, src = d, l
             td = llvm.create_target_data("e")
             length = ir.Constant(ir.IntType(64), l_pointee.get_abi_size(td))
