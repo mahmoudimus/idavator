@@ -22,7 +22,8 @@ the AST after the normalizations that undo those cosmetic choices:
 It is a structural-semantic oracle robust to Hex-Rays' COSMETIC rendering, not a
 full equivalence prover: it does not inline temporaries or reassociate across
 statements, so a body Hex-Rays restructured into extra locals may still differ
-(the :func:`fidelity_ledger` reports where).
+(the :func:`fidelity_ledger` reports where). See the memory note
+``idavator_libclang_ast_oracle`` for the plumbing + scope rationale.
 
 Inputs are COMPLETE C function definitions (``int f(int x){ ... }``); the drop's
 ``str(cfunc)`` is one already, and the Hex-Rays pseudotypes are typedef'd by a
