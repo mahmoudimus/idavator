@@ -1167,6 +1167,25 @@ class LLVMDropConverter:
         return list(zip(ops, preds))
 
     @staticmethod
+    def _switch_arms(ins):
+        """(value_operand, default_name, [(case_int, target_name), ...]) for an
+        LLVM ``switch``. llvmlite exposes the operands as
+        ``[cond, default_label, caseval0, label0, caseval1, label1, ...]`` -- the
+        case integers are unnamed constants (parse the literal from str), and the
+        labels are text-only (parse the block names from str, textual order)."""
+        ops = list(ins.operands)
+        cond = ops[0]
+        # Block names in textual order: the default first, then each case target.
+        names = re.findall(r'label %"?([\w.@]+)"?', str(ins))
+        default_name = names[0]
+        target_names = names[1:]
+        case_vals = []
+        for o in ops[2::2]:
+            m = re.search(r"(-?\d+)\s*$", str(o).strip())
+            case_vals.append(int(m.group(1)) if m else 0)
+        return cond, default_name, list(zip(case_vals, target_names))
+
+    @staticmethod
     def _is_canary_call(ins) -> bool:
         """A stack-protector call -- __readfsqword/__readgsqword (canary read) or
         __stack_chk_fail (the fail path). These are ELIDED (not split into their
@@ -1196,11 +1215,14 @@ class LLVMDropConverter:
         closes a segment; the next segment captures that call's result at its
         start. Returns [seg,...]; only the LAST seg carries the terminator. A
         noreturn call closes the FINAL segment (BLT_0WAY) -- the rest is dead."""
-        term = list(bb.instructions)[-1]
+        insns = list(bb.instructions)
+        term = insns[-1]
         segs, cur = [], {"values": [], "call": None, "term": None,
                          "prev_call": None}
-        for ins in bb.instructions:
-            if ins is term:
+        # NB: llvmlite returns a FRESH ValueRef wrapper per iteration, so an
+        # identity (`is`) check against `term` never matches -- stop by INDEX.
+        for idx, ins in enumerate(insns):
+            if idx == len(insns) - 1:
                 break
             if ins.opcode == "phi":
                 continue
@@ -1263,7 +1285,8 @@ class LLVMDropConverter:
             segs = self._segment_block(bb)
             for si, seg in enumerate(segs):
                 e = {**seg, "bb": bb, "code": serial,
-                     "ftramp": None, "ttramp": None}
+                     "ftramp": None, "ttramp": None,
+                     "cmps": None, "dtramp": None}
                 if si == 0:
                     name_serial[bb.name] = serial
                 serial += 1
@@ -1276,6 +1299,20 @@ class LLVMDropConverter:
                         if (bb.name, tops[2].name) in edges_need_copy:
                             e["ttramp"] = serial
                             serial += 1
+                    elif seg["term"].opcode == "switch":
+                        # Lower to a chain of equality tests: the switch block is
+                        # the FIRST compare (case 0); reserve one extra comparison
+                        # block per remaining case. Each compare is a 2-way whose
+                        # FALSE arm falls through (serial+1) to the next compare;
+                        # the last compare's FALSE arm falls through to a DEFAULT
+                        # trampoline (a 1-way `goto default`), mirroring the br
+                        # ftramp -- a 2-way false arm must be the next serial.
+                        _, _, arms = self._switch_arms(seg["term"])
+                        e["cmps"] = [serial + k
+                                     for k in range(max(0, len(arms) - 1))]
+                        serial += len(e["cmps"])
+                        e["dtramp"] = serial
+                        serial += 1
                 plan.append(e)
         needed = serial - 1
 
@@ -1421,6 +1458,54 @@ class LLVMDropConverter:
                     tt.insert_into_block(gt, tt.tail)
                     tt.type = hx.BLT_1WAY
                     self._wire(tt, [true_s])
+            elif term.opcode == "switch":
+                # switch %v, default [ vi -> Bi ]  ->  a chain of equality tests.
+                # Each comparison block does `jz %v, vi -> Bi` (2-way) and falls
+                # through (serial+1) to the next compare; the last compare falls
+                # through to a DEFAULT trampoline (1-way goto default). Hex-Rays
+                # re-folds the chain back into a switch/if-ladder.
+                cond, default_name, arms = self._switch_arms(term)
+                default_s = name_serial[default_name]
+                csz = _type_size(cond.type)
+                cdesc = self._desc(cond, vmap, csz)
+                # A switch-edge phi copy needs a per-case trampoline (not built);
+                # defer rather than silently drop the out-of-SSA copy.
+                for _v, tgt in arms:
+                    if (e["bb"].name, tgt) in edges_need_copy:
+                        raise NotImplementedError(
+                            "switch edge needs a phi copy (per-case trampoline)")
+                if not arms:
+                    # degenerate switch (default only) -> unconditional goto.
+                    g = hx.minsn_t(ea)
+                    g.opcode = hx.m_goto
+                    g.l.make_blkref(default_s)
+                    blk.insert_into_block(g, anchor)
+                    blk.type = hx.BLT_1WAY
+                    self._wire(blk, [default_s])
+                    continue
+                cmp_blocks = [blk] + [mba.get_mblock(s) for s in e["cmps"]]
+                for k, (cval, tgt) in enumerate(arms):
+                    cblk = cmp_blocks[k]
+                    target_s = name_serial[tgt]
+                    # FALSE/fall-through arm: the next compare, or the default
+                    # trampoline after the last compare (must be serial+1).
+                    fall_s = (cmp_blocks[k + 1].serial
+                              if k + 1 < len(cmp_blocks) else e["dtramp"])
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_jz
+                    self._fill(mi.l, (cdesc[0], cdesc[1], csz))
+                    mi.r.make_number(cval & ((1 << (8 * csz)) - 1), csz)
+                    mi.d.make_blkref(target_s)
+                    cblk.insert_into_block(mi, cblk.tail)
+                    cblk.type = hx.BLT_2WAY
+                    self._wire(cblk, [fall_s, target_s])  # [fall-through, taken]
+                dt = mba.get_mblock(e["dtramp"])
+                gd = hx.minsn_t(ea)
+                gd.opcode = hx.m_goto
+                gd.l.make_blkref(default_s)
+                dt.insert_into_block(gd, dt.tail)
+                dt.type = hx.BLT_1WAY
+                self._wire(dt, [default_s])
             elif term.opcode == "unreachable":
                 # After a noreturn call or the elided canary fail path: a dead
                 # goto to the ret block (the block is unreachable once the canary
