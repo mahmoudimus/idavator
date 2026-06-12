@@ -457,6 +457,12 @@ class LLVMDropConverter:
             sea = self._strconst_ea(s)
             if sea is not None:
                 return ("gvar", sea, default_size)
+        if s.split()[-1:] == ["undef"]:
+            # an ``undef`` value is a don't-care (SROA leaves it on dead phi
+            # incomings / masked-insert leftovers / a `ret <ty> undef` whose path
+            # is pruned). Resolve it to zero of the operand's width -- any concrete
+            # value is correct, and 0 keeps the value-numbering trivial.
+            return ("num", 0, _type_size(s) or default_size)
         num = re.search(r"(-?\d+)\s*$", s)
         if num:
             return ("num", int(num.group(1)), _type_size(s) or default_size)
