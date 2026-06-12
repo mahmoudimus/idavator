@@ -25,6 +25,7 @@ import ida_ida
 import ida_idaapi
 import ida_idp
 import ida_name
+import ida_strlist
 import ida_typeinf
 import llvmlite.binding as llvm
 
@@ -67,6 +68,39 @@ _HELPER_INTRINSICS = frozenset({
     "__ROL1__", "__ROL2__", "__ROL4__", "__ROL8__",
     "__ROR1__", "__ROR2__", "__ROR4__", "__ROR8__",
 })
+
+# A private string-constant global used as a VALUE (e.g. an error message handed
+# to a call/printf, decayed via getelementptr) stringifies in llvmlite as its
+# full definition: ``@name = private [unnamed_addr ]constant [N x i8] c"..."``.
+# LLVM truncates the symbol (``aInvalidKindInG``) and IDA auto-names the literal
+# from its (longer) content (``aInvalidKindInGenTempname``), so get_name_ea on
+# the LLVM name misses. We instead decode the c"..." body and match it against
+# the IDB string table by exact content -> the literal's address.
+_STRCONST_RE = re.compile(
+    r'private\s+(?:unnamed_addr\s+)?constant\s+\[\d+\s+x\s+i8\]\s+c"(.*)"\s*$',
+    re.S,
+)
+
+
+def _decode_llvm_cstr(body: str) -> bytes:
+    """Decode an LLVM ``c"..."`` string body to raw bytes. LLVM escapes a byte as
+    ``\\XX`` (two hex digits, e.g. ``\\22`` = ``"``, ``\\0a`` = ``\\n``, ``\\00`` =
+    NUL); every other character is a literal byte. The trailing NUL is preserved
+    here and stripped by the caller for matching against IDB strlit contents."""
+    out = bytearray()
+    i, n = 0, len(body)
+    while i < n:
+        ch = body[i]
+        if ch == "\\" and i + 3 <= n:
+            try:
+                out.append(int(body[i + 1:i + 3], 16))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.append(ord(ch) & 0xFF)
+        i += 1
+    return bytes(out)
 
 
 def _type_size(type_str) -> int:
@@ -172,6 +206,7 @@ class LLVMDropConverter:
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
         self._ret_off = None         # frame off of a promoted return slot, or None
         self._ret_kreg = None        # kreg of a promoted scalar return slot, or None
+        self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -309,11 +344,36 @@ class LLVMDropConverter:
         else:
             mop.make_number(val & ((1 << (8 * size)) - 1), size)
 
+    def _strconst_ea(self, operand_str: str):
+        """Resolve a private string-constant operand (``@x = private constant
+        [N x i8] c"..."``) to the address of the matching IDB string literal, or
+        None. The LLVM symbol is truncated and IDA names the literal from its
+        (longer) content, so name lookup fails; we match by exact content against
+        the IDB string table instead (built once, cached on the instance)."""
+        m = _STRCONST_RE.search(operand_str)
+        if m is None:
+            return None
+        content = _decode_llvm_cstr(m.group(1)).rstrip(b"\x00")
+        if self._str_index is None:
+            self._str_index = {}
+            ida_strlist.build_strlist()
+            for i in range(ida_strlist.get_strlist_qty()):
+                si = ida_strlist.string_info_t()
+                if not ida_strlist.get_strlist_item(si, i):
+                    continue
+                raw = ida_bytes.get_strlit_contents(si.ea, si.length, si.type)
+                if raw is None:
+                    continue
+                # First literal wins (lowest index == lowest ea for a content).
+                self._str_index.setdefault(raw.rstrip(b"\x00"), si.ea)
+        return self._str_index.get(content)
+
     def _desc(self, operand, vmap, default_size):
         """Resolve an LLVM operand to a value descriptor (reg kreg / numeric /
         gvar / stkaddr). A global used as a VALUE is its address (an array global
         decays; make_gvar carries the symbol); an address-taken alloca is the
-        address of its frame slot (&local)."""
+        address of its frame slot (&local). A private string-constant value is its
+        IDB string-literal address (matched by content)."""
         nm = operand.name
         if nm and nm in vmap:
             return vmap[nm]
@@ -324,20 +384,24 @@ class LLVMDropConverter:
             ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
             if ea != ida_idaapi.BADADDR:
                 return ("gvar", ea, default_size)
+            sea = self._strconst_ea(s)
+            if sea is not None:
+                return ("gvar", sea, default_size)
         num = re.search(r"(-?\d+)\s*$", s)
         if num:
             return ("num", int(num.group(1)), _type_size(s) or default_size)
         raise ValueError(f"unhandled operand {s!r}")
 
-    @staticmethod
-    def _global_ea(operand):
+    def _global_ea(self, operand):
         """Resolve an LLVM global operand (``@name``) to its IDB address, or
-        None if it is not a (resolvable) global."""
-        nm = operand.name
-        if nm and "@" in str(operand):
-            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
+        None if it is not a (resolvable) global. A private string-constant global
+        resolves to its IDB string literal (matched by content)."""
+        s = str(operand)
+        if operand.name and "@" in s:
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, operand.name)
             if ea != ida_idaapi.BADADDR:
                 return ea
+            return self._strconst_ea(s)
         return None
 
     @staticmethod
