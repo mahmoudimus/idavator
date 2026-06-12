@@ -404,6 +404,17 @@ class LLVMDropConverter:
         elif kind == "gvar":
             mop.make_gvar(val)
             mop.size = size
+        elif kind == "gvaraddr":
+            # &global: mop_a wrapping a gvar (cf. &local = mop_a wrapping a
+            # stkvar). A global used as a POINTER VALUE is its ADDRESS, not the
+            # lvalue read at that address -- e.g. a decayed string constant
+            # handed to a call is `gettext("msg")`, not
+            # `gettext(*(const char **)"msg")`.
+            inner = hx.mop_addr_t()
+            inner.make_gvar(val)
+            mop.t = hx.mop_a
+            mop.a = inner
+            mop.size = 8
         elif kind == "stkaddr":
             # &local: mop_a wrapping a stkvar (cf. &global = mop_a wrapping mop_v).
             inner = hx.mop_addr_t()
@@ -445,10 +456,13 @@ class LLVMDropConverter:
 
     def _desc(self, operand, vmap, default_size):
         """Resolve an LLVM operand to a value descriptor (reg kreg / numeric /
-        gvar / stkaddr). A global used as a VALUE is its address (an array global
-        decays; make_gvar carries the symbol); an address-taken alloca is the
-        address of its frame slot (&local). A private string-constant value is its
-        IDB string-literal address (matched by content)."""
+        gvar / gvaraddr / stkaddr). A global used as a POINTER VALUE is its
+        ADDRESS (``gvaraddr`` = &global) -- an array/string global decays to a
+        ``ptr`` whose value IS its address, so a decayed string constant handed
+        to a call must render ``gettext("msg")``, not the lvalue read
+        ``gettext(*(const char **)"msg")``. An address-taken alloca is the
+        address of its frame slot (&local). A private string-constant value is
+        its IDB string-literal address (matched by content)."""
         nm = operand.name
         if nm and nm in vmap:
             return vmap[nm]
@@ -456,12 +470,19 @@ class LLVMDropConverter:
             return ("stkaddr", self._addr_taken[nm][0], 8)
         s = str(operand).strip()
         if nm and "@" in s:
+            # A global operand of pointer type used as a VALUE is its address:
+            # in opaque-pointer IR a global symbol's operand type is ``ptr`` and
+            # its value IS its address (the array decayed). Materialise &global
+            # (gvaraddr) rather than the lvalue read at that address (gvar).
+            ptr_value = str(operand.type) == "ptr"
             ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
             if ea != ida_idaapi.BADADDR:
-                return ("gvar", ea, default_size)
+                return ("gvaraddr", ea, 8) if ptr_value \
+                    else ("gvar", ea, default_size)
             sea = self._strconst_ea(s)
             if sea is not None:
-                return ("gvar", sea, default_size)
+                return ("gvaraddr", sea, 8) if ptr_value \
+                    else ("gvar", sea, default_size)
         if s.split()[-1:] == ["undef"]:
             # an ``undef`` value is a don't-care (SROA leaves it on dead phi
             # incomings / masked-insert leftovers / a `ret <ty> undef` whose path
@@ -714,7 +735,14 @@ class LLVMDropConverter:
             if idx[0] == "num":
                 off = idx[1] * elem_sz
                 if off == 0:
-                    vmap[ins.name] = (base[0], base[1], 8)  # alias the base
+                    # The off==0 decay of a global base yields its ADDRESS, not
+                    # the lvalue read at it: a gvar base decays to gvaraddr
+                    # (&global). _desc already returns gvaraddr for a ptr-typed
+                    # global operand; normalise a gvar base here for safety.
+                    if base[0] == "gvar":
+                        vmap[ins.name] = ("gvaraddr", base[1], 8)
+                    else:
+                        vmap[ins.name] = (base[0], base[1], 8)  # alias the base
                     return anchor
                 mi = hx.minsn_t(ea)
                 mi.opcode = hx.m_add
