@@ -203,16 +203,25 @@ class LLVMDropConverter:
         kind, val, size = d
         if kind == "reg":
             mop.make_reg(val, size)
+        elif kind == "gvar":
+            mop.make_gvar(val)
+            mop.size = size
         else:
             mop.make_number(val & ((1 << (8 * size)) - 1), size)
 
     @staticmethod
     def _desc(operand, vmap, default_size):
-        """Resolve an LLVM operand to a value descriptor (reg kreg / numeric)."""
+        """Resolve an LLVM operand to a value descriptor (reg kreg / numeric /
+        gvar). A global used as a VALUE is its address (an array global decays;
+        make_gvar carries the symbol)."""
         nm = operand.name
         if nm and nm in vmap:
             return vmap[nm]
         s = str(operand).strip()
+        if nm and "@" in s:
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
+            if ea != ida_idaapi.BADADDR:
+                return ("gvar", ea, default_size)
         num = re.search(r"(-?\d+)\s*$", s)
         if num:
             return ("num", int(num.group(1)), _type_size(s) or default_size)
