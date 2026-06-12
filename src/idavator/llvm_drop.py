@@ -427,13 +427,20 @@ class LLVMDropConverter:
         ops = list(ins.operands)
         callee = ops[-1]
         call_args = ops[:-1]
-        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
-        if callee_ea == ida_idaapi.BADADDR:
-            raise ValueError(f"unresolved callee @{callee.name}")
         _argregs, eax, _ds = self._abi()
         if len(call_args) > len(argregs):
             raise NotImplementedError(
                 "stack-passed call argument (more args than ABI registers)")
+        # Callee: a direct named function/global -> gvar. An indirect call through
+        # an SSA value (function pointer) verifies but won't decompile -- Hex-Rays
+        # needs the callee fn-ptr TYPE to rebuild the call signature; deferred.
+        if callee.name in vmap:
+            raise NotImplementedError(
+                "indirect call (function pointer): needs the callee fn-ptr type "
+                "for Hex-Rays call reconstruction")
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        if callee_ea == ida_idaapi.BADADDR:
+            raise ValueError(f"unresolved callee @{callee.name}")
         for i, a in enumerate(call_args):
             asz = _type_size(a.type)
             mv = hx.minsn_t(ea)
