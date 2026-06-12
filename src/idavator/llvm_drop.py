@@ -1318,14 +1318,18 @@ class LLVMDropConverter:
         The real compiler writes the retval straight to rax on each path. So,
         GATED on a noreturn call being present, route the slot's load/store to the
         return reg (the load aliases rax; each store writes rax) -- matching native
-        and eliminating the post-merge read block. Non-noreturn fns are untouched.
+        and eliminating the post-merge read block.
+
+        Originally GATED on a noreturn call (the only case that INTERRs 50342). But
+        the redundant funcresult routing also makes NON-noreturn + void fns drop
+        silent garbage -- an uninit ``return v1`` (the slot kreg is never written),
+        or a duplicate post-merge read. Writing the return reg straight on each path
+        is what native does universally, so the promotion now fires for ANY fn whose
+        return matches the funcresult-slot SHAPE (a single ret-value name loaded from
+        a non-escaping alloca). The shape gate below (single ret name + load-of-slot
+        + ``_ret_slot_uses_ok``) is the real guard; noreturn is no longer required.
         See memory idavator_drop_noreturn_50342_rootcause.
         """
-        has_noret = any(self._callee_is_noreturn(ins)
-                        for bb in fn.blocks for ins in bb.instructions
-                        if ins.opcode == "call")
-        if not has_noret:
-            return
         ret_names = set()
         for bb in fn.blocks:
             term = list(bb.instructions)[-1]
@@ -1358,13 +1362,10 @@ class LLVMDropConverter:
         the return reg straight on each incoming edge instead of materialising a
         merge var. We record the phi NAME; ``_build_multiblock`` then uses eax as
         that phi's "kreg" (PASS A.5 writes each incoming to eax on its edge, PASS
-        B's ret skips the now-redundant mov). GATED on a noreturn call -- non-
-        noreturn fns keep the ordinary phi-kreg path."""
-        has_noret = any(self._callee_is_noreturn(ins)
-                        for bb in fn.blocks for ins in bb.instructions
-                        if ins.opcode == "call")
-        if not has_noret:
-            return
+        B's ret skips the now-redundant mov). Originally GATED on a noreturn call;
+        generalized alongside ``_detect_ret_slot`` to fire for ANY fn whose ret is a
+        single phi result -- writing the return reg per-edge is what native does and
+        avoids the materialised post-merge read regardless of noreturn."""
         ret_names = set()
         for bb in fn.blocks:
             term = list(bb.instructions)[-1]
@@ -1769,6 +1770,16 @@ class LLVMDropConverter:
             mba.copy_block(retb, retb.serial)
         for s in range(1, needed + 1):
             self._clear(mba.get_mblock(s))
+        # The found host m_ret block keeps its ORIGINAL body, but the drop re-emits
+        # every computation in the minted LLVM blocks and only needs retb as the
+        # bare return sink. A side-effecting leftover (e.g. a leaf fn whose whole
+        # body -- ``*__errno_location()=0x5F; return -1`` -- lives in the ret block)
+        # is NOT dead-code-eliminated and survives as a DUPLICATE store + stale rax
+        # write. Strip retb to its m_ret tail (singleblock does its own full wipe;
+        # only the multiblock sink retb is missed by the 1..needed clear above).
+        while retb.head is not None and retb.head is not retb.tail:
+            retb.remove_from_block(retb.head)
+        retb.mark_lists_dirty()
         for s in range(needed + 1, retb.serial):  # leftover host blocks -> dead
             lb = mba.get_mblock(s)
             self._clear(lb)
