@@ -129,6 +129,16 @@ def _type_size(type_str) -> int:
     return 4
 
 
+def _is_ptr_type(type_str) -> bool:
+    """True if an LLVM type is a pointer (opaque ``ptr`` or a legacy ``T*``).
+    Used to tell a full-pointer slot access from a sub-pointer deref on a
+    pointer-typed alloca."""
+    if getattr(type_str, "is_pointer", False):
+        return True
+    s = str(type_str).strip()
+    return s == "ptr" or s.endswith("*")
+
+
 def _round_up(x: int, a: int) -> int:
     return (x + a - 1) // a * a if a else x
 
@@ -213,6 +223,8 @@ class LLVMDropConverter:
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
+        self._ptr_allocas: dict = {}  # ptr-typed addr_taken alloca name -> stkoff
+        self._ptr_deref_alias: set = set()  # bitcast aliases rooted at a ptr alloca
         self._cur_mba = None         # current mba (make_stkvar needs it)
         self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
@@ -587,9 +599,29 @@ class LLVMDropConverter:
             vmap[ins.name] = ("reg", kreg, size)
             return mi
         if op in _NOOP_CAST:
-            # same-bits cast (ptr<->int, ptr<->ptr): alias the operand, no insn.
-            vmap[ins.name] = self._desc(ops[0], vmap, 8)
-            return anchor
+            # ptrtoint/inttoptr/bitcast are usually bit-identical reinterpretations
+            # (ptr<->int, ptr<->ptr) of the SAME width -- alias the operand, no insn.
+            # But ptrtoint/inttoptr can also CHANGE width (e.g. `ptrtoint i8* %p to
+            # i8` truncates 8->1, `inttoptr i32 %x to ptr` widens 4->8); a width
+            # change is a REAL narrow/widen, not an alias, and must lower like
+            # trunc/zext (m_low / m_xdu into a fresh kreg). Otherwise the consumer
+            # -- typically an icmp folded to a conditional jump -- sees an operand
+            # whose size mismatches its comparand (`m_jz l=kr.8 r=#0.1`) and the
+            # verifier rejects it (INTERR 50831, verify.cpp conditional-branch
+            # operand-size check requires l.size == r.size).
+            in_sz = _type_size(ops[0].type)
+            out_sz = _type_size(ins.type)
+            if in_sz == out_sz or out_sz == 0 or in_sz == 0:
+                vmap[ins.name] = self._desc(ops[0], vmap, 8)
+                return anchor
+            mi = hx.minsn_t(ea)
+            mi.opcode = hx.m_low if out_sz < in_sz else hx.m_xdu
+            self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
+            return mi
         if op in _CAST:
             in_sz = _type_size(ops[0].type)
             out_sz = _type_size(ins.type)
@@ -618,6 +650,33 @@ class LLVMDropConverter:
                 _ar, eax, _d = self._abi()
                 vmap[ins.name] = ("reg", eax, out_sz)
                 return anchor
+            if (ops[0].name in self._ptr_deref_alias
+                    and not _is_ptr_type(ins.type) and out_sz < 8):
+                # *X (deref) of a pointer-alloca slot: the lifter reaches it via a
+                # no-op bitcast and a SUB-pointer load (e.g. `*name` as i8). Read
+                # the slot's POINTER value, then ldx through it -- native's
+                # `mov %X, r; ldx ds, r`. A pointer-width load (i64/ptr) is left
+                # as a slot read: the lifter type-puns BOTH a full pointer-value
+                # read AND `*X` as `load i64, bitcast %X`, and only the binary's
+                # own analysis (which idavator must match) disambiguates them --
+                # a sub-pointer width is the one unambiguous deref.
+                poff = self._ptr_deref_off(ops[0], vmap)
+                pr = mba.alloc_kreg(8)
+                mv = hx.minsn_t(ea)
+                mv.opcode = hx.m_mov
+                mv.l.make_stkvar(mba, poff)
+                mv.l.size = 8
+                mv.d.make_reg(pr, 8)
+                blk.insert_into_block(mv, anchor)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_ldx
+                mi.l.make_reg(ds, 2)
+                mi.r.make_reg(pr, 8)
+                kreg = mba.alloc_kreg(out_sz)
+                mi.d.make_reg(kreg, out_sz)
+                blk.insert_into_block(mi, mv)
+                vmap[ins.name] = ("reg", kreg, out_sz)
+                return mi
             slot = self._allocas.get(ops[0].name)
             if slot is not None:
                 # %v = load <ty>, ptr %a  (a is a scalar slot) -> mov slot, v
@@ -676,6 +735,30 @@ class LLVMDropConverter:
                 self._fill(mi.l, (vd[0], vd[1], val_sz))
                 mi.d.make_reg(eax, val_sz)
                 blk.insert_into_block(mi, anchor)
+                return mi
+            if (ops[1].name in self._ptr_deref_alias
+                    and not _is_ptr_type(ops[0].type) and val_sz < 8):
+                # *X = v (deref write) of a pointer-alloca slot: a SUB-pointer
+                # store through the no-op bitcast writes a field of *X (e.g.
+                # `oa->style = 10`). Read the slot's POINTER value, then stx
+                # through it -- native's `mov %X, r; stx v, ds, r`. A full
+                # pointer-width store (val_sz == 8 / ptr valtype) instead DEFINES
+                # the pointer and falls through to the slot-write path below
+                # (e.g. `bucket = *table`, `oa = &default`).
+                poff = self._ptr_deref_off(ops[1], vmap)
+                pr = mba.alloc_kreg(8)
+                mv = hx.minsn_t(ea)
+                mv.opcode = hx.m_mov
+                mv.l.make_stkvar(mba, poff)
+                mv.l.size = 8
+                mv.d.make_reg(pr, 8)
+                blk.insert_into_block(mv, anchor)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_stx
+                self._fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.r.make_reg(ds, 2)
+                mi.d.make_reg(pr, 8)
+                blk.insert_into_block(mi, mv)
                 return mi
             slot = self._allocas.get(ops[1].name)
             if slot is not None:
@@ -1194,6 +1277,43 @@ class LLVMDropConverter:
             key = re.sub(r"\.\d+$", "", key)
         return key if key in self._struct_size else None
 
+    @staticmethod
+    def _alloca_is_ptr(ins) -> bool:
+        """True if ``ins`` is ``alloca ptr`` (or ``alloca T*``) -- a slot that
+        holds a single pointer value. Such a slot is type-punned by the lifter:
+        ``bitcast %slot`` reaches both the pointer itself and ``*slot``."""
+        m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
+        ty = m.group(1).strip() if m else ""
+        return ty == "ptr" or ty.endswith("*")
+
+    def _scan_ptr_deref_aliases(self, fn) -> None:
+        """SSA names that are a no-op ``bitcast`` chain rooted DIRECTLY at a
+        pointer-typed addr-taken alloca (``self._ptr_allocas``), with no ``load``
+        or ``getelementptr`` in between.
+
+        The lifter emits ``*X`` (deref) as ``bitcast %X to ptr; load/store <ty>``
+        -- the bitcast reinterprets the SLOT but the intent is the pointee. A
+        DIRECT slot access uses ``load/store ... ptr %X`` (no bitcast) or
+        ``load ptr, bitcast %X`` (the full pointer value). Recording the
+        direct-bitcast aliases lets the load/store emit apply the deref-vs-slot
+        rule by valtype (see ``_emit_value``); a deref of a pointer LOADED from
+        the slot (``load ptr, %X; bitcast; gep``) already works via the generic
+        ldx/stx path and is intentionally NOT in this set."""
+        self._ptr_deref_alias = set()
+        if not self._ptr_allocas:
+            return
+        changed = True
+        while changed:
+            changed = False
+            for bb in fn.blocks:
+                for ins in bb.instructions:
+                    if ins.opcode != "bitcast" or ins.name in self._ptr_deref_alias:
+                        continue
+                    src = list(ins.operands)[0].name
+                    if src in self._ptr_allocas or src in self._ptr_deref_alias:
+                        self._ptr_deref_alias.add(ins.name)
+                        changed = True
+
     def _alloca_elem_size(self, ins) -> int:
         m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
         ty = m.group(1).strip() if m else "i64"
@@ -1206,6 +1326,18 @@ class LLVMDropConverter:
         if key is not None:
             return self._struct_size[key][0]
         return _type_size(ty)
+
+    def _ptr_deref_off(self, operand, vmap) -> int:
+        """Frame offset of the pointer-alloca slot a ``_ptr_deref_alias`` operand
+        is rooted at. The alias is a no-op ``bitcast`` chain over the alloca, so
+        its resolved stkaddr offset IS the slot offset."""
+        d = vmap.get(operand.name)
+        if d is not None and d[0] == "stkaddr":
+            return d[1]
+        s = self._addr_taken.get(operand.name)
+        if s is not None:
+            return s[0]
+        raise ValueError(f"ptr-deref alias {operand.name!r} did not resolve")
 
     def _stkvar_slot(self, operand, vmap):
         """(stkoff, size) if ``operand`` addresses a frame slot -- an
@@ -1295,6 +1427,7 @@ class LLVMDropConverter:
         # uses the true frame offsets; matching them by name de-collides the slot.
         host_off = self._host_frame_offsets(mba)
         struct_allocas: set = set()
+        self._ptr_allocas = {}
         allocas = {}
         off = 0
         for bb in fn.blocks:
@@ -1321,6 +1454,14 @@ class LLVMDropConverter:
                     # existing host frame slot -- NO frame extension (the
                     # subframe INTERR chain). Distinct 8-aligned offsets.
                     self._addr_taken[nm] = (off, sz)
+                    if self._alloca_is_ptr(ins):
+                        # A pointer-typed slot: the lifter type-puns it via a no-op
+                        # ``bitcast %slot`` for BOTH the pointer value (slot access)
+                        # and a deref ``*slot`` (sub-pointer load/store). Record it
+                        # so the load/store emit can tell the two apart (the deref
+                        # alias set + valtype rule, mirroring native's
+                        # ``mov %slot, r; ldx ds, r``).
+                        self._ptr_allocas[nm] = off
                     off += max(sz, 8)
                 else:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
@@ -1584,6 +1725,7 @@ class LLVMDropConverter:
                         pred.group(1) if pred else "ne", list(ins.operands))
 
         self._allocas = self._scan_allocas(mba, fn)
+        self._scan_ptr_deref_aliases(fn)
         self._detect_ret_slot(fn)
         self._detect_ret_phi(fn)
         vmap: dict[str, tuple] = {}
