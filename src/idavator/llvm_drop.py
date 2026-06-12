@@ -41,14 +41,19 @@ _BINOP = {
 _CAST = {"zext": hx.m_xdu, "sext": hx.m_xds, "trunc": hx.m_low}
 
 
-def _type_size(type_str: str) -> int:
+def _type_size(type_str) -> int:
+    # llvmlite uses OPAQUE pointers (LLVM 14+): a pointer stringifies to "ptr",
+    # not "i32*", and the pointee type is lost -- so a string "*" probe misses it.
+    # Detect the pointer first via the structured ``is_pointer`` flag.
+    if getattr(type_str, "is_pointer", False):
+        return 8
     s = str(type_str)
+    if s == "ptr" or "*" in s:
+        return 8
     for tok, sz in (("i64", 8), ("i32", 4), ("i16", 2), ("i8", 1), ("i1", 1),
                     ("double", 8), ("float", 4)):
         if tok in s:
             return sz
-    if "*" in s:
-        return 8
     return 4
 
 
@@ -97,8 +102,40 @@ class LLVMDropConverter:
 
     # -- internals -------------------------------------------------------
     @staticmethod
-    def _force_prototype(host_ea: int, fn) -> None:
-        params = ", ".join(f"int a{i}" for i in range(len(list(fn.arguments)))) or "void"
+    def _pointee_size(fn, arg) -> int:
+        """Opaque pointers drop the pointee type; recover the access width from
+        the first load/store that consumes ``arg`` (default 4)."""
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                ops = list(ins.operands)
+                if ins.opcode == "load" and ops and ops[0].name == arg.name:
+                    return _type_size(ins.type)
+                if (ins.opcode == "store" and len(ops) >= 2
+                        and ops[1].name == arg.name):
+                    return _type_size(ops[0].type)
+        return 4
+
+    @classmethod
+    def _arg_ctype(cls, arg, fn) -> str:
+        if getattr(arg.type, "is_pointer", False) or str(arg.type) == "ptr":
+            # Match the pointee C type to the access width so an N-byte ldx/stx
+            # renders as a clean ``*a`` (no reinterpret cast).
+            return {1: "char *", 2: "__int16 *", 4: "_DWORD *",
+                    8: "__int64 *"}.get(cls._pointee_size(fn, arg), "_DWORD *")
+        s = str(arg.type)
+        if "i64" in s:
+            return "__int64"
+        if "i16" in s:
+            return "__int16"
+        if "i8" in s:
+            return "char"
+        return "int"
+
+    @classmethod
+    def _force_prototype(cls, host_ea: int, fn) -> None:
+        args = list(fn.arguments)
+        params = ", ".join(f"{cls._arg_ctype(a, fn)} a{i}"
+                           for i, a in enumerate(args)) or "void"
         tif = ida_typeinf.tinfo_t()
         ida_typeinf.parse_decl(tif, None, f"int __fastcall f({params});", 0)
         ida_typeinf.apply_tinfo(host_ea, tif, ida_typeinf.TINFO_DEFINITE)
@@ -107,10 +144,11 @@ class LLVMDropConverter:
     def _abi():
         argregs = [hx.reg2mreg(ida_idp.str2reg(r))
                    for r in ("rdi", "rsi", "rdx", "rcx", "r8", "r9")]
-        return argregs, hx.reg2mreg(ida_idp.str2reg("rax"))
+        return (argregs, hx.reg2mreg(ida_idp.str2reg("rax")),
+                hx.reg2mreg(ida_idp.str2reg("ds")))
 
     def _build(self, mba, fn) -> None:
-        argregs, eax = self._abi()
+        argregs, eax, ds = self._abi()
         # ret block (kept; block 0 + last must stay empty -- INTERR 51814).
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
@@ -190,6 +228,31 @@ class LLVMDropConverter:
                 retb.insert_into_block(mi, anchor)
                 anchor = mi
                 vmap[ins.name] = ("reg", kreg, out_sz)
+            elif op == "load":
+                # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
+                out_sz = _type_size(ins.type)
+                ad = desc(ops[0], 8)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_ldx
+                mi.l.make_reg(ds, 2)
+                fill(mi.r, (ad[0], ad[1], 8))
+                kreg = mba.alloc_kreg(out_sz)
+                mi.d.make_reg(kreg, out_sz)
+                retb.insert_into_block(mi, anchor)
+                anchor = mi
+                vmap[ins.name] = ("reg", kreg, out_sz)
+            elif op == "store":
+                # store <ty> %v, <ty>* %p  ->  stx v, ds, p
+                val_sz = _type_size(ops[0].type)
+                vd = desc(ops[0], val_sz)
+                ad = desc(ops[1], 8)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_stx
+                fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.r.make_reg(ds, 2)
+                fill(mi.d, (ad[0], ad[1], 8))
+                retb.insert_into_block(mi, anchor)
+                anchor = mi
             elif op == "ret":
                 if ops:
                     mi = hx.minsn_t(ea)

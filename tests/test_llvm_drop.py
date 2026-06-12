@@ -51,6 +51,14 @@ class TestLLVMDropModule:
             ("define i32 @h(i32 %x, i32 %y) {\n  %a = xor i32 %x, %y\n"
              "  ret i32 %a\n}\n",
              "h", ["^"]),
+            # memory: load through a pointer arg.
+            ("define i32 @ld(i32* %p) {\n  %v = load i32, i32* %p\n"
+             "  %r = add i32 %v, 1\n  ret i32 %r\n}\n",
+             "ld", ["*a0", "+ 1"]),
+            # memory: store through a pointer arg.
+            ("define i32 @st(i32* %p, i32 %v) {\n  store i32 %v, i32* %p\n"
+             "  ret i32 %v\n}\n",
+             "st", ["*a0 = a1"]),
         ],
     )
     def test_straight_line_drops(self, examples_dir: Path, ir, fn, must_contain):
