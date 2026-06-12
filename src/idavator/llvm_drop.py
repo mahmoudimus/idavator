@@ -322,11 +322,22 @@ class LLVMDropConverter:
                 anchor = self._emit_value(mba, retb, anchor, ea, ins, vmap, ds)
         retb.mark_lists_dirty()
 
+    @staticmethod
+    def _phi_incomings(ins):
+        """[(value_operand, pred_block_name)] for a phi. The incoming labels are
+        text-only (not in .operands), so zip the value operands (textual order)
+        with the labels parsed from str(ins)."""
+        ops = list(ins.operands)
+        preds = re.findall(r"\[\s*[^,\[\]]+,\s*%([\w.]+)\s*\]", str(ins))
+        return list(zip(ops, preds))
+
     def _build_multiblock(self, mba, fn, retb, eax, ds, vmap) -> None:
         """One microcode block per LLVM block. Conditional ``br`` lowers to a
-        2-way jump whose FALSE arm is a trampoline placed at serial+1 (the jcc
-        fall-through is structurally the next block). Hex-Rays rebuilds the CFG
-        + lvars from these terminators after PREOPTIMIZED."""
+        2-way jump whose FALSE arm is a trampoline at serial+1 (the jcc
+        fall-through is structurally the next block); a TRUE-arm trampoline is
+        added lazily when a phi needs that edge. phi is destructed out of SSA by
+        copying each incoming value into the phi's kreg on its edge block.
+        Hex-Rays rebuilds the CFG + lvars from these terminators."""
         ea = mba.entry_ea
         llvm_blocks = list(fn.blocks)
 
@@ -339,33 +350,48 @@ class LLVMDropConverter:
                     icmp_map[ins.name] = (pred.group(1) if pred else "ne",
                                           list(ins.operands))
 
-        # Plan the physical serial layout: code block per LLVM block, plus a
-        # trampoline immediately after each conditional branch.
+        # Pre-scan phi nodes -> per-block list + the set of edges needing a copy.
+        phis: dict[str, list] = {}
+        edges_need_copy: set[tuple] = set()
+        for bb in llvm_blocks:
+            bps = [(ins.name, ins, self._phi_incomings(ins))
+                   for ins in bb.instructions if ins.opcode == "phi"]
+            if bps:
+                phis[bb.name] = bps
+                for _, _, incs in bps:
+                    for _val, pred_name in incs:
+                        edges_need_copy.add((pred_name, bb.name))
+
+        # Plan the physical serial layout. Conditional br always gets a FALSE
+        # trampoline (the fall-through); the TRUE arm gets one only if a phi
+        # needs to drop a copy on that edge.
         plan, serial = [], 1
         for bb in llvm_blocks:
             term = list(bb.instructions)[-1]
-            is_cond = term.opcode == "br" and len(list(term.operands)) == 3
-            entry = {"bb": bb, "term": term, "code": serial, "tramp": None}
+            ops = list(term.operands)  # materialize: it's a one-shot iterator
+            is_cond = term.opcode == "br" and len(ops) == 3
+            e = {"bb": bb, "term": term, "code": serial,
+                 "ftramp": None, "ttramp": None}
             serial += 1
             if is_cond:
-                entry["tramp"] = serial
+                e["ftramp"] = serial
                 serial += 1
-            plan.append(entry)
+                if (bb.name, ops[2].name) in edges_need_copy:
+                    e["ttramp"] = serial
+                    serial += 1
+            plan.append(e)
         needed = serial - 1
         name_serial = {e["bb"].name: e["code"] for e in plan}
+        by_name = {e["bb"].name: e for e in plan}
 
         # Mint enough code blocks before retb (copy_block inherits a valid
-        # start/end; INTERR 50869 otherwise). Existing host code blocks are
-        # serials 1..retb.serial-1; mint the remainder right before retb.
+        # start/end; INTERR 50869 otherwise), then clear serials 1..needed.
         avail = retb.serial - 1
         for _ in range(max(0, needed - avail)):
             mba.copy_block(retb, retb.serial)
-        # Now serials 1..needed are code blocks; retb at needed+1. Clear them
-        # all (drops any copied m_ret) before emitting.
         for s in range(1, needed + 1):
             self._clear(mba.get_mblock(s))
-        # Any leftover host blocks between our code and retb -> dead goto retb.
-        for s in range(needed + 1, retb.serial):
+        for s in range(needed + 1, retb.serial):  # leftover host blocks -> dead
             lb = mba.get_mblock(s)
             self._clear(lb)
             g = hx.minsn_t(ea)
@@ -375,15 +401,60 @@ class LLVMDropConverter:
             lb.type = hx.BLT_1WAY
             self._wire(lb, [retb.serial])
 
+        # phi result kregs must exist before pass A (the phi's own block reads
+        # them); register them in vmap up front.
+        phi_kreg: dict[str, tuple] = {}
+        for bps in phis.values():
+            for pname, pins, _ in bps:
+                sz = _type_size(pins.type)
+                kreg = mba.alloc_kreg(sz)
+                phi_kreg[pname] = (kreg, sz)
+                vmap[pname] = ("reg", kreg, sz)
+
+        # PASS A: emit value instructions (skip phi + terminator) into each
+        # code block, populating vmap with kregs for every SSA result.
+        for e in plan:
+            blk = mba.get_mblock(e["code"])
+            anchor = None
+            for ins in e["bb"].instructions:
+                if ins is e["term"]:
+                    break
+                if ins.opcode == "phi":
+                    continue
+                anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
+
+        # PASS A.5: out-of-SSA phi copies onto each incoming edge block (these
+        # append after the values; pass B appends the terminator after them, so
+        # the copy always precedes the branch on that edge).
+        def edge_serial(pred_name, target_name):
+            pe = by_name[pred_name]
+            t = pe["term"]
+            tops = list(t.operands)
+            if t.opcode == "br" and len(tops) == 1:
+                return pe["code"]
+            if t.opcode == "br":
+                if tops[1].name == target_name:
+                    return pe["ftramp"]
+                if tops[2].name == target_name:
+                    return pe["ttramp"]
+            raise ValueError(f"no edge {pred_name}->{target_name}")
+
+        for bname, bps in phis.items():
+            for pname, _pins, incs in bps:
+                kreg, sz = phi_kreg[pname]
+                for val_op, pred_name in incs:
+                    eb = mba.get_mblock(edge_serial(pred_name, bname))
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_mov
+                    self._fill(mi.l, self._desc(val_op, vmap, sz))
+                    mi.d.make_reg(kreg, sz)
+                    eb.insert_into_block(mi, eb.tail)
+
+        # PASS B: terminators + edge wiring (append after values/phi-copies).
         for e in plan:
             blk = mba.get_mblock(e["code"])
             term, ops = e["term"], list(e["term"].operands)
-            anchor = None
-            for ins in e["bb"].instructions:
-                if ins is term:
-                    break
-                anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
-
+            anchor = blk.tail
             if term.opcode == "ret":
                 anchor = self._emit_ret_value(blk, anchor, ea, term, eax, vmap)
                 g = hx.minsn_t(ea)
@@ -393,16 +464,17 @@ class LLVMDropConverter:
                 blk.type = hx.BLT_1WAY
                 self._wire(blk, [retb.serial])
             elif term.opcode == "br" and len(ops) == 1:
-                # unconditional br %T
+                tgt = name_serial[ops[0].name]
                 g = hx.minsn_t(ea)
                 g.opcode = hx.m_goto
-                g.l.make_blkref(name_serial[ops[0].name])
+                g.l.make_blkref(tgt)
                 blk.insert_into_block(g, anchor)
                 blk.type = hx.BLT_1WAY
-                self._wire(blk, [name_serial[ops[0].name]])
+                self._wire(blk, [tgt])
             elif term.opcode == "br":
                 # br %cond, %false, %true  (llvmlite operand order!)
-                cond, false_s = ops[0], name_serial[ops[1].name]
+                cond = ops[0]
+                false_s = name_serial[ops[1].name]
                 true_s = name_serial[ops[2].name]
                 mi = hx.minsn_t(ea)
                 if cond.name in icmp_map:
@@ -416,18 +488,27 @@ class LLVMDropConverter:
                     mi.opcode = hx.m_jnz  # jump to TRUE when cond != 0
                     self._fill(mi.l, self._desc(cond, vmap, sz))
                     mi.r.make_number(0, sz)
-                mi.d.make_blkref(true_s)
+                # taken arm = true trampoline (if any) else the true block.
+                taken = e["ttramp"] if e["ttramp"] else true_s
+                mi.d.make_blkref(taken)
                 blk.insert_into_block(mi, anchor)
                 blk.type = hx.BLT_2WAY
-                # succset = [fall-through (trampoline), taken (true)].
-                self._wire(blk, [e["tramp"], true_s])
-                tramp = mba.get_mblock(e["tramp"])
-                g = hx.minsn_t(ea)
-                g.opcode = hx.m_goto
-                g.l.make_blkref(false_s)
-                tramp.insert_into_block(g, None)
-                tramp.type = hx.BLT_1WAY
-                self._wire(tramp, [false_s])
+                self._wire(blk, [e["ftramp"], taken])  # [fall-through, taken]
+                ft = mba.get_mblock(e["ftramp"])
+                gf = hx.minsn_t(ea)
+                gf.opcode = hx.m_goto
+                gf.l.make_blkref(false_s)
+                ft.insert_into_block(gf, ft.tail)
+                ft.type = hx.BLT_1WAY
+                self._wire(ft, [false_s])
+                if e["ttramp"]:
+                    tt = mba.get_mblock(e["ttramp"])
+                    gt = hx.minsn_t(ea)
+                    gt.opcode = hx.m_goto
+                    gt.l.make_blkref(true_s)
+                    tt.insert_into_block(gt, tt.tail)
+                    tt.type = hx.BLT_1WAY
+                    self._wire(tt, [true_s])
             else:
                 raise NotImplementedError(
                     f"unhandled terminator {term.opcode!r}")
