@@ -59,6 +59,15 @@ _ICMP_JMP = {
     "sgt": hx.m_jg, "sge": hx.m_jge, "slt": hx.m_jl, "sle": hx.m_jle,
 }
 
+# icmp predicate -> a setcc that materialises the i1 result as a 1-byte value
+# (``d = (l <pred> r) ? 1 : 0``). Used when an icmp result is CONSUMED as a value
+# (a ``select`` condition / short-circuit arm) rather than folded into a branch.
+_ICMP_SET = {
+    "eq": hx.m_setz, "ne": hx.m_setnz,
+    "ugt": hx.m_seta, "uge": hx.m_setae, "ult": hx.m_setb, "ule": hx.m_setbe,
+    "sgt": hx.m_setg, "sge": hx.m_setge, "slt": hx.m_setl, "sle": hx.m_setle,
+}
+
 # IDA rotate intrinsics that survive into FAITHFUL pseudocode (e.g. rotr_sz ->
 # `return __ROR8__(a0, a1)`) -> emit as a Hex-Rays helper call. Deliberately NOT
 # the stack canary (`__readfsqword`/`__stack_chk_fail`): the decompiler ELIDES
@@ -210,6 +219,7 @@ class LLVMDropConverter:
         self._ret_off = None         # frame off of a promoted return slot, or None
         self._ret_kreg = None        # kreg of a promoted scalar return slot, or None
         self._ret_phi = None         # name of a phi whose result feeds `ret`, or None
+        self._icmp_defs = {}         # icmp SSA name -> (pred, [operands]) for select
         self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
@@ -496,6 +506,34 @@ class LLVMDropConverter:
             ins = nxt
         blk.mark_lists_dirty()
 
+    def _emit_i1(self, mba, blk, anchor, ea, operand, vmap):
+        """Materialise an i1 ``operand`` as a 1-byte value descriptor, returning
+        ``(desc, anchor)``. An icmp result (otherwise folded into a branch, never
+        in ``vmap``) is emitted here as a ``setcc`` (``d = (l <pred> r) ? 1 : 0``);
+        a constant ``true``/``false`` -> 1/0; anything already resolvable (a prior
+        select result, a value arg) -> ``_desc``. Needed because ``select`` (and a
+        short-circuit ``select`` arm) consumes an i1 as a VALUE."""
+        nm = operand.name
+        if nm and nm in self._icmp_defs and nm not in vmap:
+            pred, iops = self._icmp_defs[nm]
+            isz = _type_size(iops[0].type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = _ICMP_SET.get(pred, hx.m_setnz)
+            self._fill(mi.l, self._desc(iops[0], vmap, isz))
+            self._fill(mi.r, self._desc(iops[1], vmap, isz))
+            kreg = mba.alloc_kreg(1)
+            mi.d.make_reg(kreg, 1)
+            blk.insert_into_block(mi, anchor)
+            vmap[nm] = ("reg", kreg, 1)
+            return ("reg", kreg, 1), mi
+        s = str(operand).strip()
+        if s.split()[-1:] == ["true"]:
+            return ("num", 1, 1), anchor
+        if s.split()[-1:] == ["false"]:
+            return ("num", 0, 1), anchor
+        d = self._desc(operand, vmap, 1)
+        return (d[0], d[1], 1), anchor
+
     def _emit_value(self, mba, blk, anchor, ea, ins, vmap, ds):
         """Emit one non-terminator LLVM instruction into ``blk`` before
         ``anchor``; record its SSA result in ``vmap``. Returns the new anchor."""
@@ -695,6 +733,8 @@ class LLVMDropConverter:
         if op == "icmp":
             # Folded into the branch (see _build_multiblock); no value emitted.
             return anchor
+        if op == "select":
+            return self._emit_select(mba, blk, anchor, ea, ins, vmap)
         if op == "call":
             callee = list(ins.operands)[-1].name
             if callee in ("__readfsqword", "__readgsqword"):
@@ -713,6 +753,168 @@ class LLVMDropConverter:
                                "(handled by the segment splitter, not _emit_value)")
         logger.warning("unhandled LLVM opcode: %s", op)
         return anchor
+
+    def _emit_select(self, mba, blk, anchor, ea, ins, vmap):
+        """Lower ``%r = select i1 %c, T %a, T %b`` (a branchless ternary).
+
+        Three forms, all branchless (a 2-way merge can re-trip the noreturn-merge
+        INTERR family -- avoid emitting one):
+
+        - SHORT-CIRCUIT boolean (one arm a constant i1): instcombine emits
+          ``select i1 %c, i1 true,  i1 %b`` == ``%c | %b`` (or.cond) and
+          ``select i1 %c, i1 %a,    i1 false`` == ``%c & %a`` (and.cond). Lower to
+          ``m_or``/``m_and`` on the two 1-byte i1 operands (each materialised via
+          ``_emit_i1`` -- an icmp arm becomes a setcc). Exact and cheap.
+        - BOOLEAN MATERIALISE ``select i1 %c, <N> 1, <N> 0`` == ``zext c to N``:
+          the (1-byte) condition widened to the result width.
+        - GENERAL ``select i1 %c, T %a, T %b``: a branchless blend
+          ``r = b + ((a - b) & mask)`` where ``mask = 0 - (T)c`` is all-ones when
+          ``c`` else 0 (so ``r == a`` when ``c``, else ``b``). T is the arm width."""
+        ops = list(ins.operands)
+        cond, tval, fval = ops[0], ops[1], ops[2]
+        out_sz = _type_size(ins.type)
+        ts, fs = str(tval).strip(), str(fval).strip()
+        t_is_i1 = _type_size(tval.type) == 1 and "i1" in str(tval.type)
+        f_is_i1 = _type_size(fval.type) == 1 and "i1" in str(fval.type)
+
+        # SHORT-CIRCUIT: a constant i1 arm collapses to a bitwise op on the i1s.
+        if t_is_i1 and ts.split()[-1:] == ["true"]:
+            # select c, true, b  ==  c | b
+            cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+            bd, anchor = self._emit_i1(mba, blk, anchor, ea, fval, vmap)
+            return self._emit_bool_binop(mba, blk, anchor, ea, ins, hx.m_or, cd,
+                                         bd, vmap, out_sz)
+        if f_is_i1 and fs.split()[-1:] == ["false"]:
+            # select c, a, false  ==  c & a
+            cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+            ad, anchor = self._emit_i1(mba, blk, anchor, ea, tval, vmap)
+            return self._emit_bool_binop(mba, blk, anchor, ea, ins, hx.m_and, cd,
+                                         ad, vmap, out_sz)
+        if f_is_i1 and fs.split()[-1:] == ["true"]:
+            # select c, a, true  ==  !c | a  ==  (c==0) | a
+            cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+            ad, anchor = self._emit_i1(mba, blk, anchor, ea, tval, vmap)
+            nc = hx.minsn_t(ea)
+            nc.opcode = hx.m_setz
+            self._fill(nc.l, cd)
+            nc.r.make_number(0, 1)
+            nk = mba.alloc_kreg(1)
+            nc.d.make_reg(nk, 1)
+            blk.insert_into_block(nc, anchor)
+            anchor = nc
+            return self._emit_bool_binop(mba, blk, anchor, ea, ins, hx.m_or,
+                                         ("reg", nk, 1), ad, vmap, out_sz)
+        if t_is_i1 and ts.split()[-1:] == ["false"]:
+            # select c, false, b  ==  !c & b
+            cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+            bd, anchor = self._emit_i1(mba, blk, anchor, ea, fval, vmap)
+            nc = hx.minsn_t(ea)
+            nc.opcode = hx.m_setz
+            self._fill(nc.l, cd)
+            nc.r.make_number(0, 1)
+            nk = mba.alloc_kreg(1)
+            nc.d.make_reg(nk, 1)
+            blk.insert_into_block(nc, anchor)
+            anchor = nc
+            return self._emit_bool_binop(mba, blk, anchor, ea, ins, hx.m_and,
+                                         ("reg", nk, 1), bd, vmap, out_sz)
+
+        # BOOLEAN MATERIALISE: select c, 1, 0  ==  zext c.
+        td = self._desc(tval, vmap, out_sz) if tval.name not in self._icmp_defs \
+            else None
+        fd = self._desc(fval, vmap, out_sz) if fval.name not in self._icmp_defs \
+            else None
+        if (td and td[0] == "num" and td[1] == 1
+                and fd and fd[0] == "num" and fd[1] == 0):
+            cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+            if out_sz == 1:
+                vmap[ins.name] = (cd[0], cd[1], 1)
+                return anchor
+            mi = hx.minsn_t(ea)
+            mi.opcode = hx.m_xdu
+            self._fill(mi.l, cd)
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
+            return mi
+
+        # GENERAL branchless blend: r = b + ((a - b) & mask), mask = 0 - (T)c.
+        ad = self._desc(tval, vmap, out_sz)
+        bd = self._desc(fval, vmap, out_sz)
+        cd, anchor = self._emit_i1(mba, blk, anchor, ea, cond, vmap)
+        # mask = 0 - zext(c, out_sz)  (all-ones when c, else 0).
+        if out_sz != 1:
+            zc = hx.minsn_t(ea)
+            zc.opcode = hx.m_xdu
+            self._fill(zc.l, cd)
+            zk = mba.alloc_kreg(out_sz)
+            zc.d.make_reg(zk, out_sz)
+            blk.insert_into_block(zc, anchor)
+            anchor = zc
+            cwide = ("reg", zk, out_sz)
+        else:
+            cwide = cd
+        mneg = hx.minsn_t(ea)
+        mneg.opcode = hx.m_neg
+        self._fill(mneg.l, (cwide[0], cwide[1], out_sz))
+        mk = mba.alloc_kreg(out_sz)
+        mneg.d.make_reg(mk, out_sz)
+        blk.insert_into_block(mneg, anchor)
+        anchor = mneg
+        # diff = a - b
+        sub = hx.minsn_t(ea)
+        sub.opcode = hx.m_sub
+        self._fill(sub.l, (ad[0], ad[1], out_sz))
+        self._fill(sub.r, (bd[0], bd[1], out_sz))
+        sk = mba.alloc_kreg(out_sz)
+        sub.d.make_reg(sk, out_sz)
+        blk.insert_into_block(sub, anchor)
+        anchor = sub
+        # masked = diff & mask
+        msk = hx.minsn_t(ea)
+        msk.opcode = hx.m_and
+        msk.l.make_reg(sk, out_sz)
+        msk.r.make_reg(mk, out_sz)
+        ck = mba.alloc_kreg(out_sz)
+        msk.d.make_reg(ck, out_sz)
+        blk.insert_into_block(msk, anchor)
+        anchor = msk
+        # result = b + masked
+        add = hx.minsn_t(ea)
+        add.opcode = hx.m_add
+        self._fill(add.l, (bd[0], bd[1], out_sz))
+        add.r.make_reg(ck, out_sz)
+        rk = mba.alloc_kreg(out_sz)
+        add.d.make_reg(rk, out_sz)
+        blk.insert_into_block(add, anchor)
+        vmap[ins.name] = ("reg", rk, out_sz)
+        return add
+
+    def _emit_bool_binop(self, mba, blk, anchor, ea, ins, opcode, ld, rd, vmap,
+                         out_sz):
+        """Emit ``d = ld <opcode> rd`` (m_or/m_and on two 1-byte i1 values) for a
+        short-circuit select; record the 1-byte result in ``vmap`` (widened to the
+        select's result width if it is wider than i1)."""
+        mi = hx.minsn_t(ea)
+        mi.opcode = opcode
+        self._fill(mi.l, (ld[0], ld[1], 1))
+        self._fill(mi.r, (rd[0], rd[1], 1))
+        bk = mba.alloc_kreg(1)
+        mi.d.make_reg(bk, 1)
+        blk.insert_into_block(mi, anchor)
+        anchor = mi
+        if out_sz == 1:
+            vmap[ins.name] = ("reg", bk, 1)
+            return mi
+        wi = hx.minsn_t(ea)
+        wi.opcode = hx.m_xdu
+        wi.l.make_reg(bk, 1)
+        wk = mba.alloc_kreg(out_sz)
+        wi.d.make_reg(wk, out_sz)
+        blk.insert_into_block(wi, anchor)
+        vmap[ins.name] = ("reg", wk, out_sz)
+        return wi
 
     def _emit_call(self, mba, blk, anchor, ea, ins, vmap, argregs):
         """Emit `mov`s into the ABI arg-regs then `m_call l=gvar(callee), d=rax`
@@ -1284,6 +1486,17 @@ class LLVMDropConverter:
         if retb is None:
             retb = self._synthesize_ret_block(mba)
 
+        # icmp defs (name -> (pred, operands)): a `select` consuming an icmp result
+        # as a value materialises it via setcc (icmp itself is otherwise folded into
+        # branches and emits nothing). _build_multiblock reuses this for the br fold.
+        self._icmp_defs = {}
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "icmp":
+                    pred = re.search(r"icmp\s+(\w+)\s", str(ins).strip())
+                    self._icmp_defs[ins.name] = (
+                        pred.group(1) if pred else "ne", list(ins.operands))
+
         self._allocas = self._scan_allocas(mba, fn)
         self._detect_ret_slot(fn)
         self._detect_ret_phi(fn)
@@ -1424,14 +1637,9 @@ class LLVMDropConverter:
         argregs, _eax, _ds = self._abi()
         llvm_blocks = list(fn.blocks)
 
-        # Pre-scan icmp defs so a `br %c` can fold its compare into the jump.
-        icmp_map: dict[str, tuple] = {}
-        for bb in llvm_blocks:
-            for ins in bb.instructions:
-                if ins.opcode == "icmp":
-                    pred = re.search(r"icmp\s+(\w+)\s", str(ins).strip())
-                    icmp_map[ins.name] = (pred.group(1) if pred else "ne",
-                                          list(ins.operands))
+        # icmp defs (for a `br %c` to fold its compare into the jump) were scanned
+        # in _build (shared with the select->setcc materialisation).
+        icmp_map = self._icmp_defs
 
         # Pre-scan phi nodes -> per-block list + the set of edges needing a copy.
         phis: dict[str, list] = {}
