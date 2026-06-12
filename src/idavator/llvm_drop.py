@@ -411,6 +411,11 @@ class LLVMDropConverter:
             mop.t = hx.mop_a
             mop.a = inner
             mop.size = 8
+        elif kind == "stkvar":
+            # The VALUE held in a host frame slot (an incoming >6th param spilled
+            # to the caller stack -- cf. _fill's stkaddr is the slot's ADDRESS).
+            mop.make_stkvar(self._cur_mba, val)
+            mop.size = size
         else:
             mop.make_number(val & ((1 << (8 * size)) - 1), size)
 
@@ -1459,6 +1464,52 @@ class LLVMDropConverter:
             out[m.name] = (m.offset // 8, m.size // 8)
         return out
 
+    @classmethod
+    def _incoming_stack_offsets(cls, mba, fn, nregs) -> dict:
+        """``{arg_index: host_frame_offset}`` for each incoming param that the
+        SysV ABI passed on the CALLER's stack (index >= ``nregs``).
+
+        ``_force_prototype`` ran before the frame was rebuilt, declaring every
+        param as the ``a{i}`` member; ``set_type``/the frame builder classified
+        params 0..5 into registers and spilled 6+ to the incoming-args region.
+        We resolve each stack arg to its real host frame offset so a stkvar mop
+        reads it. PRIMARY: match the ``a{i}`` frame member by name. FALLBACK:
+        translate the prototype argloc's ``stkoff`` against the frame's
+        incoming-args base (first member above ``__return_address``). The
+        inverse of ``_emit_call_stackargs`` (the caller-side reg/stack split)."""
+        out: dict = {}
+        nargs = len(list(fn.arguments))
+        if nargs <= nregs:
+            return out
+        host_off = cls._host_frame_offsets(mba)
+        for i in range(nregs, nargs):
+            slot = host_off.get(f"a{i}")
+            if slot is not None:
+                out[i] = slot[0]
+        if len(out) == nargs - nregs:
+            return out
+        # Fallback: derive from the applied prototype's stack arglocs. The argloc
+        # stkoff is relative to the incoming-args region; add the frame offset of
+        # that region (right after the return address) to get the member offset.
+        pfn = ida_funcs.get_func(mba.entry_ea)
+        if pfn is None:
+            return out
+        tif = ida_typeinf.tinfo_t()
+        if not ida_nalt.get_tinfo(tif, pfn.start_ea):
+            return out
+        ftd = ida_typeinf.func_type_data_t()
+        if not tif.get_func_details(ftd) or ftd.size() < nargs:
+            return out
+        ret_member = host_off.get("__return_address")
+        args_base = (ret_member[0] + ret_member[1]) if ret_member else None
+        for i in range(nregs, nargs):
+            if i in out:
+                continue
+            al = ftd[i].argloc
+            if al.atype() == ida_typeinf.ALOC_STACK and args_base is not None:
+                out[i] = args_base + al.stkoff()
+        return out
+
     @staticmethod
     def _resting_frame_ea(mba) -> int:
         """The host ea with the deepest (most negative) get_spd -- where the
@@ -1507,11 +1558,22 @@ class LLVMDropConverter:
         self._detect_ret_slot(fn)
         self._detect_ret_phi(fn)
         vmap: dict[str, tuple] = {}
+        recv_stkoffs = self._incoming_stack_offsets(mba, fn, len(argregs))
         for i, a in enumerate(fn.arguments):
-            if i >= len(argregs):
+            if i < len(argregs):
+                vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
+                continue
+            # Incoming param 7+ (SysV): the caller spilled it to its stack; after
+            # the standard prologue it rests in the host frame's incoming-args
+            # region. _force_prototype declared it as the `a{i}` frame member, so
+            # read its VALUE straight from that slot (a stkvar mop) -- the inverse
+            # of _emit_call_stackargs' caller-side reg/stack split.
+            off = recv_stkoffs.get(i)
+            if off is None:
                 raise NotImplementedError(
-                    "stack-passed argument (more args than ABI registers)")
-            vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
+                    f"incoming stack arg #{i}: no host frame slot "
+                    "(set_type/frame layout did not materialise it)")
+            vmap[a.name] = ("stkvar", off, _type_size(a.type))
 
         # A call must terminate its block, so a function with any call needs the
         # multi-block (segment-splitting) path even if it has one LLVM block.
