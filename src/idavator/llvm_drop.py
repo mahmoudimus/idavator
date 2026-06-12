@@ -88,6 +88,12 @@ class LLVMDropConverter:
         if fn is None:
             raise ValueError(f"no definition for @{llvm_fn_name}")
         self._force_prototype(host_ea, fn)
+        # A FUNC_NORET host would keep its __noreturn attribute and discard the
+        # rebuilt return path; clear it so the dropped body (which returns) shows.
+        hf = ida_funcs.get_func(host_ea)
+        if hf is not None and (hf.flags & ida_funcs.FUNC_NORET):
+            hf.flags &= ~ida_funcs.FUNC_NORET
+            ida_funcs.update_func(hf)
 
         box = {"interr": None, "err": None}
         conv = self
@@ -416,6 +422,9 @@ class LLVMDropConverter:
         if callee_ea == ida_idaapi.BADADDR:
             raise ValueError(f"unresolved callee @{callee.name}")
         _argregs, eax, _ds = self._abi()
+        if len(call_args) > len(argregs):
+            raise NotImplementedError(
+                "stack-passed call argument (more args than ABI registers)")
         for i, a in enumerate(call_args):
             asz = _type_size(a.type)
             mv = hx.minsn_t(ea)
@@ -493,6 +502,28 @@ class LLVMDropConverter:
                     allocas[ins.name] = (mba.alloc_kreg(sz), sz)
         return allocas
 
+    def _synthesize_ret_block(self, mba):
+        """A noreturn host has no m_ret block to use as the return sink. Copy a
+        valid code block (for a real start/end -- INTERR 50869 otherwise), clear
+        it, give it an operandless m_ret (the value flows via rax), and place it
+        just before the special STOP block."""
+        src = next((b for i in range(mba.qty)
+                    if (b := mba.get_mblock(i)) is not None and int(b.type) == 0
+                    and b.start != ida_idaapi.BADADDR and b.start < b.end), None)
+        if src is None:
+            raise RuntimeError("noreturn host: no valid block to copy for m_ret")
+        retb = mba.copy_block(src, mba.qty - 1)  # insert before the STOP block
+        self._clear(retb)
+        for s in [int(x) for x in retb.succset]:
+            retb.succset._del(s)
+        for p in [int(x) for x in retb.predset]:
+            retb.predset._del(p)
+        rt = hx.minsn_t(mba.entry_ea)
+        rt.opcode = hx.m_ret
+        retb.insert_into_block(rt, None)
+        retb.mark_lists_dirty()
+        return retb
+
     # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
         argregs, eax, ds = self._abi()
@@ -500,11 +531,14 @@ class LLVMDropConverter:
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
                      and int(b.tail.opcode) == hx.m_ret), None)
         if retb is None:
-            raise RuntimeError("host has no m_ret block at preoptimized")
+            retb = self._synthesize_ret_block(mba)
 
         self._allocas = self._scan_allocas(mba, fn)
         vmap: dict[str, tuple] = {}
         for i, a in enumerate(fn.arguments):
+            if i >= len(argregs):
+                raise NotImplementedError(
+                    "stack-passed argument (more args than ABI registers)")
             vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
 
         # A call must terminate its block, so a function with any call needs the
