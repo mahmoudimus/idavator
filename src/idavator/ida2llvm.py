@@ -1584,8 +1584,18 @@ def lift_insn(
     builder.position_at_end(blk)
     l = lift_mop(ida_insn.l, blk, builder)
 
-    # Load source operand is always an address
-    r = lift_mop(ida_insn.r, blk, builder, ida_insn.opcode == ida_hexrays.m_ldx)
+    # Load source operand is always an address VALUE (the pointer to dereference),
+    # never the address-of-slot: `ldx ds, r, d` loads from the value held by `r`.
+    # Lifting `r` with dest=True returned the SLOT ADDRESS for an lvalue operand
+    # (mop_l/mop_S/mop_r), so m_ldx's single `load` recovered only the slot value
+    # (one indirection short -- `x` instead of `*x`); the loss was invisible at
+    # sub-pointer width (the drop's _ptr_deref_alias width rule patched it) but
+    # corrupted pointer-width derefs (`free(*(void**)x)` -> `free(x)` in
+    # triple_free/triple_hash/triple_compare/randint_all_free). Lift `r` as a VALUE
+    # so the load dereferences it (`load(load(slot))`), distinct in the IR from a
+    # plain slot read (`bitcast slot; load`) -- which is the disambiguation the
+    # decompiler microcode (m_ldx vs mop_l) carried but the old lifter erased.
+    r = lift_mop(ida_insn.r, blk, builder)
 
     # Target destination is always handled as reference pointer, except call argument setups
     d = lift_mop(

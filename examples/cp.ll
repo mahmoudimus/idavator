@@ -9939,19 +9939,20 @@ define i64 @"triple_hash"(i8* %".1", i64 %".2")
   store i64 %".2", i64* %"table_size"
   br label %"@1"
 "@1":
-  %".9" = bitcast i8** %"x" to i64*
-  %".10" = load i64, i64* %".9"
-  %".11" = inttoptr i64 %".10" to i8*
-  %".12" = load i64, i64* %"table_size"
-  %".13" = call i64 @"hash_pjw"(i8* %".11", i64 %".12")
-  %".14" = load i8*, i8** %"x"
-  %".15" = getelementptr i8, i8* %".14", i64 8
-  %".16" = bitcast i8* %".15" to i64*
-  %".17" = load i64, i64* %".16"
-  %".18" = xor i64 %".13", %".17"
-  %".19" = load i64, i64* %"table_size"
-  %".20" = urem i64 %".18", %".19"
-  store i64 %".20", i64* %"funcresult"
+  %".9" = load i8*, i8** %"x"
+  %".10" = bitcast i8* %".9" to i64*
+  %".11" = load i64, i64* %".10"
+  %".12" = inttoptr i64 %".11" to i8*
+  %".13" = load i64, i64* %"table_size"
+  %".14" = call i64 @"hash_pjw"(i8* %".12", i64 %".13")
+  %".15" = load i8*, i8** %"x"
+  %".16" = getelementptr i8, i8* %".15", i64 8
+  %".17" = bitcast i8* %".16" to i64*
+  %".18" = load i64, i64* %".17"
+  %".19" = xor i64 %".14", %".18"
+  %".20" = load i64, i64* %"table_size"
+  %".21" = urem i64 %".19", %".20"
+  store i64 %".21", i64* %"funcresult"
   br label %"@2"
 "@2":
   %".6" = load i64, i64* %"funcresult"
@@ -10034,23 +10035,25 @@ define i1 @"triple_compare"(i8* %".1", i8* %".2")
   %".27" = icmp ne i64 %".22", %".26"
   br i1 %".27", label %"@5", label %"@3"
 "@3":
-  %".29" = bitcast i8** %"x" to i64*
-  %".30" = load i64, i64* %".29"
-  %".31" = inttoptr i64 %".30" to i8*
-  %".32" = bitcast i8** %"y" to i64*
-  %".33" = load i64, i64* %".32"
-  %".34" = inttoptr i64 %".33" to i8*
-  %".35" = call i1 @"same_name"(i8* %".31", i8* %".34")
-  %".36" = zext i1 %".35" to i8
-  %".37" = icmp eq i8 %".36", 0
-  br i1 %".37", label %"@5", label %"@4"
+  %".29" = load i8*, i8** %"x"
+  %".30" = bitcast i8* %".29" to i64*
+  %".31" = load i64, i64* %".30"
+  %".32" = inttoptr i64 %".31" to i8*
+  %".33" = load i8*, i8** %"y"
+  %".34" = bitcast i8* %".33" to i64*
+  %".35" = load i64, i64* %".34"
+  %".36" = inttoptr i64 %".35" to i8*
+  %".37" = call i1 @"same_name"(i8* %".32", i8* %".36")
+  %".38" = zext i1 %".37" to i8
+  %".39" = icmp eq i8 %".38", 0
+  br i1 %".39", label %"@5", label %"@4"
 "@4":
-  %".39" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".39"
+  %".41" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".41"
   br label %"@6"
 "@5":
-  %".42" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".42"
+  %".44" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".44"
   br label %"@6"
 "@6":
   %".6" = load i1, i1* %"funcresult"
@@ -10421,12 +10424,13 @@ define i8* @"triple_free"(i8* %".1")
   store i8* %".1", i8** %"x"
   br label %"@1"
 "@1":
-  %".7" = bitcast i8** %"x" to i64*
-  %".8" = load i64, i64* %".7"
-  %".9" = inttoptr i64 %".8" to i8*
-  %".10" = call i8* @"__imp_free"(i8* %".9")
-  %".11" = load i8*, i8** %"x"
-  %".12" = call i8* @"__imp_free"(i8* %".11")
+  %".7" = load i8*, i8** %"x"
+  %".8" = bitcast i8* %".7" to i64*
+  %".9" = load i64, i64* %".8"
+  %".10" = inttoptr i64 %".9" to i8*
+  %".11" = call i8* @"__imp_free"(i8* %".10")
+  %".12" = load i8*, i8** %"x"
+  %".13" = call i8* @"__imp_free"(i8* %".12")
   br label %"@2"
 "@2":
   %".4" = load i8*, i8** %"funcresult"
@@ -16498,13 +16502,14 @@ define %"hash_entry"* @"safe_hasher"(%"Hash_table"* %".1", i8* %".2")
   %".36" = call i8* @"abort"()
   br label %"@3"
 "@3":
-  %".38" = bitcast %"Hash_table"** %"table" to i64*
-  %".39" = load i64, i64* %".38"
-  %".40" = load i64, i64* %"n"
-  %".41" = mul i64 16, %".40"
-  %".42" = add i64 %".39", %".41"
-  %".43" = bitcast %"hash_entry"** %"funcresult" to i64*
-  store i64 %".42", i64* %".43"
+  %".38" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".39" = bitcast %"Hash_table"* %".38" to i64*
+  %".40" = load i64, i64* %".39"
+  %".41" = load i64, i64* %"n"
+  %".42" = mul i64 16, %".41"
+  %".43" = add i64 %".40", %".42"
+  %".44" = bitcast %"hash_entry"** %"funcresult" to i64*
+  store i64 %".43", i64* %".44"
   br label %"@4"
 "@4":
   %".6" = load %"hash_entry"*, %"hash_entry"** %"funcresult"
@@ -23026,21 +23031,22 @@ define i32 @"randint_all_free"(%"randint_source"* %".1")
   store %"randint_source"* %".1", %"randint_source"** %"s"
   br label %"@1"
 "@1":
-  %".7" = bitcast %"randint_source"** %"s" to i64*
-  %".8" = load i64, i64* %".7"
-  %".9" = inttoptr i64 %".8" to %"randread_source"*
-  %".10" = call i32 @"randread_free"(%"randread_source"* %".9")
-  store i32 %".10", i32* %"r"
-  %".12" = call i32* @"__errno_location"()
-  %".13" = load i32, i32* %".12"
-  store i32 %".13", i32* %"e"
-  %".15" = load %"randint_source"*, %"randint_source"** %"s"
-  %".16" = call i8* @"randint_free"(%"randint_source"* %".15")
-  %".17" = load i32, i32* %"e"
-  %".18" = call i32* @"__errno_location"()
-  store i32 %".17", i32* %".18"
-  %".20" = load i32, i32* %"r"
-  store i32 %".20", i32* %"funcresult"
+  %".7" = load %"randint_source"*, %"randint_source"** %"s"
+  %".8" = bitcast %"randint_source"* %".7" to i64*
+  %".9" = load i64, i64* %".8"
+  %".10" = inttoptr i64 %".9" to %"randread_source"*
+  %".11" = call i32 @"randread_free"(%"randread_source"* %".10")
+  store i32 %".11", i32* %"r"
+  %".13" = call i32* @"__errno_location"()
+  %".14" = load i32, i32* %".13"
+  store i32 %".14", i32* %"e"
+  %".16" = load %"randint_source"*, %"randint_source"** %"s"
+  %".17" = call i8* @"randint_free"(%"randint_source"* %".16")
+  %".18" = load i32, i32* %"e"
+  %".19" = call i32* @"__errno_location"()
+  store i32 %".18", i32* %".19"
+  %".21" = load i32, i32* %"r"
+  store i32 %".21", i32* %"funcresult"
   br label %"@2"
 "@2":
   %".4" = load i32, i32* %"funcresult"
