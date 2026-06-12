@@ -50,21 +50,20 @@ def is_supported(fn) -> tuple[bool, str]:
     for arg in fn.arguments:
         if not _type_ok(arg.type):
             return False, f"argtype:{arg.type}"
-    # alloca is droppable only as a scalar slot (used solely as the pointer of a
-    # direct load/store); an address-taken alloca needs a real stack frame.
+    # alloca is droppable as a scalar slot (kreg) OR address-taken into an
+    # existing host frame slot (&local -> mop_a(stkvar); the stack-passing call
+    # carries the resting-frame ea -- the SP fix). A GEP'd stack alloca (struct
+    # field offsets) still needs struct layout -- unsupported (task #3).
     alloca_names = {ins.name for bb in fn.blocks for ins in bb.instructions
                     if ins.opcode == "alloca"}
     if alloca_names:
-        scalar = dict.fromkeys(alloca_names, True)
         for bb in fn.blocks:
             for ins in bb.instructions:
-                for idx, o in enumerate(ins.operands):
-                    if o.name in alloca_names and not (
-                            (ins.opcode == "load" and idx == 0)
-                            or (ins.opcode == "store" and idx == 1)):
-                        scalar[o.name] = False
-        if not all(scalar.values()):
-            return False, "alloca:address-taken"
+                if ins.opcode != "getelementptr":
+                    continue
+                ops = list(ins.operands)
+                if ops and ops[0].name in alloca_names:
+                    return False, "alloca:gep-on-stack"
     for bb in fn.blocks:
         for ins in bb.instructions:
             op = ins.opcode

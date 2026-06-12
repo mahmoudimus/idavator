@@ -17,6 +17,8 @@ import logging
 import re
 from contextlib import suppress
 
+import ida_bytes
+import ida_frame
 import ida_funcs
 import ida_hexrays as hx
 import ida_ida
@@ -55,6 +57,17 @@ _ICMP_JMP = {
     "sgt": hx.m_jg, "sge": hx.m_jge, "slt": hx.m_jl, "sle": hx.m_jle,
 }
 
+# IDA rotate intrinsics that survive into FAITHFUL pseudocode (e.g. rotr_sz ->
+# `return __ROR8__(a0, a1)`) -> emit as a Hex-Rays helper call. Deliberately NOT
+# the stack canary (`__readfsqword`/`__stack_chk_fail`): the decompiler ELIDES
+# that boilerplate from final output, so reconstructing it would DIVERGE from the
+# round-trip reference (and `make_helper` + reg-arg movs crashes the decompiler;
+# the args must ride in the mcallinfo via create_helper_call).
+_HELPER_INTRINSICS = frozenset({
+    "__ROL1__", "__ROL2__", "__ROL4__", "__ROL8__",
+    "__ROR1__", "__ROR2__", "__ROR4__", "__ROR8__",
+})
+
 
 def _type_size(type_str) -> int:
     # llvmlite uses OPAQUE pointers (LLVM 14+): a pointer stringifies to "ptr",
@@ -78,6 +91,9 @@ class LLVMDropConverter:
     def __init__(self, ir_text: str):
         self.module = llvm.parse_assembly(ir_text)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
+        self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
+        self._cur_mba = None         # current mba (make_stkvar needs it)
+        self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -198,25 +214,33 @@ class LLVMDropConverter:
                 hx.reg2mreg(ida_idp.str2reg("ds")))
 
     # -- microcode emit helpers -----------------------------------------
-    @staticmethod
-    def _fill(mop, d) -> None:
+    def _fill(self, mop, d) -> None:
         kind, val, size = d
         if kind == "reg":
             mop.make_reg(val, size)
         elif kind == "gvar":
             mop.make_gvar(val)
             mop.size = size
+        elif kind == "stkaddr":
+            # &local: mop_a wrapping a stkvar (cf. &global = mop_a wrapping mop_v).
+            inner = hx.mop_addr_t()
+            inner.make_stkvar(self._cur_mba, val)
+            mop.t = hx.mop_a
+            mop.a = inner
+            mop.size = 8
         else:
             mop.make_number(val & ((1 << (8 * size)) - 1), size)
 
-    @staticmethod
-    def _desc(operand, vmap, default_size):
+    def _desc(self, operand, vmap, default_size):
         """Resolve an LLVM operand to a value descriptor (reg kreg / numeric /
-        gvar). A global used as a VALUE is its address (an array global decays;
-        make_gvar carries the symbol)."""
+        gvar / stkaddr). A global used as a VALUE is its address (an array global
+        decays; make_gvar carries the symbol); an address-taken alloca is the
+        address of its frame slot (&local)."""
         nm = operand.name
         if nm and nm in vmap:
             return vmap[nm]
+        if nm and nm in self._addr_taken:
+            return ("stkaddr", self._addr_taken[nm][0], 8)
         s = str(operand).strip()
         if nm and "@" in s:
             ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
@@ -293,6 +317,12 @@ class LLVMDropConverter:
         if op in _CAST:
             in_sz = _type_size(ops[0].type)
             out_sz = _type_size(ins.type)
+            if in_sz == out_sz:
+                # Same BYTE width (e.g. `zext i1 to i8` -- both 1 byte): a no-op
+                # reinterpretation, not a real widen/narrow. m_xdu/m_xds/m_low all
+                # INTERR on equal l/d sizes (50837/50838), so alias the operand.
+                vmap[ins.name] = self._desc(ops[0], vmap, out_sz)
+                return anchor
             mi = hx.minsn_t(ea)
             mi.opcode = _CAST[op]
             self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
@@ -313,6 +343,18 @@ class LLVMDropConverter:
                 mi = hx.minsn_t(ea)
                 mi.opcode = hx.m_mov
                 mi.l.make_reg(slot[0], out_sz)
+                kreg = mba.alloc_kreg(out_sz)
+                mi.d.make_reg(kreg, out_sz)
+                blk.insert_into_block(mi, anchor)
+                vmap[ins.name] = ("reg", kreg, out_sz)
+                return mi
+            stk = self._addr_taken.get(ops[0].name)
+            if stk is not None:
+                # %v = load <ty>, ptr %a  (a is a frame slot) -> mov stkvar, v
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                mi.l.make_stkvar(mba, stk[0])
+                mi.l.size = out_sz
                 kreg = mba.alloc_kreg(out_sz)
                 mi.d.make_reg(kreg, out_sz)
                 blk.insert_into_block(mi, anchor)
@@ -351,6 +393,16 @@ class LLVMDropConverter:
                 mi.opcode = hx.m_mov
                 self._fill(mi.l, (vd[0], vd[1], val_sz))
                 mi.d.make_reg(slot[0], val_sz)
+                blk.insert_into_block(mi, anchor)
+                return mi
+            stk = self._addr_taken.get(ops[1].name)
+            if stk is not None:
+                # store <ty> %v, ptr %a  (a is a frame slot) -> mov v, stkvar
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                self._fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.d.make_stkvar(mba, stk[0])
+                mi.d.size = val_sz
                 blk.insert_into_block(mi, anchor)
                 return mi
             gea = self._global_ea(ops[1])
@@ -435,25 +487,73 @@ class LLVMDropConverter:
         # an SSA value (function pointer) verifies but won't decompile -- Hex-Rays
         # needs the callee fn-ptr TYPE to rebuild the call signature; deferred.
         if callee.name in vmap:
+            # Indirect call (fn pointer). The mcallinfo itself builds (set_type +
+            # retregs/return_regs/spoiled + mop_f size clears 50757/50743/50740 and
+            # the call renders), but multiple downstream issues remain (a
+            # compare-size INTERR 50831 not in the icmp fold, + per-function build
+            # errors) -- not converging with targeted fixes. Deferred to a focused
+            # pass. Recipe banked in memory idavator_drop_call_construction.
             raise NotImplementedError(
-                "indirect call (function pointer): needs the callee fn-ptr type "
-                "for Hex-Rays call reconstruction")
+                "indirect call (function pointer): mcallinfo builds but downstream "
+                "verify cascade (50831+) is unresolved")
         callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
         if callee_ea == ida_idaapi.BADADDR:
+            if callee.name in _HELPER_INTRINSICS:
+                arg_descs = [self._desc(a, vmap, _type_size(a.type))
+                             for a in call_args]
+                return self._emit_helper_call(
+                    mba, blk, anchor, ea, ins, callee.name, arg_descs, eax)
             raise ValueError(f"unresolved callee @{callee.name}")
-        for i, a in enumerate(call_args):
+        # Resolve args once; a call that materializes a frame address (&local)
+        # must carry the host resting-frame ea so Hex-Rays computes a
+        # frame-consistent mcallinfo.call_spd -- else WARN_BAD_CALL_SP ("bad sp
+        # value at call"). See memory idavator_sp_gate_call_ea_cracked.
+        arg_descs = [self._desc(a, vmap, _type_size(a.type)) for a in call_args]
+        passes_stkaddr = any(d[0] == "stkaddr" for d in arg_descs)
+        for i, (a, d) in enumerate(zip(call_args, arg_descs)):
             asz = _type_size(a.type)
             mv = hx.minsn_t(ea)
             mv.opcode = hx.m_mov
-            self._fill(mv.l, self._desc(a, vmap, asz))
+            self._fill(mv.l, d)
             mv.d.make_reg(argregs[i], asz)
             blk.insert_into_block(mv, anchor)
             anchor = mv
-        mc = hx.minsn_t(ea)
+        call_ea = (self._call_spd_ea
+                   if passes_stkaddr and self._call_spd_ea is not None else ea)
+        mc = hx.minsn_t(call_ea)
         mc.opcode = hx.m_call
         mc.l.make_gvar(callee_ea)
         rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
         mc.d.make_reg(eax, rsz)  # call defines rax (the continuation captures it)
+        blk.insert_into_block(mc, anchor)
+        return mc
+
+    @staticmethod
+    def _int_tinfo(size):
+        btf = {1: ida_typeinf.BTF_INT8, 2: ida_typeinf.BTF_INT16,
+               4: ida_typeinf.BTF_INT32, 8: ida_typeinf.BTF_INT64}.get(
+                   size, ida_typeinf.BTF_INT)
+        return ida_typeinf.tinfo_t(btf)
+
+    def _emit_helper_call(self, mba, blk, anchor, ea, ins, name, arg_descs, eax):
+        """Emit an unresolved rotate intrinsic (`__ROR8__` ...) as a Hex-Rays
+        HELPER call. Args ride in the mcallinfo via ``create_helper_call`` (the
+        `make_helper` + reg-arg-mov shape crashes the decompiler). ``out`` = rax so
+        the segment-split continuation captures the result like any other call."""
+        callargs = hx.mcallargs_t()
+        for a, d in zip(list(ins.operands)[:-1], arg_descs):
+            sz = _type_size(a.type)
+            arg = hx.mcallarg_t()
+            self._fill(arg, (d[0], d[1], sz))
+            arg.size = sz
+            arg.type = self._int_tinfo(sz)
+            callargs.push_back(arg)
+        rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
+        out = hx.mop_t()
+        out.make_reg(eax, rsz)
+        mc = mba.create_helper_call(ea, name, self._int_tinfo(rsz), callargs, out)
+        if mc is None:
+            raise RuntimeError(f"create_helper_call({name}) returned None")
         blk.insert_into_block(mc, anchor)
         return mc
 
@@ -491,31 +591,56 @@ class LLVMDropConverter:
         return 8 if ("*" in ty or ty == "ptr") else _type_size(ty)
 
     def _scan_allocas(self, mba, fn) -> dict:
-        """Model each SCALAR-SLOT alloca (used only as the pointer of a direct
-        load/store) as a kreg -- Hex-Rays then propagates the slot away. An alloca
-        whose address is taken (GEP'd, passed, stored as a value) is unsupported."""
+        """Classify each alloca; return the SCALAR-SLOT kreg map and populate
+        ``self._addr_taken`` (name -> (stkoff, size)) for address-taken ones.
+
+        - scalar slot (used only as a direct load/store pointer) -> kreg;
+          Hex-Rays propagates it away.
+        - address-taken (its address escapes -- call arg, returned, stored as a
+          value) but NOT GEP'd -> an existing host frame slot; &local renders as
+          mop_a(stkvar) and the stack-passing call carries the resting-frame ea
+          (the SP fix, memory idavator_sp_gate_call_ea_cracked).
+        - GEP'd (struct field offsets) -> NotImplementedError (task #3: needs
+          struct layout)."""
         names = {ins.name for bb in fn.blocks for ins in bb.instructions
                  if ins.opcode == "alloca"}
+        self._addr_taken = {}
         if not names:
             return {}
-        scalar = dict.fromkeys(names, True)
+        gepd: set = set()
+        escaped: set = set()
         for bb in fn.blocks:
             for ins in bb.instructions:
                 for idx, o in enumerate(ins.operands):
-                    if o.name in names and not (
-                            (ins.opcode == "load" and idx == 0)
-                            or (ins.opcode == "store" and idx == 1)):
-                        scalar[o.name] = False
+                    if o.name not in names:
+                        continue
+                    if ins.opcode == "load" and idx == 0:
+                        continue
+                    if ins.opcode == "store" and idx == 1:
+                        continue
+                    if ins.opcode == "getelementptr" and idx == 0:
+                        gepd.add(o.name)
+                    else:
+                        escaped.add(o.name)
         allocas = {}
+        off = 0
         for bb in fn.blocks:
             for ins in bb.instructions:
-                if ins.opcode == "alloca":
-                    if not scalar[ins.name]:
-                        raise NotImplementedError(
-                            f"address-taken alloca %{ins.name} (only scalar "
-                            f"load/store slots are supported)")
-                    sz = self._alloca_elem_size(ins)
-                    allocas[ins.name] = (mba.alloc_kreg(sz), sz)
+                if ins.opcode != "alloca":
+                    continue
+                nm = ins.name
+                sz = self._alloca_elem_size(ins)
+                if nm in gepd:
+                    raise NotImplementedError(
+                        f"GEP-on-stack alloca %{nm} (struct field offsets need "
+                        f"struct layout -- task #3)")
+                if nm in escaped:
+                    # existing host frame slot -- NO frame extension (the
+                    # subframe INTERR chain). Distinct 8-aligned offsets.
+                    self._addr_taken[nm] = (off, sz)
+                    off += max(sz, 8)
+                else:
+                    allocas[nm] = (mba.alloc_kreg(sz), sz)
         return allocas
 
     def _synthesize_ret_block(self, mba):
@@ -540,8 +665,28 @@ class LLVMDropConverter:
         retb.mark_lists_dirty()
         return retb
 
+    @staticmethod
+    def _resting_frame_ea(mba) -> int:
+        """The host ea with the deepest (most negative) get_spd -- where the
+        frame is fully allocated. A call that materializes a frame address
+        (&local) carries this ea so Hex-Rays computes a frame-consistent
+        call_spd (else WARN_BAD_CALL_SP). Falls back to entry_ea."""
+        pfn = ida_funcs.get_func(mba.entry_ea)
+        if pfn is None:
+            return int(mba.entry_ea)
+        best_ea, best_spd = int(mba.entry_ea), 0
+        ea = pfn.start_ea
+        while ea < pfn.end_ea and ea != ida_idaapi.BADADDR:
+            spd = ida_frame.get_spd(pfn, ea)
+            if spd < best_spd:
+                best_spd, best_ea = spd, int(ea)
+            ea = ida_bytes.next_head(ea, pfn.end_ea)
+        return best_ea
+
     # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
+        self._cur_mba = mba
+        self._call_spd_ea = self._resting_frame_ea(mba)
         argregs, eax, ds = self._abi()
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
