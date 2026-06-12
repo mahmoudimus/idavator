@@ -86,6 +86,46 @@ _ROUNDTRIP = [
 @pytest.mark.skipif(not clang_available(),
                     reason="IDA libclang /  clang_loader unavailable")
 @pytest.mark.ida
+class TestRealCpFunctionRoundTrip:
+    """A TRUE round trip on real lifted IR: drop a cp.ll function's IR back into
+    its own EA and assert the result is semantically identical to the original."""
+
+    # Real coreutils functions whose lifted IR is in the supported subset and
+    # round-trips byte-faithful through the oracle.
+    FAITHFUL = ["c_tolower", "quotearg_char"]
+
+    @pytest.mark.parametrize("name", FAITHFUL)
+    def test_real_function_round_trips(self, examples_dir: Path, name):
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        import idapro
+        import ida_hexrays as hx
+        import ida_idaapi
+        import ida_name
+
+        if not (examples_dir / "cp").exists() or not (examples_dir / "cp.ll").exists():
+            pytest.skip("missing example binary / cp.ll")
+
+        idapro.open_database(str(examples_dir / "cp"), True)
+        try:
+            assert hx.init_hexrays_plugin()
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, name)
+            assert ea != ida_idaapi.BADADDR, f"no EA for {name}"
+            original = hx.decompile(ea)
+            assert original is not None, f"baseline decompile of {name} failed"
+            ir = (examples_dir / "cp.ll").read_text()
+            res = round_trip(ir, name, ea, str(original))
+            print(f"\n=== real round_trip @{name} ok={res.ok} "
+                  f"err={res.error} ===\nledger={res.ledger}\n{res.dropped_c}")
+            assert res.error is None, res.error
+            assert res.ok, f"diverged: {res.ledger}"
+        finally:
+            idapro.close_database()
+
+
+@pytest.mark.skipif(not clang_available(),
+                    reason="IDA libclang /  clang_loader unavailable")
+@pytest.mark.ida
 class TestDropRoundTrip:
     @pytest.mark.parametrize("ir, fn, ref_c", _ROUNDTRIP)
     def test_round_trip_is_faithful(self, examples_dir: Path, ir, fn, ref_c):
