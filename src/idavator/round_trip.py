@@ -64,8 +64,13 @@ def is_supported(fn) -> tuple[bool, str]:
                 ops = list(ins.operands)
                 if not (ops and ops[0].name in alloca_names):
                     continue
-                if not re.search(r"\[\s*\d+\s+x\s+(?:ptr|i8|i16|i32|i64)\s*\]",
-                                 str(ins)):
+                txt = str(ins)
+                if "va_list" in txt:
+                    return False, "alloca:gep-valist"
+                # scalar/ptr OR a %struct element array; the drop computes the
+                # struct size from the parsed layout (raises if un-computable).
+                if not re.search(r"\[\s*\d+\s+x\s+(?:ptr|i\d+|%[\w\".:$]+)\s*\]",
+                                 txt):
                     return False, "alloca:gep-struct"
     for bb in fn.blocks:
         for ins in bb.instructions:

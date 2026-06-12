@@ -74,3 +74,49 @@ class TestGepOnStack:
             assert "return" in txt, txt
         finally:
             idapro.close_database()
+
+    def test_struct_array_field(self, examples_dir: Path) -> None:
+        # GEP into a [2 x %struct] array: the field offset uses the parsed struct
+        # size (sizeof(%S)=8 here, so &arr[1] is at byte offset 8).
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        import idapro
+        import ida_funcs
+        import ida_hexrays
+        import idautils
+
+        binary = examples_dir / "cp"
+        if not binary.exists():
+            pytest.skip("missing example binary: cp")
+
+        from idavator.llvm_drop import LLVMDropConverter
+
+        ir = """
+%S = type { i32, i32 }
+define i32 @probe(i32 %x) {
+entry:
+  %arr = alloca [2 x %S], align 4
+  %p = getelementptr [2 x %S], ptr %arr, i32 0, i32 1
+  store i32 %x, ptr %p
+  %v = load i32, ptr %p
+  ret i32 %v
+}
+"""
+        idapro.open_database(str(binary), True)
+        try:
+            assert ida_hexrays.init_hexrays_plugin()
+            host = next((ea for ea in idautils.Functions()
+                         if (f := ida_funcs.get_func(ea)) is not None
+                         and int(getattr(f, "frsize", 0)) >= 16
+                         and not (f.flags & ida_funcs.FUNC_NORET)
+                         and ida_hexrays.decompile(ea) is not None), None)
+            assert host is not None
+            conv = LLVMDropConverter(ir)
+            # the struct layout must be parsed so the [2 x %S] alloca + GEP resolve.
+            assert conv._struct_size.get("%S") == (8, 4), conv._struct_size.get("%S")
+            cf = conv.drop(host, "probe")
+            assert conv.last_error is None, conv.last_error
+            assert conv.last_interr is None, f"INTERR {conv.last_interr}"
+            assert cf is not None and "bad sp value" not in str(cf)
+        finally:
+            idapro.close_database()

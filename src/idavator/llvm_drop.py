@@ -85,11 +85,86 @@ def _type_size(type_str) -> int:
     return 4
 
 
+def _round_up(x: int, a: int) -> int:
+    return (x + a - 1) // a * a if a else x
+
+
+def _split_fields(s: str) -> list[str]:
+    """Top-level comma split of a struct body, respecting [] / {} nesting."""
+    out, depth, cur = [], 0, ""
+    for ch in s:
+        if ch in "[{":
+            depth += 1
+        elif ch in "]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            out.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+    if cur.strip():
+        out.append(cur.strip())
+    return out
+
+
+def _type_sa(tok: str, structs: dict) -> tuple[int, int]:
+    """(size, align) of an LLVM type token; nested ``%name`` via ``structs``."""
+    tok = tok.strip()
+    if tok == "ptr" or tok.endswith("*"):
+        return (8, 8)
+    m = re.match(r"i(\d+)$", tok)
+    if m:
+        sz = max(1, (int(m.group(1)) + 7) // 8)
+        return (sz, sz if sz in (1, 2, 4, 8) else 1)
+    if tok in ("double", "float"):
+        return (8, 8) if tok == "double" else (4, 4)
+    m = re.match(r"\[\s*(\d+)\s+x\s+(.+)\]$", tok)
+    if m:
+        esz, eal = _type_sa(m.group(2), structs)
+        return (int(m.group(1)) * _round_up(esz, eal), eal)
+    # struct name -- llvmlite renders `%timespec`, the IR text declares
+    # `%"timespec"`; canonicalize by stripping quotes.
+    if tok.replace('"', "") in structs:
+        return structs[tok.replace('"', "")]
+    raise ValueError(f"unsized type {tok!r}")
+
+
+def _parse_struct_layouts(ir_text: str) -> dict:
+    """name -> (size, align) for every ``%name = type {..}`` whose layout is
+    computable (natural C alignment). Un-computable structs are absent (the drop
+    raises, the round-trip records a build error)."""
+    raw = {m.group(1).strip().replace('"', ""): _split_fields(m.group(2))
+           for m in re.finditer(r'(%[\w".:$]+)\s*=\s*type\s*\{(.*)\}', ir_text)}
+    structs: dict = {}
+
+    def layout(name, seen):
+        name = name.replace('"', "")
+        if name in structs:
+            return structs[name]
+        if name in seen:
+            raise ValueError("recursive struct")
+        off, maxal = 0, 1
+        for f in raw[name]:
+            if f.replace('"', "") in raw:
+                layout(f, seen | {name})
+            sz, al = _type_sa(f, structs)
+            off = _round_up(off, al) + sz
+            maxal = max(maxal, al)
+        structs[name] = (_round_up(off, maxal), maxal)
+        return structs[name]
+
+    for nm in raw:
+        with suppress(Exception):
+            layout(nm, set())
+    return structs
+
+
 class LLVMDropConverter:
     """Drop a (straight-line) LLVM function into a host's decompiled output."""
 
     def __init__(self, ir_text: str):
         self.module = llvm.parse_assembly(ir_text)
+        self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
         self._cur_mba = None         # current mba (make_stkvar needs it)
@@ -625,16 +700,23 @@ class LLVMDropConverter:
             return (d[1], 8)
         return None
 
-    @staticmethod
-    def _array_dims(type_str):
-        """(count, elem_str, elem_size) for an ``[N x T]`` array of SCALAR/ptr T,
-        else None (a struct/va_list element needs real layout -- not this slice)."""
+    def _array_dims(self, type_str):
+        """(count, elem_str, elem_size) for an ``[N x T]`` array. T may be a
+        scalar/ptr or a ``%struct`` with a computable layout; else None (e.g. a
+        va_list element)."""
         m = re.search(r"\[\s*(\d+)\s+x\s+([^\]]+?)\s*\]", type_str)
         if not m:
             return None
         n, elem = int(m.group(1)), m.group(2).strip()
         if elem == "ptr" or elem in ("i8", "i16", "i32", "i64"):
             return (n, elem, _type_size(elem))
+        key = elem.replace('"', "")
+        if key not in self._struct_size:
+            # llvmlite disambiguates the SAME struct as %foo.NN in some renderings
+            # (e.g. the alloca shows [2 x %timespec.15], the GEP/def use %timespec).
+            key = re.sub(r"\.\d+$", "", key)
+        if key in self._struct_size:
+            return (n, elem, self._struct_size[key][0])
         return None
 
     def _gep_field_offset(self, ins, ops, vmap) -> int:
