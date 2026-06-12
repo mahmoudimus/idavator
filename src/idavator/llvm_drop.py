@@ -25,6 +25,7 @@ import ida_ida
 import ida_idaapi
 import ida_idp
 import ida_name
+import ida_nalt
 import ida_strlist
 import ida_typeinf
 import llvmlite.binding as llvm
@@ -722,6 +723,15 @@ class LLVMDropConverter:
         callee = ops[-1]
         call_args = ops[:-1]
         _argregs, eax, _ds = self._abi()
+        # More integer args than ABI registers: the 7th+ ride on the stack. A
+        # direct (named) callee whose prototype is known lets us build an
+        # explicit mcallinfo (set_type does the SysV reg/stack classification),
+        # so the stack args travel IN the call -- no SP-modeled pushes. Indirect
+        # / unresolved callees fall through to their existing handling below.
+        if (len(call_args) > len(argregs) and callee.name not in vmap
+                and ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+                != ida_idaapi.BADADDR):
+            return self._emit_call_stackargs(mba, blk, anchor, ea, ins, vmap)
         if len(call_args) > len(argregs):
             raise NotImplementedError(
                 "stack-passed call argument (more args than ABI registers)")
@@ -769,6 +779,106 @@ class LLVMDropConverter:
         mc.d.make_reg(eax, rsz)  # call defines rax (the continuation captures it)
         blk.insert_into_block(mc, anchor)
         return mc
+
+    def _emit_call_stackargs(self, mba, blk, anchor, ea, ins, vmap):
+        """Emit a direct call with MORE integer args than ABI registers (the
+        7th+ travel on the stack). Build an explicit ``mcallinfo_t`` from the
+        callee's known prototype: ``set_type`` does the SysV reg/stack
+        classification (regs for 0..5, ALOC_STACK for 6+), so each stack arg
+        rides IN the call -- no SP-modeled ``push`` sequence, no WARN_BAD_CALL_SP.
+
+        The emitted shape mirrors Hex-Rays' own post-CALLS form:
+        ``mov (call gvar<...> => mop_f(callinfo)) => rax``. We carry the
+        host resting-frame ea on the call (frame allocated) and seed
+        retregs/return_regs/spoiled so the value-numbering of the result is
+        consistent (cf. the indirect-call recipe, memory
+        idavator_drop_call_construction)."""
+        ops = list(ins.operands)
+        callee = ops[-1]
+        call_args = ops[:-1]
+        _argregs, eax, _ds = self._abi()
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        tif = ida_typeinf.tinfo_t()
+        if not ida_nalt.get_tinfo(tif, callee_ea) or not tif.is_func():
+            raise NotImplementedError(
+                f"stack-passed args: no prototype for @{callee.name}")
+        nargs = tif.get_nargs()
+        if nargs != len(call_args):
+            # The lift's arg count must match the prototype for set_type's
+            # arglocs to line up; otherwise defer rather than mis-place args.
+            raise NotImplementedError(
+                f"stack-passed args: prototype arity {nargs} != "
+                f"call arity {len(call_args)} for @{callee.name}")
+
+        fi = hx.mcallinfo_t(callee_ea, 0)
+        if not fi.set_type(tif):
+            raise NotImplementedError(
+                f"stack-passed args: set_type failed for @{callee.name}")
+        # Return width comes from the PROTOTYPE, not the LLVM call type: the lift
+        # may type the result narrower (e.g. `i1` for an `int`-returning fn), but
+        # the call's retreg/return_type must match the real ABI return register
+        # (else INTERR 50743 -- retreg count vs retval size). void -> 8 (rax def).
+        rettype = tif.get_rettype()
+        rsz = rettype.get_size()
+        if rsz in (0, ida_idaapi.BADADDR) or rettype.is_void():
+            rsz = 8
+        # Fill each formal arg's mop VALUE (set_type already fixed its argloc +
+        # type); copy_mop overwrites only the mop_t base, preserving argloc/type.
+        # The verifier requires mop.size == formal type size (INTERR 50735), so
+        # a narrower LLVM value (e.g. i1 into an `int` slot) is widened first --
+        # exactly what Hex-Rays renders natively (xdu.4(%v.1)).
+        for i, a in enumerate(call_args):
+            arg = fi.args[i]
+            fsz = arg.type.get_size()
+            asz = _type_size(a.type)
+            d = self._desc(a, vmap, asz)
+            if asz < fsz and d[0] in ("reg", "num"):
+                if d[0] == "num":
+                    d = ("num", d[1], fsz)  # numbers just take the wider size
+                else:
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_xdu
+                    self._fill(mi.l, (d[0], d[1], asz))
+                    kreg = mba.alloc_kreg(fsz)
+                    mi.d.make_reg(kreg, fsz)
+                    blk.insert_into_block(mi, anchor)
+                    anchor = mi
+                    d = ("reg", kreg, fsz)
+            tmp = hx.mop_t()
+            self._fill(tmp, (d[0], d[1], fsz))
+            arg.copy_mop(tmp)
+            arg.size = fsz
+        # Result scaffolding: retregs/return_regs/spoiled keep the rax def
+        # consistent under value-numbering (50743/50740 class).
+        ret_mop = hx.mop_t()
+        ret_mop.make_reg(eax, rsz)
+        fi.retregs.push_back(ret_mop)
+        fi.return_regs.add(eax, rsz)
+        fi.spoiled.add(eax, rsz)
+        fi.return_type = (rettype if rettype.get_size() not in
+                          (0, ida_idaapi.BADADDR) and not rettype.is_void()
+                          else self._int_tinfo(rsz))
+        # Frame must be allocated at the call ea (else WARN_BAD_CALL_SP for the
+        # stack args / any &local), and record call_spd to match.
+        call_ea = (self._call_spd_ea
+                   if self._call_spd_ea is not None else ea)
+        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
+                                        call_ea) if ida_funcs.get_func(
+                                            mba.entry_ea) else 0
+        # Inner m_call: l = callee gvar, d = mop_f(callinfo). Wrap in a mov to
+        # rax so the continuation captures the result like any other call.
+        inner = hx.minsn_t(call_ea)
+        inner.opcode = hx.m_call
+        inner.l.make_gvar(callee_ea)
+        inner.d._make_callinfo(fi)
+        inner.d.size = rsz
+        mov = hx.minsn_t(call_ea)
+        mov.opcode = hx.m_mov
+        mov.l.make_insn(inner)
+        mov.l.size = rsz
+        mov.d.make_reg(eax, rsz)
+        blk.insert_into_block(mov, anchor)
+        return mov
 
     @staticmethod
     def _int_tinfo(size):
