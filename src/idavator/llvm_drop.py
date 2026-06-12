@@ -1060,18 +1060,10 @@ class LLVMDropConverter:
             raise NotImplementedError(
                 "stack-passed call argument (more args than ABI registers)")
         # Callee: a direct named function/global -> gvar. An indirect call through
-        # an SSA value (function pointer) verifies but won't decompile -- Hex-Rays
-        # needs the callee fn-ptr TYPE to rebuild the call signature; deferred.
+        # an SSA value (a function pointer, e.g. a loaded struct field) is lowered
+        # to Hex-Rays' native m_icall form -- see _emit_call_indirect.
         if callee.name in vmap:
-            # Indirect call (fn pointer). The mcallinfo itself builds (set_type +
-            # retregs/return_regs/spoiled + mop_f size clears 50757/50743/50740 and
-            # the call renders), but multiple downstream issues remain (a
-            # compare-size INTERR 50831 not in the icmp fold, + per-function build
-            # errors) -- not converging with targeted fixes. Deferred to a focused
-            # pass. Recipe banked in memory idavator_drop_call_construction.
-            raise NotImplementedError(
-                "indirect call (function pointer): mcallinfo builds but downstream "
-                "verify cascade (50831+) is unresolved")
+            return self._emit_call_indirect(mba, blk, anchor, ea, ins, vmap)
         callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
         if callee_ea == ida_idaapi.BADADDR:
             if callee.name in _HELPER_INTRINSICS:
@@ -1194,6 +1186,86 @@ class LLVMDropConverter:
         inner = hx.minsn_t(call_ea)
         inner.opcode = hx.m_call
         inner.l.make_gvar(callee_ea)
+        inner.d._make_callinfo(fi)
+        inner.d.size = rsz
+        mov = hx.minsn_t(call_ea)
+        mov.opcode = hx.m_mov
+        mov.l.make_insn(inner)
+        mov.l.size = rsz
+        mov.d.make_reg(eax, rsz)
+        blk.insert_into_block(mov, anchor)
+        return mov
+
+    def _emit_call_indirect(self, mba, blk, anchor, ea, ins, vmap):
+        """Emit an INDIRECT call -- the callee is an SSA function-pointer VALUE
+        (e.g. an ``inttoptr`` of a loaded struct field), not a named symbol -- in
+        Hex-Rays' native ``m_icall`` form::
+
+            mov  (icall cs.2, <callee-value>.8 <mcallinfo>) => rax
+
+        This mirrors Hex-Rays' own post-CALLS lowering. Reference (``hash_lookup``
+        @ MMAT_CALLS): ``icall cs.2,[ds:(table+0x38)].8<fast:_QWORD a0,_QWORD a1>
+        => __int64 .8, rax.8`` with an mcallinfo of ``cc=0x70 callee=BADADDR
+        solid_args=2 return_type=__int64``, ``retregs`` EMPTY, ``return_regs=rax``.
+
+        We synthesize a ``__fastcall`` prototype for the callee so ``set_type``
+        does the SysV reg/cc classification (regs rdi/rsi/...; cc=0x70) exactly
+        like a direct call. The native call carries flags
+        ``FCI_PROP|FCI_DEAD|FCI_SPLOK``: ``FCI_PROP`` is REQUIRED -- it lets the
+        verifier accept an empty ``retregs`` list (without it the retreg/return
+        cross-check fires INTERR 50745 first)."""
+        ops = list(ins.operands)
+        callee = ops[-1]
+        call_args = ops[:-1]
+        _argregs, eax, _ds = self._abi()
+        rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
+        # Synthesize a __fastcall fn-ptr prototype so set_type fixes the SysV
+        # arglocs/cc exactly like a direct call (regs rdi/rsi/... ; cc=0x70).
+        ft = ida_typeinf.func_type_data_t()
+        ft.cc = ida_typeinf.CM_CC_FASTCALL
+        ft.rettype = self._int_tinfo(rsz)
+        for a in call_args:
+            fa = ida_typeinf.funcarg_t()
+            fa.type = self._int_tinfo(_type_size(a.type))
+            ft.push_back(fa)
+        tif = ida_typeinf.tinfo_t()
+        tif.create_func(ft)
+        fi = hx.mcallinfo_t(ida_idaapi.BADADDR, 0)
+        if not fi.set_type(tif):
+            raise NotImplementedError("indirect call: set_type failed")
+        # Fill each formal arg's mop VALUE (set_type already fixed its argloc +
+        # type + size); the verifier requires mop.size == formal type size.
+        for i, a in enumerate(call_args):
+            arg = fi.args[i]
+            fsz = arg.type.get_size()
+            d = self._desc(a, vmap, _type_size(a.type))
+            tmp = hx.mop_t()
+            self._fill(tmp, (d[0], d[1], fsz))
+            arg.copy_mop(tmp)
+            arg.size = fsz
+        # Result scaffolding -- MIRROR NATIVE: retregs EMPTY, return_regs=rax. The
+        # empty retregs list is only legal because FCI_PROP is set below.
+        fi.return_regs.add(eax, rsz)
+        fi.spoiled.add(eax, rsz)
+        fi.return_type = self._int_tinfo(rsz)
+        fi.solid_args = len(call_args)
+        # NATIVE flags (hash_lookup): FCI_PROP|FCI_DEAD|FCI_SPLOK. FCI_PROP makes
+        # the verifier SKIP the retreg/return-size cross-check (else 50745/50743).
+        fi.flags |= hx.FCI_PROP | hx.FCI_DEAD | hx.FCI_SPLOK
+        call_ea = (self._call_spd_ea
+                   if self._call_spd_ea is not None else ea)
+        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
+                                        call_ea) if ida_funcs.get_func(
+                                            mba.entry_ea) else 0
+        # Inner m_icall: l = cs.2 (code segment), r = callee fn-ptr VALUE.8,
+        # d = mop_f(callinfo). Wrap in a mov to rax so the continuation captures
+        # the result like any other call.
+        cs = hx.reg2mreg(ida_idp.str2reg("cs"))
+        inner = hx.minsn_t(call_ea)
+        inner.opcode = hx.m_icall
+        inner.l.make_reg(cs, 2)
+        cdesc = self._desc(callee, vmap, 8)
+        self._fill(inner.r, (cdesc[0], cdesc[1], 8))
         inner.d._make_callinfo(fi)
         inner.d.size = rsz
         mov = hx.minsn_t(call_ea)
