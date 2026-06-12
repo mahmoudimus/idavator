@@ -170,6 +170,8 @@ class LLVMDropConverter:
         self._cur_mba = None         # current mba (make_stkvar needs it)
         self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
+        self._ret_off = None         # frame off of a promoted return slot, or None
+        self._ret_kreg = None        # kreg of a promoted scalar return slot, or None
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -413,6 +415,11 @@ class LLVMDropConverter:
             return anchor
         if op == "load":
             out_sz = _type_size(ins.type)
+            if self._is_ret_slot(ops[0], vmap):
+                # promoted return slot: the loaded value IS the return register.
+                _ar, eax, _d = self._abi()
+                vmap[ins.name] = ("reg", eax, out_sz)
+                return anchor
             slot = self._allocas.get(ops[0].name)
             if slot is not None:
                 # %v = load <ty>, ptr %a  (a is a scalar slot) -> mov slot, v
@@ -462,6 +469,16 @@ class LLVMDropConverter:
         if op == "store":
             val_sz = _type_size(ops[0].type)
             vd = self._desc(ops[0], vmap, val_sz)
+            if self._is_ret_slot(ops[1], vmap):
+                # promoted return slot: write the return register directly (each
+                # path writes rax, matching native -- no post-merge read block).
+                _ar, eax, _d = self._abi()
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                self._fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.d.make_reg(eax, val_sz)
+                blk.insert_into_block(mi, anchor)
+                return mi
             slot = self._allocas.get(ops[1].name)
             if slot is not None:
                 # store <ty> %v, ptr %a  (a is a scalar slot) -> mov v, slot
@@ -670,14 +687,18 @@ class LLVMDropConverter:
         return mv
 
     def _emit_ret_value(self, blk, anchor, ea, term, eax, vmap):
-        """Emit `mov <retval>, eax` for an LLVM ret (no terminator)."""
+        """Emit `mov <retval>, eax` for an LLVM ret (no terminator). A promoted
+        return slot is already in the return reg, so no move is emitted."""
         ops = list(term.operands)
         if not ops:
             return anchor
         sz = _type_size(ops[0].type)
+        d = self._desc(ops[0], vmap, sz)
+        if d[0] == "reg" and d[1] == eax:
+            return anchor  # already in the return reg (promoted return slot)
         mi = hx.minsn_t(ea)
         mi.opcode = hx.m_mov
-        self._fill(mi.l, self._desc(ops[0], vmap, sz))
+        self._fill(mi.l, d)
         mi.d.make_reg(eax, sz)
         blk.insert_into_block(mi, anchor)
         return mi
@@ -796,6 +817,88 @@ class LLVMDropConverter:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
         return allocas
 
+    def _detect_ret_slot(self, fn) -> None:
+        """Promote the lifter's RETURN SLOT to the return register (noreturn fns).
+
+        The lift emits ``%funcresult = alloca T``: every returning path does
+        ``store v, funcresult`` and the terminal block ``%r = load funcresult;
+        ret %r``. Materialising that slot as an intermediate var (a kreg/stkvar
+        READ at a post-merge block) is fine normally, but when a NORETURN call
+        prunes an edge into that merge, Hex-Rays' value-numbering INTERRs (50342).
+        The real compiler writes the retval straight to rax on each path. So,
+        GATED on a noreturn call being present, route the slot's load/store to the
+        return reg (the load aliases rax; each store writes rax) -- matching native
+        and eliminating the post-merge read block. Non-noreturn fns are untouched.
+        See memory idavator_drop_noreturn_50342_rootcause.
+        """
+        has_noret = any(self._callee_is_noreturn(ins)
+                        for bb in fn.blocks for ins in bb.instructions
+                        if ins.opcode == "call")
+        if not has_noret:
+            return
+        ret_names = set()
+        for bb in fn.blocks:
+            term = list(bb.instructions)[-1]
+            if term.opcode == "ret":
+                ops = list(term.operands)
+                if ops:
+                    ret_names.add(ops[0].name)
+        if len(ret_names) != 1:
+            return
+        rv = next(iter(ret_names))
+        src = next((list(ins.operands)[0].name
+                    for bb in fn.blocks for ins in bb.instructions
+                    if ins.opcode == "load" and ins.name == rv), None)
+        if src is None or not self._ret_slot_uses_ok(fn, src):
+            return
+        if src in self._addr_taken:
+            self._ret_off = self._addr_taken[src][0]
+        elif src in self._allocas:
+            self._ret_kreg = self._allocas[src][0]
+
+    def _ret_slot_uses_ok(self, fn, slot_name) -> bool:
+        """Promotable only if the slot's address never escapes: every use of it
+        (and its bitcast aliases) is a load/store pointer or a bitcast feeding one.
+        A call-arg / value use means the address is needed -> don't promote."""
+        alias = {slot_name}
+        changed = True
+        while changed:
+            changed = False
+            for bb in fn.blocks:
+                for ins in bb.instructions:
+                    if (ins.opcode == "bitcast"
+                            and list(ins.operands)[0].name in alias
+                            and ins.name not in alias):
+                        alias.add(ins.name)
+                        changed = True
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                for idx, o in enumerate(ins.operands):
+                    if o.name not in alias:
+                        continue
+                    if ins.opcode == "load" and idx == 0:
+                        continue
+                    if ins.opcode == "store" and idx == 1:
+                        continue
+                    if ins.opcode == "bitcast" and idx == 0:
+                        continue
+                    return False
+        return True
+
+    def _is_ret_slot(self, operand, vmap) -> bool:
+        """True if ``operand`` addresses the promoted return slot -- a direct
+        alloca, a bitcast alias resolving to its frame offset, or its scalar
+        kreg. Cheap no-op when nothing was promoted."""
+        if self._ret_off is not None:
+            stk = self._stkvar_slot(operand, vmap)
+            if stk is not None and stk[0] == self._ret_off:
+                return True
+        if self._ret_kreg is not None:
+            slot = self._allocas.get(operand.name)
+            if slot is not None and slot[0] == self._ret_kreg:
+                return True
+        return False
+
     def _synthesize_ret_block(self, mba):
         """A noreturn host has no m_ret block to use as the return sink. Copy a
         valid code block (for a real start/end -- INTERR 50869 otherwise), clear
@@ -841,6 +944,8 @@ class LLVMDropConverter:
         self._cur_mba = mba
         self._call_spd_ea = self._resting_frame_ea(mba)
         self._canary_kreg = None
+        self._ret_off = None
+        self._ret_kreg = None
         argregs, eax, ds = self._abi()
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
@@ -849,6 +954,7 @@ class LLVMDropConverter:
             retb = self._synthesize_ret_block(mba)
 
         self._allocas = self._scan_allocas(mba, fn)
+        self._detect_ret_slot(fn)
         vmap: dict[str, tuple] = {}
         for i, a in enumerate(fn.arguments):
             if i >= len(argregs):
