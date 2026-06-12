@@ -19,6 +19,7 @@ from contextlib import suppress
 
 import ida_funcs
 import ida_hexrays as hx
+import ida_ida
 import ida_idaapi
 import ida_idp
 import ida_name
@@ -179,8 +180,14 @@ class LLVMDropConverter:
 
     @staticmethod
     def _abi():
-        argregs = [hx.reg2mreg(ida_idp.str2reg(r))
-                   for r in ("rdi", "rsi", "rdx", "rcx", "r8", "r9")]
+        # Integer arg registers depend on the target ABI: a PE (Windows) target
+        # uses the Microsoft x64 convention (rcx/rdx/r8/r9); everything else
+        # (ELF/Mach-O) uses System V (rdi/rsi/rdx/rcx/r8/r9). Return reg = rax.
+        if ida_ida.inf_get_filetype() == ida_ida.f_PE:
+            names = ("rcx", "rdx", "r8", "r9")
+        else:
+            names = ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+        argregs = [hx.reg2mreg(ida_idp.str2reg(r)) for r in names]
         return (argregs, hx.reg2mreg(ida_idp.str2reg("rax")),
                 hx.reg2mreg(ida_idp.str2reg("ds")))
 
