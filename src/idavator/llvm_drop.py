@@ -348,9 +348,9 @@ class LLVMDropConverter:
                 blk.insert_into_block(mi, anchor)
                 vmap[ins.name] = ("reg", kreg, out_sz)
                 return mi
-            stk = self._addr_taken.get(ops[0].name)
+            stk = self._stkvar_slot(ops[0], vmap)
             if stk is not None:
-                # %v = load <ty>, ptr %a  (a is a frame slot) -> mov stkvar, v
+                # %v = load (frame-slot alloca or GEP-of-alloca field) -> mov stkvar, v
                 mi = hx.minsn_t(ea)
                 mi.opcode = hx.m_mov
                 mi.l.make_stkvar(mba, stk[0])
@@ -395,9 +395,9 @@ class LLVMDropConverter:
                 mi.d.make_reg(slot[0], val_sz)
                 blk.insert_into_block(mi, anchor)
                 return mi
-            stk = self._addr_taken.get(ops[1].name)
+            stk = self._stkvar_slot(ops[1], vmap)
             if stk is not None:
-                # store <ty> %v, ptr %a  (a is a frame slot) -> mov v, stkvar
+                # store (frame-slot alloca or GEP-of-alloca field) -> mov v, stkvar
                 mi = hx.minsn_t(ea)
                 mi.opcode = hx.m_mov
                 self._fill(mi.l, (vd[0], vd[1], val_sz))
@@ -425,6 +425,15 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             return mi
         if op == "getelementptr":
+            slot = self._addr_taken.get(ops[0].name)
+            if slot is not None:
+                # GEP into a frame-slot alloca -> &stkvar(off + field). The result
+                # is itself a frame address; record it so a downstream load/store/
+                # call resolves to the same stkvar.
+                vmap[ins.name] = ("stkaddr",
+                                  slot[0] + self._gep_field_offset(ins, ops, vmap),
+                                  8)
+                return anchor
             # %q = getelementptr <ty>, <ty>* %p, i64 %idx  ->  q = p + idx*sizeof(ty)
             # (single-index array form; the result is an 8-byte address).
             m = re.search(r"getelementptr\s+(?:inbounds\s+)?([\w]+)",
@@ -590,6 +599,46 @@ class LLVMDropConverter:
         ty = m.group(1).strip() if m else "i64"
         return 8 if ("*" in ty or ty == "ptr") else _type_size(ty)
 
+    def _stkvar_slot(self, operand, vmap):
+        """(stkoff, size) if ``operand`` addresses a frame slot -- an
+        address-taken alloca or a GEP-of-alloca field result (stkaddr) -- else
+        None."""
+        s = self._addr_taken.get(operand.name)
+        if s is not None:
+            return s
+        d = vmap.get(operand.name)
+        if d is not None and d[0] == "stkaddr":
+            return (d[1], 8)
+        return None
+
+    @staticmethod
+    def _array_dims(type_str):
+        """(count, elem_str, elem_size) for an ``[N x T]`` array of SCALAR/ptr T,
+        else None (a struct/va_list element needs real layout -- not this slice)."""
+        m = re.search(r"\[\s*(\d+)\s+x\s+([^\]]+?)\s*\]", type_str)
+        if not m:
+            return None
+        n, elem = int(m.group(1)), m.group(2).strip()
+        if elem == "ptr" or elem in ("i8", "i16", "i32", "i64"):
+            return (n, elem, _type_size(elem))
+        return None
+
+    def _gep_field_offset(self, ins, ops, vmap) -> int:
+        """Constant byte offset of ``getelementptr [N x T], ptr %alloca, I0, I1``
+        into a frame-slot alloca: ``I0*sizeof([N x T]) + I1*sizeof(T)``."""
+        dims = self._array_dims(str(ins))
+        if dims is None:
+            raise NotImplementedError("GEP-on-stack: struct/va_list element")
+        n, _elem, esz = dims
+        strides = (n * esz, esz)  # [i0 over whole array, i1 over element]
+        total = 0
+        for k, o in enumerate(ops[1:]):
+            d = self._desc(o, vmap, 8)
+            if d[0] != "num":
+                raise NotImplementedError("GEP-on-stack: non-constant index")
+            total += d[1] * (strides[k] if k < len(strides) else esz)
+        return total
+
     def _scan_allocas(self, mba, fn) -> dict:
         """Classify each alloca; return the SCALAR-SLOT kreg map and populate
         ``self._addr_taken`` (name -> (stkoff, size)) for address-taken ones.
@@ -631,10 +680,18 @@ class LLVMDropConverter:
                 nm = ins.name
                 sz = self._alloca_elem_size(ins)
                 if nm in gepd:
-                    raise NotImplementedError(
-                        f"GEP-on-stack alloca %{nm} (struct field offsets need "
-                        f"struct layout -- task #3)")
-                if nm in escaped:
+                    # GEP'd alloca -> a frame slot sized to the WHOLE array; each
+                    # GEP resolves to &stkvar(off + field). Scalar/ptr element
+                    # arrays only; struct/va_list elements need real layout.
+                    dims = self._array_dims(str(ins))
+                    if dims is None:
+                        raise NotImplementedError(
+                            f"GEP-on-stack alloca %{nm} (struct/va_list element "
+                            f"needs real layout -- not the scalar-array slice)")
+                    arr_sz = dims[0] * dims[2]
+                    self._addr_taken[nm] = (off, arr_sz)
+                    off += max(arr_sz, 8)
+                elif nm in escaped:
                     # existing host frame slot -- NO frame extension (the
                     # subframe INTERR chain). Distinct 8-aligned offsets.
                     self._addr_taken[nm] = (off, sz)

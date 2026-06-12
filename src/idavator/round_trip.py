@@ -50,10 +50,10 @@ def is_supported(fn) -> tuple[bool, str]:
     for arg in fn.arguments:
         if not _type_ok(arg.type):
             return False, f"argtype:{arg.type}"
-    # alloca is droppable as a scalar slot (kreg) OR address-taken into an
-    # existing host frame slot (&local -> mop_a(stkvar); the stack-passing call
-    # carries the resting-frame ea -- the SP fix). A GEP'd stack alloca (struct
-    # field offsets) still needs struct layout -- unsupported (task #3).
+    # alloca is droppable as a scalar slot (kreg), address-taken into an existing
+    # host frame slot (&local -> mop_a(stkvar)), OR GEP'd as a scalar/ptr-element
+    # ARRAY ([N x ptr/iX]) -> &stkvar(off + field). A GEP over a struct/va_list
+    # element still needs real struct layout -- unsupported.
     alloca_names = {ins.name for bb in fn.blocks for ins in bb.instructions
                     if ins.opcode == "alloca"}
     if alloca_names:
@@ -62,8 +62,11 @@ def is_supported(fn) -> tuple[bool, str]:
                 if ins.opcode != "getelementptr":
                     continue
                 ops = list(ins.operands)
-                if ops and ops[0].name in alloca_names:
-                    return False, "alloca:gep-on-stack"
+                if not (ops and ops[0].name in alloca_names):
+                    continue
+                if not re.search(r"\[\s*\d+\s+x\s+(?:ptr|i8|i16|i32|i64)\s*\]",
+                                 str(ins)):
+                    return False, "alloca:gep-struct"
     for bb in fn.blocks:
         for ins in bb.instructions:
             op = ins.opcode
