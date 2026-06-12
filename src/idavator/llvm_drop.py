@@ -39,9 +39,12 @@ _BINOP = {
     "add": hx.m_add, "sub": hx.m_sub, "mul": hx.m_mul, "and": hx.m_and,
     "or": hx.m_or, "xor": hx.m_xor, "shl": hx.m_shl, "lshr": hx.m_shr,
     "ashr": hx.m_sar,
+    "udiv": hx.m_udiv, "sdiv": hx.m_sdiv, "urem": hx.m_umod, "srem": hx.m_smod,
 }
 # zext/sext/trunc -> microcode widening/narrowing.
 _CAST = {"zext": hx.m_xdu, "sext": hx.m_xds, "trunc": hx.m_low}
+# bit-identical reinterpretations -> no microcode, just alias the operand.
+_NOOP_CAST = frozenset({"bitcast", "ptrtoint", "inttoptr"})
 
 # icmp predicate -> a 2-way conditional jump that branches to ``d`` when the
 # predicate holds (the fall-through, serial+1, takes the FALSE arm).
@@ -249,6 +252,10 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             vmap[ins.name] = ("reg", kreg, size)
             return mi
+        if op in _NOOP_CAST:
+            # same-bits cast (ptr<->int, ptr<->ptr): alias the operand, no insn.
+            vmap[ins.name] = self._desc(ops[0], vmap, 8)
+            return anchor
         if op in _CAST:
             in_sz = _type_size(ops[0].type)
             out_sz = _type_size(ins.type)
