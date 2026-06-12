@@ -43,9 +43,10 @@ def _find_linear_host(ida_funcs, hx, idautils):
     return None
 
 
-# Proven-safe subset: a call result is only kept in rax when unused (void) or
-# returned directly (tail call). At PREOPTIMIZED an m_call needs a non-empty `d`
-# (INTERR 50864 -- see the decode in llvm_drop.py); we use d=rax.
+# A call must terminate its microcode block (INTERR 50864), so the converter
+# SPLITS each LLVM block at calls: the call is a BLT_1WAY tail that falls through
+# to a continuation block which captures the rax result into a kreg. This lifts
+# the old "consumed result" restriction.
 _CASES = [
     # tail call: strlen(s).
     ("declare i64 @strlen(i8*)\n"
@@ -57,6 +58,20 @@ _CASES = [
      "define void @vfree(i8* %p) {\n"
      "entry:\n  call void @free(i8* %p)\n  ret void\n}\n",
      "vfree", ["free("]),
+    # consumed result: strlen(s) + 1 (was the old crashing/guarded case).
+    ("declare i64 @strlen(i8*)\n"
+     "define i64 @lenp1(i8* %s) {\n"
+     "entry:\n  %n = call i64 @strlen(i8* %s)\n"
+     "  %r = add i64 %n, 1\n  ret i64 %r\n}\n",
+     "lenp1", ["strlen", "+ 1"]),
+    # chained calls: strlen(a) + strlen(b) -- the first result must survive the
+    # second call (kreg capture), proving the spill across a clobbering call.
+    ("declare i64 @strlen(i8*)\n"
+     "define i64 @two(i8* %a, i8* %b) {\n"
+     "entry:\n  %x = call i64 @strlen(i8* %a)\n"
+     "  %y = call i64 @strlen(i8* %b)\n"
+     "  %r = add i64 %x, %y\n  ret i64 %r\n}\n",
+     "two", ["strlen"]),
 ]
 
 
@@ -96,9 +111,8 @@ class TestCallDrop:
         finally:
             idapro.close_database()
 
-    def test_consumed_call_result_raises_cleanly(self, examples_dir: Path):
-        """A call result consumed by arithmetic would segfault a later maturity
-        pass -- the converter must raise NotImplementedError, not crash."""
+    def test_consumed_result_renders_arithmetic(self, examples_dir: Path):
+        """The consumed call result `strlen(s) + 1` now renders (block split)."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         import idapro
@@ -121,7 +135,10 @@ class TestCallDrop:
                   "entry:\n  %n = call i64 @strlen(i8* %s)\n"
                   "  %r = add i64 %n, 1\n  ret i64 %r\n}\n")
             conv = LLVMDropConverter(ir)
-            with pytest.raises(NotImplementedError):
-                conv.drop(host, "lenp1")
+            cf = conv.drop(host, "lenp1")
+            text = str(cf) if cf is not None else "<None>"
+            assert conv.last_error is None, conv.last_error
+            assert cf is not None and "strlen" in text, text
+            assert "+ 1" in text, text
         finally:
             idapro.close_database()

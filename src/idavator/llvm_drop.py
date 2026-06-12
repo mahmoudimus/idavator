@@ -82,7 +82,6 @@ class LLVMDropConverter:
                    if g.name == llvm_fn_name and not g.is_declaration), None)
         if fn is None:
             raise ValueError(f"no definition for @{llvm_fn_name}")
-        self._check_call_support(fn)  # raise pre-hook (the hook swallows errors)
         self._force_prototype(host_ea, fn)
 
         box = {"interr": None, "err": None}
@@ -286,46 +285,56 @@ class LLVMDropConverter:
             self._fill(mi.d, (ad[0], ad[1], 8))
             blk.insert_into_block(mi, anchor)
             return mi
-        if op == "call":
-            # callee is the LAST operand; preceding operands are the args.
-            # At PREOPTIMIZED a call is just `m_call l=gvar(callee)`; Hex-Rays
-            # reconstructs the args from the ABI registers + callee prototype.
-            # The call's `d` MUST be a non-empty register (else mblock_t::verify
-            # INTERR 50864 -- m_call with d.t==mop_z must be the block tail). We
-            # point d straight at the result kreg, which doubles as the value.
-            callee = ops[-1]
-            call_args = ops[:-1]
-            callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
-            if callee_ea == ida_idaapi.BADADDR:
-                raise ValueError(f"unresolved callee @{callee.name}")
-            argregs, eax, _ds = self._abi()
-            for i, a in enumerate(call_args):
-                asz = _type_size(a.type)
-                mv = hx.minsn_t(ea)
-                mv.opcode = hx.m_mov
-                self._fill(mv.l, self._desc(a, vmap, asz))
-                mv.d.make_reg(argregs[i], asz)
-                blk.insert_into_block(mv, anchor)
-                anchor = mv
-            mc = hx.minsn_t(ea)
-            mc.opcode = hx.m_call
-            mc.l.make_gvar(callee_ea)
-            # `d` must be the REAL return register rax (non-empty -> legal
-            # mid-block per INTERR 50864). The result LIVES in rax: copying it to
-            # a scratch kreg breaks a later maturity pass, so point vmap at rax
-            # directly (a 2nd call before this result is consumed would clobber
-            # it -> spill-to-stack is a later refinement).
-            rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
-            mc.d.make_reg(eax, rsz)
-            blk.insert_into_block(mc, anchor)
-            if str(ins.type) != "void":
-                vmap[ins.name] = ("reg", eax, rsz)
-            return mc
         if op == "icmp":
             # Folded into the branch (see _build_multiblock); no value emitted.
             return anchor
+        if op == "call":
+            raise RuntimeError("call must be split into its own block "
+                               "(handled by the segment splitter, not _emit_value)")
         logger.warning("unhandled LLVM opcode: %s", op)
         return anchor
+
+    def _emit_call(self, mba, blk, anchor, ea, ins, vmap, argregs):
+        """Emit `mov`s into the ABI arg-regs then `m_call l=gvar(callee), d=rax`
+        as the block TAIL. The call must terminate its block (it falls through to
+        the continuation, BLT_1WAY) -- a call defining rax mid-block is fine for
+        50864 but later maturities want calls block-terminal. Returns the call."""
+        ops = list(ins.operands)
+        callee = ops[-1]
+        call_args = ops[:-1]
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        if callee_ea == ida_idaapi.BADADDR:
+            raise ValueError(f"unresolved callee @{callee.name}")
+        _argregs, eax, _ds = self._abi()
+        for i, a in enumerate(call_args):
+            asz = _type_size(a.type)
+            mv = hx.minsn_t(ea)
+            mv.opcode = hx.m_mov
+            self._fill(mv.l, self._desc(a, vmap, asz))
+            mv.d.make_reg(argregs[i], asz)
+            blk.insert_into_block(mv, anchor)
+            anchor = mv
+        mc = hx.minsn_t(ea)
+        mc.opcode = hx.m_call
+        mc.l.make_gvar(callee_ea)
+        rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
+        mc.d.make_reg(eax, rsz)  # call defines rax (the continuation captures it)
+        blk.insert_into_block(mc, anchor)
+        return mc
+
+    def _capture_call_result(self, mba, blk, anchor, ea, call_ins, eax, vmap):
+        """At a continuation block's START, copy the call's rax result into a
+        scratch kreg so it survives a later call that clobbers rax. Registers
+        the kreg in vmap as the call's SSA value."""
+        rsz = _type_size(call_ins.type)
+        kreg = mba.alloc_kreg(rsz)
+        mv = hx.minsn_t(ea)
+        mv.opcode = hx.m_mov
+        mv.l.make_reg(eax, rsz)
+        mv.d.make_reg(kreg, rsz)
+        blk.insert_into_block(mv, anchor)
+        vmap[call_ins.name] = ("reg", kreg, rsz)
+        return mv
 
     def _emit_ret_value(self, blk, anchor, ea, term, eax, vmap):
         """Emit `mov <retval>, eax` for an LLVM ret (no terminator)."""
@@ -340,27 +349,6 @@ class LLVMDropConverter:
         blk.insert_into_block(mi, anchor)
         return mi
 
-    @staticmethod
-    def _check_call_support(fn) -> None:
-        """Guard the call patterns that crash a later maturity pass. A call
-        result is only safe to keep in rax when it is unused or returned
-        directly (tail call); consuming it in arithmetic segfaults the pipeline
-        (the proper fix is a real mcallinfo `d`, currently SWIG-ownership
-        blocked). Raise a clean error instead of crashing."""
-        call_results = {ins.name for bb in fn.blocks for ins in bb.instructions
-                        if ins.opcode == "call" and str(ins.type) != "void"}
-        if not call_results:
-            return
-        for bb in fn.blocks:
-            for ins in bb.instructions:
-                if ins.opcode in ("ret", "call"):
-                    continue
-                if any(op.name in call_results for op in ins.operands):
-                    raise NotImplementedError(
-                        "call result consumed by a non-return instruction is "
-                        "not yet supported (needs a real mcallinfo in d; "
-                        "see INTERR 50864 decode)")
-
     # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
         argregs, eax, ds = self._abi()
@@ -374,7 +362,11 @@ class LLVMDropConverter:
         for i, a in enumerate(fn.arguments):
             vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
 
-        if len(list(fn.blocks)) == 1:
+        # A call must terminate its block, so a function with any call needs the
+        # multi-block (segment-splitting) path even if it has one LLVM block.
+        has_call = any(ins.opcode == "call"
+                       for bb in fn.blocks for ins in bb.instructions)
+        if len(list(fn.blocks)) == 1 and not has_call:
             self._build_singleblock(mba, fn, retb, eax, ds, vmap)
         else:
             self._build_multiblock(mba, fn, retb, eax, ds, vmap)
@@ -412,14 +404,41 @@ class LLVMDropConverter:
         preds = re.findall(r"\[\s*[^,\[\]]+,\s*%([\w.]+)\s*\]", str(ins))
         return list(zip(ops, preds))
 
+    @staticmethod
+    def _segment_block(bb):
+        """Split an LLVM block's instruction stream into SEGMENTS at calls. A
+        call must end its microcode block (BLT_1WAY, falls through), so each call
+        closes a segment; the next segment captures that call's result at its
+        start. Returns [seg,...]; only the LAST seg carries the terminator."""
+        term = list(bb.instructions)[-1]
+        segs, cur = [], {"values": [], "call": None, "term": None,
+                         "prev_call": None}
+        for ins in bb.instructions:
+            if ins is term:
+                break
+            if ins.opcode == "phi":
+                continue
+            if ins.opcode == "call":
+                cur["call"] = ins
+                segs.append(cur)
+                cur = {"values": [], "call": None, "term": None,
+                       "prev_call": ins}
+            else:
+                cur["values"].append(ins)
+        cur["term"] = term
+        segs.append(cur)
+        return segs
+
     def _build_multiblock(self, mba, fn, retb, eax, ds, vmap) -> None:
-        """One microcode block per LLVM block. Conditional ``br`` lowers to a
-        2-way jump whose FALSE arm is a trampoline at serial+1 (the jcc
-        fall-through is structurally the next block); a TRUE-arm trampoline is
-        added lazily when a phi needs that edge. phi is destructed out of SSA by
-        copying each incoming value into the phi's kreg on its edge block.
+        """One microcode block per SEGMENT (an LLVM block split at calls).
+        A call-segment is a BLT_1WAY tail that falls through to its continuation;
+        the terminal segment carries the LLVM terminator. Conditional ``br``
+        lowers to a 2-way jump with a FALSE-arm trampoline at serial+1 (+ a lazy
+        TRUE-arm trampoline when a phi needs that edge); phi is destructed out of
+        SSA by copying each incoming value into the phi's kreg on its edge block.
         Hex-Rays rebuilds the CFG + lvars from these terminators."""
         ea = mba.entry_ea
+        argregs, _eax, _ds = self._abi()
         llvm_blocks = list(fn.blocks)
 
         # Pre-scan icmp defs so a `br %c` can fold its compare into the jump.
@@ -443,27 +462,31 @@ class LLVMDropConverter:
                     for _val, pred_name in incs:
                         edges_need_copy.add((pred_name, bb.name))
 
-        # Plan the physical serial layout. Conditional br always gets a FALSE
-        # trampoline (the fall-through); the TRUE arm gets one only if a phi
-        # needs to drop a copy on that edge.
+        # Plan the segment layout. name_serial[bb] = its FIRST segment; the
+        # terminal segment of a conditional br gets a FALSE trampoline (always)
+        # and a TRUE trampoline (only if a phi drops a copy on that edge).
         plan, serial = [], 1
+        name_serial: dict[str, int] = {}
+        term_entry: dict[str, dict] = {}
         for bb in llvm_blocks:
-            term = list(bb.instructions)[-1]
-            ops = list(term.operands)  # materialize: it's a one-shot iterator
-            is_cond = term.opcode == "br" and len(ops) == 3
-            e = {"bb": bb, "term": term, "code": serial,
-                 "ftramp": None, "ttramp": None}
-            serial += 1
-            if is_cond:
-                e["ftramp"] = serial
+            segs = self._segment_block(bb)
+            for si, seg in enumerate(segs):
+                e = {**seg, "bb": bb, "code": serial,
+                     "ftramp": None, "ttramp": None}
+                if si == 0:
+                    name_serial[bb.name] = serial
                 serial += 1
-                if (bb.name, ops[2].name) in edges_need_copy:
-                    e["ttramp"] = serial
-                    serial += 1
-            plan.append(e)
+                if seg["term"] is not None:
+                    term_entry[bb.name] = e
+                    tops = list(seg["term"].operands)
+                    if seg["term"].opcode == "br" and len(tops) == 3:
+                        e["ftramp"] = serial
+                        serial += 1
+                        if (bb.name, tops[2].name) in edges_need_copy:
+                            e["ttramp"] = serial
+                            serial += 1
+                plan.append(e)
         needed = serial - 1
-        name_serial = {e["bb"].name: e["code"] for e in plan}
-        by_name = {e["bb"].name: e for e in plan}
 
         # Mint enough code blocks before retb (copy_block inherits a valid
         # start/end; INTERR 50869 otherwise), then clear serials 1..needed.
@@ -492,23 +515,26 @@ class LLVMDropConverter:
                 phi_kreg[pname] = (kreg, sz)
                 vmap[pname] = ("reg", kreg, sz)
 
-        # PASS A: emit value instructions (skip phi + terminator) into each
-        # code block, populating vmap with kregs for every SSA result.
+        # PASS A: per segment, capture the previous call's result, emit value
+        # instructions, then (for a call-segment) the call tail + fall-through.
         for e in plan:
             blk = mba.get_mblock(e["code"])
             anchor = None
-            for ins in e["bb"].instructions:
-                if ins is e["term"]:
-                    break
-                if ins.opcode == "phi":
-                    continue
+            if e["prev_call"] is not None and str(e["prev_call"].type) != "void":
+                anchor = self._capture_call_result(
+                    mba, blk, anchor, ea, e["prev_call"], eax, vmap)
+            for ins in e["values"]:
                 anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
+            if e["call"] is not None:
+                self._emit_call(mba, blk, anchor, ea, e["call"], vmap, argregs)
+                blk.type = hx.BLT_1WAY      # call tail -> continuation (serial+1)
+                self._wire(blk, [e["code"] + 1])
 
-        # PASS A.5: out-of-SSA phi copies onto each incoming edge block (these
-        # append after the values; pass B appends the terminator after them, so
-        # the copy always precedes the branch on that edge).
+        # PASS A.5: out-of-SSA phi copies onto each incoming edge block (append
+        # after the values; pass B appends the terminator after them, so the copy
+        # always precedes the branch on that edge).
         def edge_serial(pred_name, target_name):
-            pe = by_name[pred_name]
+            pe = term_entry[pred_name]
             t = pe["term"]
             tops = list(t.operands)
             if t.opcode == "br" and len(tops) == 1:
@@ -531,8 +557,11 @@ class LLVMDropConverter:
                     mi.d.make_reg(kreg, sz)
                     eb.insert_into_block(mi, eb.tail)
 
-        # PASS B: terminators + edge wiring (append after values/phi-copies).
+        # PASS B: terminators on TERMINAL segments only (call-segments were
+        # already wired BLT_1WAY in pass A).
         for e in plan:
+            if e["term"] is None:
+                continue
             blk = mba.get_mblock(e["code"])
             term, ops = e["term"], list(e["term"].operands)
             anchor = blk.tail
