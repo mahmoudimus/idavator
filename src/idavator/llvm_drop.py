@@ -940,11 +940,31 @@ class LLVMDropConverter:
         blk.insert_into_block(mi, anchor)
         return mi
 
-    @staticmethod
-    def _alloca_elem_size(ins) -> int:
+    def _alloca_struct_key(self, ins):
+        """The ``self._struct_size`` key for a ``%struct`` alloca (quotes stripped,
+        llvmlite ``.NN`` disambiguation suffix tolerated), or None for a scalar/ptr
+        alloca. Mirrors _array_dims's element-key handling."""
         m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
         ty = m.group(1).strip() if m else "i64"
-        return 8 if ("*" in ty or ty == "ptr") else _type_size(ty)
+        if "*" in ty or ty == "ptr":
+            return None
+        key = ty.replace('"', "")
+        if key not in self._struct_size:
+            key = re.sub(r"\.\d+$", "", key)
+        return key if key in self._struct_size else None
+
+    def _alloca_elem_size(self, ins) -> int:
+        m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
+        ty = m.group(1).strip() if m else "i64"
+        if "*" in ty or ty == "ptr":
+            return 8
+        # A ``%struct`` alloca: prefer the already-parsed layout size; _type_size
+        # has no struct case and returns 4 (the opaque-name fallback), which would
+        # under-size an escaping struct slot and collide with the next alloca.
+        key = self._alloca_struct_key(ins)
+        if key is not None:
+            return self._struct_size[key][0]
+        return _type_size(ty)
 
     def _stkvar_slot(self, operand, vmap):
         """(stkoff, size) if ``operand`` addresses a frame slot -- an
@@ -1025,6 +1045,15 @@ class LLVMDropConverter:
                         gepd.add(o.name)
                     else:
                         escaped.add(o.name)
+        # Host-frame member offsets, keyed by the source name the lifter preserved.
+        # An escaping STRUCT alloca must rest at its REAL host offset: the synthetic
+        # sequential packing below can land a struct's base on top of a DIFFERENT,
+        # independently-materialised host scalar (e.g. ``%storage`` -> synthetic +16
+        # == host ``new_size`` in hash_rehash). Hex-Rays then reads/writes the wrong
+        # slot -> garbage decompile + the post-noreturn-merge INTERR 50342. Native
+        # uses the true frame offsets; matching them by name de-collides the slot.
+        host_off = self._host_frame_offsets(mba)
+        struct_allocas: set = set()
         allocas = {}
         off = 0
         for bb in fn.blocks:
@@ -1033,6 +1062,8 @@ class LLVMDropConverter:
                     continue
                 nm = ins.name
                 sz = self._alloca_elem_size(ins)
+                if self._alloca_struct_key(ins) is not None:
+                    struct_allocas.add(nm)
                 if nm in gepd:
                     # GEP'd alloca -> a frame slot sized to the WHOLE array; each
                     # GEP resolves to &stkvar(off + field). Scalar/ptr element
@@ -1052,6 +1083,15 @@ class LLVMDropConverter:
                     off += max(sz, 8)
                 else:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
+        # Re-anchor escaping STRUCT allocas at their real host-frame offset (by the
+        # lifter-preserved name). Scalar/ptr slots keep the synthetic offsets that
+        # already verify; only the struct slots need the de-collision (their base
+        # must not overlap a live host scalar). Keep the parsed (possibly larger)
+        # struct size for &local sizing.
+        for nm in struct_allocas:
+            cur = self._addr_taken.get(nm)
+            if cur is not None and nm in host_off:
+                self._addr_taken[nm] = (host_off[nm][0], cur[1])
         return allocas
 
     def _detect_ret_slot(self, fn) -> None:
@@ -1190,6 +1230,26 @@ class LLVMDropConverter:
         retb.insert_into_block(rt, None)
         retb.mark_lists_dirty()
         return retb
+
+    @staticmethod
+    def _host_frame_offsets(mba) -> dict:
+        """``{member_name: (frame_offset, size)}`` for the host function's frame
+        (the lifter preserves source names, so a ``%storage`` alloca matches the
+        host ``storage`` frame member). Empty on any failure / no frame."""
+        out: dict = {}
+        pfn = ida_funcs.get_func(mba.entry_ea)
+        if pfn is None:
+            return out
+        tif = ida_typeinf.tinfo_t()
+        if not ida_frame.get_func_frame(tif, pfn):
+            return out
+        udt = ida_typeinf.udt_type_data_t()
+        if not tif.get_udt_details(udt):
+            return out
+        for i in range(udt.size()):
+            m = udt[i]
+            out[m.name] = (m.offset // 8, m.size // 8)
+        return out
 
     @staticmethod
     def _resting_frame_ea(mba) -> int:
