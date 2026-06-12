@@ -207,13 +207,25 @@ def canonical_form(c_function: str):
     return _Canon().stmt(body)
 
 
+def _norm_text(c: str) -> str:
+    """Comment-free, whitespace-collapsed body text (the fast-path key)."""
+    c = re.sub(r"//[^\n]*|/\*.*?\*/", "", c, flags=re.DOTALL)
+    return re.sub(r"\s+", " ", c).strip()
+
+
 def matches(expected_c: str, actual_c: str) -> bool:
-    """True iff two C function definitions share a canonical body form."""
+    """True iff two C function definitions share a canonical body form. A verbatim
+    drop (common -- the drop often reproduces the original exactly) short-circuits
+    BEFORE AST canonicalization, which is incomplete for goto/label/switch bodies."""
+    if _norm_text(expected_c) == _norm_text(actual_c):
+        return True
     return canonical_form(expected_c) == canonical_form(actual_c)
 
 
 def fidelity_ledger(expected_c: str, actual_c: str) -> dict:
     """Empty dict iff faithful; else the first divergent canonical subtrees."""
+    if _norm_text(expected_c) == _norm_text(actual_c):
+        return {}
     exp, act = canonical_form(expected_c), canonical_form(actual_c)
     if exp == act:
         return {}

@@ -91,8 +91,9 @@ class TestRealCpFunctionRoundTrip:
     its own EA and assert the result is semantically identical to the original."""
 
     # Real coreutils functions whose lifted IR is in the supported subset and
-    # round-trips byte-faithful through the oracle.
-    FAITHFUL = ["c_tolower", "quotearg_char"]
+    # round-trips byte-faithful through the oracle. rpl_fclose drops VERBATIM
+    # (goto/label body) -- caught by the oracle's exact-text fast path.
+    FAITHFUL = ["c_tolower", "quotearg_char", "rpl_fclose"]
 
     @pytest.mark.parametrize("name", FAITHFUL)
     def test_real_function_round_trips(self, examples_dir: Path, name):
