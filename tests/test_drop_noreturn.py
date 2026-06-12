@@ -168,3 +168,57 @@ class TestNoreturnTail:
             assert "xalloc_die" in txt, f"noreturn call dropped:\n{txt}"
         finally:
             idapro.close_database()
+
+    def test_remember_copied_sroa_fallback_clears_50342(
+            self, examples_dir: Path) -> None:
+        """The REAL cp!remember_copied. Its lifted IR returns a `funcresult`
+        alloca slot read at a post-merge `ret` block downstream of a noreturn
+        (xalloc_die) -- the alloca-form return-slot promotion does NOT clear it
+        (the slot is a struct-field load, not a clean scalar store), so the plain
+        drop INTERRs 50342 (cf=None). The SROA fallback in drop() re-lifts from an
+        SROA-optimized copy (the slot collapses to a return phi), and the return-
+        phi promotion writes the retval straight to the return reg -> 50342 gone.
+
+        Drops @remember_copied into its OWN ea so the result round-trips against
+        the genuine reference. Asserts the real calls survive and NO `byte_`
+        (the 50342 corruption / a wrong const-memory drop would surface as those).
+        Proven to FAIL without the fix: `git stash` llvm_drop.py -> cf is None."""
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        import idapro
+        import ida_hexrays
+        import ida_idaapi
+        import ida_name
+
+        binary = examples_dir / "cp"
+        ir = examples_dir / "cp.ll"
+        if not binary.exists() or not ir.exists():
+            pytest.skip("missing example: cp / cp.ll")
+
+        from idavator.llvm_drop import LLVMDropConverter
+
+        idapro.open_database(str(binary), True)
+        try:
+            assert ida_hexrays.init_hexrays_plugin()
+            for needed in ("xalloc_die", "xmalloc", "hash_insert"):
+                if ida_name.get_name_ea(
+                        ida_idaapi.BADADDR, needed) == ida_idaapi.BADADDR:
+                    pytest.skip(f"{needed} not in this binary")
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "remember_copied")
+            if ea == ida_idaapi.BADADDR:
+                pytest.skip("remember_copied not in this binary")
+
+            conv = LLVMDropConverter(ir.read_text())
+            cf = conv.drop(ea, "remember_copied")
+            assert conv.last_error is None, conv.last_error
+            # The 50342 surfaces late as cf=None; the SROA fallback must clear it.
+            assert cf is not None, "decompile returned None (INTERR 50342?)"
+            assert conv.last_interr is None, f"INTERR {conv.last_interr}"
+            txt = str(cf)
+            # Real calls must survive (a corrupt/garbage drop would lose them).
+            for call in ("xmalloc", "hash_insert", "xalloc_die"):
+                assert call in txt, f"missing call {call!r}:\n{txt}"
+            # 50342 corruption / a wrong const-memory drop renders as byte_<addr>.
+            assert "byte_" not in txt, f"corrupt drop (byte_):\n{txt}"
+        finally:
+            idapro.close_database()

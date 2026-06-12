@@ -197,7 +197,9 @@ class LLVMDropConverter:
     """Drop a (straight-line) LLVM function into a host's decompiled output."""
 
     def __init__(self, ir_text: str):
+        self._ir_text = ir_text
         self.module = llvm.parse_assembly(ir_text)
+        self._sroa_module = None     # lazily-built SROA-optimized copy (fallback)
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
@@ -206,13 +208,45 @@ class LLVMDropConverter:
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
         self._ret_off = None         # frame off of a promoted return slot, or None
         self._ret_kreg = None        # kreg of a promoted scalar return slot, or None
+        self._ret_phi = None         # name of a phi whose result feeds `ret`, or None
         self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
         """Rebuild ``host_ea``'s microcode from the named LLVM function and return
-        the resulting ``cfunc_t`` (or None on failure)."""
-        fn = next((g for g in self.module.functions
+        the resulting ``cfunc_t`` (or None on failure).
+
+        SROA FALLBACK (scoped, zero-regression): the plain drop runs first. ONLY
+        if it returns a LATE failure -- ``cf is None`` with NO build error and NO
+        early INTERR caught by ``try_verify`` (the 50342-style value-numbering
+        failure that surfaces only after ``preoptimized``) -- do we retry from an
+        SROA-optimized copy of the module. SROA collapses the lifter's return-slot
+        alloca into a return phi, which the return-phi promotion writes straight to
+        the return reg (clearing 50342). Because the retry only runs when the plain
+        drop already FAILED, every currently-passing function is untouched."""
+        cf, box = self._drop_from_module(self.module, host_ea, llvm_fn_name)
+        is_late_failure = (cf is None and box["err"] is None
+                           and box["interr"] is None)
+        if is_late_failure:
+            opt = self._get_sroa_module()
+            if opt is not None and any(
+                    g.name == llvm_fn_name and not g.is_declaration
+                    for g in opt.functions):
+                logger.info("drop @%s: late failure -> SROA fallback retry",
+                            llvm_fn_name)
+                cf2, box2 = self._drop_from_module(opt, host_ea, llvm_fn_name)
+                if cf2 is not None:
+                    cf, box = cf2, box2
+        if box["err"]:
+            logger.error("drop build failed:\n%s", box["err"])
+        self.last_interr = box["interr"]
+        self.last_error = box["err"]
+        return cf
+
+    def _drop_from_module(self, module, host_ea: int, llvm_fn_name: str):
+        """Rebuild ``host_ea`` from ``llvm_fn_name`` in ``module``; return
+        ``(cfunc_t|None, box)`` where ``box`` carries ``interr``/``err``."""
+        fn = next((g for g in module.functions
                    if g.name == llvm_fn_name and not g.is_declaration), None)
         if fn is None:
             raise ValueError(f"no definition for @{llvm_fn_name}")
@@ -245,11 +279,36 @@ class LLVMDropConverter:
             cf = hx.decompile(host_ea)
         finally:
             hook.unhook()
-        if box["err"]:
-            logger.error("drop build failed:\n%s", box["err"])
-        self.last_interr = box["interr"]
-        self.last_error = box["err"]
-        return cf
+        return cf, box
+
+    def _get_sroa_module(self):
+        """An SROA(+simplifycfg+instnamer)-optimized copy of the module, built
+        lazily and cached. SROA promotes the lifter's return-slot alloca to a
+        return phi (then promoted to the return reg); instnamer is required because
+        SROA emits anonymous ``%0``/``%1`` that the converter keys by NAME. Returns
+        None if the new-PM pipeline is unavailable (the plain drop result stands)."""
+        if self._sroa_module is not None:
+            return self._sroa_module
+        try:
+            opt = llvm.parse_assembly(self._ir_text)
+            llvm.initialize_all_targets()
+            llvm.initialize_native_target()
+            llvm.initialize_native_asmprinter()
+            tm = llvm.Target.from_default_triple().create_target_machine()
+            pb = llvm.create_pass_builder(
+                tm, llvm.create_pipeline_tuning_options())
+            mpm = llvm.create_new_module_pass_manager()
+            mpm.add_sroa_pass()
+            mpm.add_simplify_cfg_pass()
+            mpm.add_instruction_namer_pass()
+            mpm.run(opt, pb)
+            self._sroa_module = opt
+        except Exception:  # noqa: BLE001
+            import traceback
+            logger.warning("SROA fallback unavailable:\n%s",
+                           traceback.format_exc())
+            self._sroa_module = None
+        return self._sroa_module
 
     # -- internals -------------------------------------------------------
     @staticmethod
@@ -390,6 +449,10 @@ class LLVMDropConverter:
         num = re.search(r"(-?\d+)\s*$", s)
         if num:
             return ("num", int(num.group(1)), _type_size(s) or default_size)
+        if s.split()[-1:] == ["null"]:
+            # a `null` pointer constant (e.g. a phi incoming after SROA folds the
+            # return slot: ``[ null, %B ]``) -> the zero address.
+            return ("num", 0, _type_size(s) or default_size)
         raise ValueError(f"unhandled operand {s!r}")
 
     def _global_ea(self, operand):
@@ -920,6 +983,39 @@ class LLVMDropConverter:
         elif src in self._allocas:
             self._ret_kreg = self._allocas[src][0]
 
+    def _detect_ret_phi(self, fn) -> None:
+        """Promote a RETURN PHI to the return register (the SROA-of-the-slot form).
+
+        SROA collapses the ``%funcresult`` alloca/load/store return slot into a
+        ``phi`` at the ret block: ``%fr.0 = phi [%v,@A],[null,@B]; ret %fr.0``.
+        Destructuring that phi the normal way (a kreg READ at the post-merge ret
+        block) re-fires the SAME value-numbering INTERR 50342 that
+        ``_detect_ret_slot`` clears for the alloca form -- because a noreturn call
+        still prunes an edge into the merge. The fix is identical in spirit: write
+        the return reg straight on each incoming edge instead of materialising a
+        merge var. We record the phi NAME; ``_build_multiblock`` then uses eax as
+        that phi's "kreg" (PASS A.5 writes each incoming to eax on its edge, PASS
+        B's ret skips the now-redundant mov). GATED on a noreturn call -- non-
+        noreturn fns keep the ordinary phi-kreg path."""
+        has_noret = any(self._callee_is_noreturn(ins)
+                        for bb in fn.blocks for ins in bb.instructions
+                        if ins.opcode == "call")
+        if not has_noret:
+            return
+        ret_names = set()
+        for bb in fn.blocks:
+            term = list(bb.instructions)[-1]
+            if term.opcode == "ret":
+                ops = list(term.operands)
+                if ops:
+                    ret_names.add(ops[0].name)
+        if len(ret_names) != 1:
+            return
+        rv = next(iter(ret_names))
+        if any(ins.opcode == "phi" and ins.name == rv
+               for bb in fn.blocks for ins in bb.instructions):
+            self._ret_phi = rv
+
     def _ret_slot_uses_ok(self, fn, slot_name) -> bool:
         """Promotable only if the slot's address never escapes: every use of it
         (and its bitcast aliases) is a load/store pointer or a bitcast feeding one.
@@ -1010,6 +1106,7 @@ class LLVMDropConverter:
         self._canary_kreg = None
         self._ret_off = None
         self._ret_kreg = None
+        self._ret_phi = None
         argregs, eax, ds = self._abi()
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
@@ -1019,6 +1116,7 @@ class LLVMDropConverter:
 
         self._allocas = self._scan_allocas(mba, fn)
         self._detect_ret_slot(fn)
+        self._detect_ret_phi(fn)
         vmap: dict[str, tuple] = {}
         for i, a in enumerate(fn.arguments):
             if i >= len(argregs):
@@ -1199,14 +1297,22 @@ class LLVMDropConverter:
             self._wire(lb, [retb.serial])
 
         # phi result kregs must exist before pass A (the phi's own block reads
-        # them); register them in vmap up front.
+        # them); register them in vmap up front. The RETURN PHI (its result feeds
+        # `ret`, downstream of a noreturn) is promoted: its "kreg" is the return
+        # reg (eax), so PASS A.5 writes each incoming straight to eax and PASS B's
+        # ret elides the redundant mov -- matching native, no post-merge read
+        # block (clears INTERR 50342). See _detect_ret_phi.
         phi_kreg: dict[str, tuple] = {}
         for bps in phis.values():
             for pname, pins, _ in bps:
                 sz = _type_size(pins.type)
-                kreg = mba.alloc_kreg(sz)
-                phi_kreg[pname] = (kreg, sz)
-                vmap[pname] = ("reg", kreg, sz)
+                if pname == self._ret_phi:
+                    phi_kreg[pname] = (eax, sz)
+                    vmap[pname] = ("reg", eax, sz)
+                else:
+                    kreg = mba.alloc_kreg(sz)
+                    phi_kreg[pname] = (kreg, sz)
+                    vmap[pname] = ("reg", kreg, sz)
 
         # PASS A: per segment, capture the previous call's result, emit value
         # instructions, then (for a call-segment) the call tail + fall-through.
