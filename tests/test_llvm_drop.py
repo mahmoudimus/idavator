@@ -59,6 +59,12 @@ class TestLLVMDropModule:
             ("define i32 @st(i32* %p, i32 %v) {\n  store i32 %v, i32* %p\n"
              "  ret i32 %v\n}\n",
              "st", ["*a0 = a1"]),
+            # scalar-slot alloca (mem2reg-deferred local): spill+reload of x,
+            # then +1. The slot is a kreg -> Hex-Rays propagates it away.
+            ("define i32 @spill(i32 %x) {\nentry:\n  %s = alloca i32\n"
+             "  store i32 %x, i32* %s\n  %v = load i32, i32* %s\n"
+             "  %r = add i32 %v, 1\n  ret i32 %r\n}\n",
+             "spill", ["a0 + 1"]),
         ],
     )
     def test_straight_line_drops(self, examples_dir: Path, ir, fn, must_contain):

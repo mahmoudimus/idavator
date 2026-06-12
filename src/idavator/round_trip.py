@@ -30,6 +30,7 @@ SUPPORTED_OPS = frozenset({
     "udiv", "sdiv", "urem", "srem",
     "zext", "sext", "trunc", "bitcast", "ptrtoint", "inttoptr",
     "load", "store", "call", "icmp", "br", "ret", "phi", "getelementptr",
+    "alloca",
 })
 
 # Scalar value types the drop can size (integer + opaque pointer).
@@ -49,6 +50,21 @@ def is_supported(fn) -> tuple[bool, str]:
     for arg in fn.arguments:
         if not _type_ok(arg.type):
             return False, f"argtype:{arg.type}"
+    # alloca is droppable only as a scalar slot (used solely as the pointer of a
+    # direct load/store); an address-taken alloca needs a real stack frame.
+    alloca_names = {ins.name for bb in fn.blocks for ins in bb.instructions
+                    if ins.opcode == "alloca"}
+    if alloca_names:
+        scalar = dict.fromkeys(alloca_names, True)
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                for idx, o in enumerate(ins.operands):
+                    if o.name in alloca_names and not (
+                            (ins.opcode == "load" and idx == 0)
+                            or (ins.opcode == "store" and idx == 1)):
+                        scalar[o.name] = False
+        if not all(scalar.values()):
+            return False, "alloca:address-taken"
     for bb in fn.blocks:
         for ins in bb.instructions:
             op = ins.opcode

@@ -53,14 +53,12 @@ class TestCpLlCoverage:
             pytest.skip("examples/cp.ll missing")
         cov = module_coverage(ll.read_text())
         assert cov.total > 300, cov.total
-        # The supported subset is small; the dominant blocker is alloca (stack
-        # locals) -- the frontier for closing the loop on real lifted IR.
+        # Scalar-slot allocas (mem2reg-deferred locals) now drop, so >100 real
+        # functions are in the supported subset. The frontier is now ADDRESS-TAKEN
+        # allocas (structs / &local) -- still the top blocker.
+        assert len(cov.supported) >= 100, len(cov.supported)
         hist = cov.reason_histogram()
-        assert "opcode" in hist
-        # alloca first-blocks the vast majority of functions.
-        alloca_blocked = sum(1 for r in cov.unsupported.values()
-                             if r == "opcode:alloca")
-        assert alloca_blocked > cov.total // 2, (alloca_blocked, cov.total)
+        assert hist.get("alloca", 0) > 100, hist
 
 
 # (ir, fn, reference_c) -- lifted-shape IR that stays in the supported subset and

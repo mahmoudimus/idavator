@@ -76,6 +76,7 @@ class LLVMDropConverter:
 
     def __init__(self, ir_text: str):
         self.module = llvm.parse_assembly(ir_text)
+        self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -267,9 +268,24 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             vmap[ins.name] = ("reg", kreg, out_sz)
             return mi
+        if op == "alloca":
+            # Storage modeled as a kreg (pre-allocated in _scan_allocas); the
+            # alloca itself emits nothing -- load/store route to that kreg.
+            return anchor
         if op == "load":
-            # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
             out_sz = _type_size(ins.type)
+            slot = self._allocas.get(ops[0].name)
+            if slot is not None:
+                # %v = load <ty>, ptr %a  (a is a scalar slot) -> mov slot, v
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                mi.l.make_reg(slot[0], out_sz)
+                kreg = mba.alloc_kreg(out_sz)
+                mi.d.make_reg(kreg, out_sz)
+                blk.insert_into_block(mi, anchor)
+                vmap[ins.name] = ("reg", kreg, out_sz)
+                return mi
+            # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
             ad = self._desc(ops[0], vmap, 8)
             mi = hx.minsn_t(ea)
             mi.opcode = hx.m_ldx
@@ -281,9 +297,18 @@ class LLVMDropConverter:
             vmap[ins.name] = ("reg", kreg, out_sz)
             return mi
         if op == "store":
-            # store <ty> %v, <ty>* %p  ->  stx v, ds, p
             val_sz = _type_size(ops[0].type)
             vd = self._desc(ops[0], vmap, val_sz)
+            slot = self._allocas.get(ops[1].name)
+            if slot is not None:
+                # store <ty> %v, ptr %a  (a is a scalar slot) -> mov v, slot
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                self._fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.d.make_reg(slot[0], val_sz)
+                blk.insert_into_block(mi, anchor)
+                return mi
+            # store <ty> %v, <ty>* %p  ->  stx v, ds, p
             ad = self._desc(ops[1], vmap, 8)
             mi = hx.minsn_t(ea)
             mi.opcode = hx.m_stx
@@ -394,6 +419,40 @@ class LLVMDropConverter:
         blk.insert_into_block(mi, anchor)
         return mi
 
+    @staticmethod
+    def _alloca_elem_size(ins) -> int:
+        m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
+        ty = m.group(1).strip() if m else "i64"
+        return 8 if ("*" in ty or ty == "ptr") else _type_size(ty)
+
+    def _scan_allocas(self, mba, fn) -> dict:
+        """Model each SCALAR-SLOT alloca (used only as the pointer of a direct
+        load/store) as a kreg -- Hex-Rays then propagates the slot away. An alloca
+        whose address is taken (GEP'd, passed, stored as a value) is unsupported."""
+        names = {ins.name for bb in fn.blocks for ins in bb.instructions
+                 if ins.opcode == "alloca"}
+        if not names:
+            return {}
+        scalar = dict.fromkeys(names, True)
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                for idx, o in enumerate(ins.operands):
+                    if o.name in names and not (
+                            (ins.opcode == "load" and idx == 0)
+                            or (ins.opcode == "store" and idx == 1)):
+                        scalar[o.name] = False
+        allocas = {}
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "alloca":
+                    if not scalar[ins.name]:
+                        raise NotImplementedError(
+                            f"address-taken alloca %{ins.name} (only scalar "
+                            f"load/store slots are supported)")
+                    sz = self._alloca_elem_size(ins)
+                    allocas[ins.name] = (mba.alloc_kreg(sz), sz)
+        return allocas
+
     # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
         argregs, eax, ds = self._abi()
@@ -403,6 +462,7 @@ class LLVMDropConverter:
         if retb is None:
             raise RuntimeError("host has no m_ret block at preoptimized")
 
+        self._allocas = self._scan_allocas(mba, fn)
         vmap: dict[str, tuple] = {}
         for i, a in enumerate(fn.arguments):
             vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
