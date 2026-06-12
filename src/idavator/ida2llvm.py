@@ -365,7 +365,16 @@ def get_offset_to(builder: ir.IRBuilder, arg: ir.Value, off: int = 0) -> ir.Valu
             ),
         )
     elif isinstance(pointee, ir.IdentifiedStructType):
+        # A struct-typed local addressed at a member byte offset (e.g. the IDA
+        # microcode `ldx ..., new_ent@8` writing `new_ent.st_ino`). The base is
+        # decayed to `i8*`, and a non-zero `off` must be carried as a byte GEP --
+        # otherwise every member store collapses onto offset 0 and the later
+        # writes become dead overwrites of the first (the missing-param-store
+        # drop: `seen_file` lost `st_ino`/`st_dev`). The microcode preserved the
+        # offset; only this decay erased it.
         rval = typecast(arg, ir.IntType(8).as_pointer(), builder)
+        if off > 0:
+            rval = builder.gep(rval, (ir.Constant(ir.IntType(32), off),))
     elif off > 0:
         td = llvm.create_target_data("e")
         size = pointee.get_abi_size(td)

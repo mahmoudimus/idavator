@@ -16352,23 +16352,26 @@ define i1 @"seen_file"(%"Hash_table"* %".1", i8* %".2", %"stat"* %".3")
   %".27" = getelementptr i8, i8* %".26", i64 8
   %".28" = bitcast i8* %".27" to %"stat"*
   %".29" = bitcast %"F_triple"* %"new_ent" to i8*
-  %".30" = bitcast i8* %".29" to i64*
-  %".31" = bitcast %"stat"* %".28" to i64*
-  %".32" = load i64, i64* %".31"
-  store i64 %".32", i64* %".30"
-  %".34" = bitcast %"F_triple"* %"new_ent" to i8*
-  %".35" = bitcast i8* %".34" to i64*
-  %".36" = bitcast %"stat"** %"stats" to i64*
-  %".37" = load i64, i64* %".36"
-  store i64 %".37", i64* %".35"
-  %".39" = load %"Hash_table"*, %"Hash_table"** %"ht"
-  %".40" = bitcast %"F_triple"* %"new_ent" to i8*
-  %".41" = call i8* @"hash_lookup"(%"Hash_table"* %".39", i8* %".40")
-  %".42" = bitcast i1* %"funcresult" to i8*
-  %".43" = ptrtoint i8* %".41" to i64
-  %".44" = icmp ne i64 %".43", 0
-  %".45" = select  i1 %".44", i8 1, i8 0
-  store i8 %".45", i8* %".42"
+  %".30" = getelementptr i8, i8* %".29", i32 8
+  %".31" = bitcast i8* %".30" to i64*
+  %".32" = bitcast %"stat"* %".28" to i64*
+  %".33" = load i64, i64* %".32"
+  store i64 %".33", i64* %".31"
+  %".35" = load %"stat"*, %"stat"** %"stats"
+  %".36" = bitcast %"F_triple"* %"new_ent" to i8*
+  %".37" = getelementptr i8, i8* %".36", i32 16
+  %".38" = bitcast i8* %".37" to i64*
+  %".39" = bitcast %"stat"* %".35" to i64*
+  %".40" = load i64, i64* %".39"
+  store i64 %".40", i64* %".38"
+  %".42" = load %"Hash_table"*, %"Hash_table"** %"ht"
+  %".43" = bitcast %"F_triple"* %"new_ent" to i8*
+  %".44" = call i8* @"hash_lookup"(%"Hash_table"* %".42", i8* %".43")
+  %".45" = bitcast i1* %"funcresult" to i8*
+  %".46" = ptrtoint i8* %".44" to i64
+  %".47" = icmp ne i64 %".46", 0
+  %".48" = select  i1 %".47", i8 1, i8 0
+  store i8 %".48", i8* %".45"
   br label %"@4"
 "@4":
   %".8" = load i1, i1* %"funcresult"
@@ -25183,24 +25186,26 @@ define i8* @"forget_created"(i64 %".1", i64 %".2")
   store i64 %".11", i64* %".13"
   %".15" = load i64, i64* %"dev"
   %".16" = bitcast %"Src_to_dest"* %"probe" to i8*
-  %".17" = bitcast i8* %".16" to i64*
-  store i64 %".15", i64* %".17"
-  %".19" = bitcast %"Src_to_dest"* %"probe" to i8*
-  %".20" = bitcast i8* %".19" to i64*
-  store i64 0, i64* %".20"
-  %".22" = load %"Hash_table"*, %"Hash_table"** @"src_to_dest"
-  %".23" = bitcast %"Src_to_dest"* %"probe" to i8*
-  %".24" = call i8* @"hash_delete"(%"Hash_table"* %".22", i8* %".23")
-  %".25" = bitcast %"Src_to_dest"** %"ent" to i8**
-  store i8* %".24", i8** %".25"
-  %".27" = load %"Src_to_dest"*, %"Src_to_dest"** %"ent"
-  %".28" = ptrtoint %"Src_to_dest"* %".27" to i64
-  %".29" = icmp eq i64 %".28", 0
-  br i1 %".29", label %"@3", label %"@2"
+  %".17" = getelementptr i8, i8* %".16", i32 8
+  %".18" = bitcast i8* %".17" to i64*
+  store i64 %".15", i64* %".18"
+  %".20" = bitcast %"Src_to_dest"* %"probe" to i8*
+  %".21" = getelementptr i8, i8* %".20", i32 16
+  %".22" = bitcast i8* %".21" to i64*
+  store i64 0, i64* %".22"
+  %".24" = load %"Hash_table"*, %"Hash_table"** @"src_to_dest"
+  %".25" = bitcast %"Src_to_dest"* %"probe" to i8*
+  %".26" = call i8* @"hash_delete"(%"Hash_table"* %".24", i8* %".25")
+  %".27" = bitcast %"Src_to_dest"** %"ent" to i8**
+  store i8* %".26", i8** %".27"
+  %".29" = load %"Src_to_dest"*, %"Src_to_dest"** %"ent"
+  %".30" = ptrtoint %"Src_to_dest"* %".29" to i64
+  %".31" = icmp eq i64 %".30", 0
+  br i1 %".31", label %"@3", label %"@2"
 "@2":
-  %".31" = bitcast %"Src_to_dest"** %"ent" to i8**
-  %".32" = load i8*, i8** %".31"
-  %".33" = call i8* @"src_to_dest_free"(i8* %".32")
+  %".33" = bitcast %"Src_to_dest"** %"ent" to i8**
+  %".34" = load i8*, i8** %".33"
+  %".35" = call i8* @"src_to_dest_free"(i8* %".34")
   br label %"@3"
 "@3":
   %".6" = load i8*, i8** %"funcresult"
