@@ -1,0 +1,309 @@
+"""Microcode verification + INTERR diagnostics for the LLVM->microcode drop path.
+
+Vendored and trimmed from 's ``hexrays/mutation/cfg_verify.py`` (the only piece
+of  worth carrying for idavator's drop: LLVM IR is already the IR, so we do NOT
+bring 's portable IR -- we build microcode directly on LLVM and use THIS to
+decode *why* Hex-Rays rejects a hand-built ``mba_t``).
+
+The key value is :class:`_InterrCatcher`: ``mba.verify(True)`` raises an opaque
+``RuntimeError("Unknown exception")`` because the ``interr_exc_t`` doesn't match
+SWIG's typed catch blocks, but the ``hxe_interr`` event fires first and carries the
+numeric INTERR code -- so we capture it for precise failure identification.
+
+Self-contained: stdlib logging, ``typing.Any``, and env-var config (no  deps).
+  IDAVATOR_VERIFY_CAPTURE=0       disable JSON failure-artifact capture (default on)
+  IDAVATOR_VERIFY_CAPTURE_DIR=... where to write artifacts (default ./.idavator/verify)
+"""
+from __future__ import annotations
+
+import contextlib
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from typing import Any
+
+import ida_hexrays
+
+helper_logger = logging.getLogger("idavator.cfg_verify")
+
+
+class _InterrCatcher(ida_hexrays.Hexrays_Hooks):
+    """Temporary hook that captures the INTERR code fired by ``hxe_interr``.
+
+    ``mba.verify(True)`` throws ``RuntimeError("Unknown exception")`` because the
+    ``interr_exc_t`` doesn't match SWIG's typed catch blocks.  The ``hxe_interr``
+    event fires *before* the exception propagates and carries the numeric error
+    code, so we capture it here for precise failure identification.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_code: int | None = None
+
+    def interr(self, errcode: int) -> int:  # type: ignore[override]
+        self.last_code = errcode
+        return 0  # 0 = don't suppress; let the exception propagate normally
+
+
+def try_verify(
+    mba: ida_hexrays.mba_t, ctx: str = ""
+) -> tuple[bool, int | None]:
+    """Run ``mba.verify(True)`` and return ``(ok, interr_code)`` WITHOUT raising.
+
+    The cheap diagnostic for the build-from-LLVM spike: verify a hand-built mba and
+    learn the exact INTERR code (or ``None`` when clean) instead of an opaque throw.
+    """
+    catcher: _InterrCatcher | None = None
+    try:
+        catcher = _InterrCatcher()
+        catcher.hook()
+    except Exception:
+        catcher = None
+    try:
+        mba.verify(True)
+        return True, None
+    except Exception as exc:  # noqa: BLE001
+        code = catcher.last_code if catcher is not None else None
+        helper_logger.warning(
+            "verify failed%s%s: %s",
+            f" after {ctx}" if ctx else "",
+            f" (INTERR {code} / {hex(code)})" if code is not None else "",
+            exc,
+        )
+        return False, code
+    finally:
+        if catcher is not None:
+            catcher.unhook()
+
+
+def log_block_info(blk, logger_func=helper_logger.info, ctx: str = ""):
+    if blk is None:
+        logger_func("Block is None")
+        return
+    if ctx:
+        logger_func("%s", ctx)
+    logger_func("Block snapshot: %s", snapshot_block_for_capture(blk))
+
+
+def safe_verify(
+    mba: ida_hexrays.mba_t,
+    ctx: str,
+    logger_func=helper_logger.error,
+    capture_blocks: list[int] | set[int] | tuple[int, ...] | None = None,
+    capture_metadata: dict[str, Any] | None = None,
+) -> None:
+    """Run ``mba.verify(True)`` and produce helpful diagnostics on failure, then
+    re-raise.  Captures the INTERR code and a JSON failure artifact."""
+    catcher: _InterrCatcher | None = None
+    try:
+        catcher = _InterrCatcher()
+        catcher.hook()
+    except Exception:
+        catcher = None
+
+    try:
+        mba.verify(True)
+    except Exception as e:  # noqa: BLE001
+        interr_code = catcher.last_code if catcher is not None else None
+        if interr_code is not None:
+            logger_func(
+                "verify failed after %s (INTERR %d / 0x%X): %s",
+                ctx, interr_code, interr_code, e, exc_info=True,
+            )
+        else:
+            logger_func("verify failed after %s: %s", ctx, e, exc_info=True)
+        meta = dict(capture_metadata or {})
+        if interr_code is not None:
+            meta["interr_code"] = interr_code
+            meta["interr_code_hex"] = hex(interr_code)
+        capture_failure_artifact(
+            mba, f"verify failure after {ctx}", e,
+            logger_func=logger_func, capture_blocks=capture_blocks,
+            capture_metadata=meta if meta else None,
+        )
+        with contextlib.suppress(Exception):
+            divider = "-" * 14
+            if (num_blocks := mba.qty) != 0:
+                if num_blocks >= 2:
+                    log_block_info(mba.get_mblock(num_blocks - 2), logger_func,
+                                   f"{divider}[blk -2]{divider}")
+                    log_block_info(mba.get_mblock(num_blocks - 1), logger_func,
+                                   f"{divider}[blk -1]{divider}")
+                log_block_info(mba.get_mblock(0), logger_func,
+                               f"{divider}[blk 0]{divider}")
+        raise
+    finally:
+        if catcher is not None:
+            catcher.unhook()
+
+
+def _snapshot_insn(insn) -> dict[str, Any] | None:
+    if insn is None:
+        return None
+    data: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        data["ea"] = int(insn.ea)
+        data["ea_hex"] = hex(int(insn.ea))
+    with contextlib.suppress(Exception):
+        data["opcode"] = int(insn.opcode)
+    with contextlib.suppress(Exception):
+        if insn.l is not None and insn.l.t == ida_hexrays.mop_b:
+            data["goto_target"] = int(insn.l.b)
+    with contextlib.suppress(Exception):
+        if insn.d is not None and insn.d.t == ida_hexrays.mop_b:
+            data["conditional_target"] = int(insn.d.b)
+    return data
+
+
+def snapshot_block_for_capture(blk) -> dict[str, Any]:
+    """A JSON-safe snapshot of a block for failure-artifact capture."""
+    if blk is None:
+        return {"serial": None}
+    data: dict[str, Any] = {}
+    with contextlib.suppress(Exception):
+        data["serial"] = int(blk.serial)
+    with contextlib.suppress(Exception):
+        data["type"] = int(blk.type)
+    with contextlib.suppress(Exception):
+        data["nsucc"] = int(blk.nsucc())
+    with contextlib.suppress(Exception):
+        data["npred"] = int(blk.npred())
+    with contextlib.suppress(Exception):
+        data["succs"] = [int(x) for x in blk.succset]
+    with contextlib.suppress(Exception):
+        data["preds"] = [int(x) for x in blk.predset]
+    with contextlib.suppress(Exception):
+        data["nextb"] = int(blk.nextb.serial) if blk.nextb is not None else None
+    with contextlib.suppress(Exception):
+        data["prevb"] = int(blk.prevb.serial) if blk.prevb is not None else None
+    with contextlib.suppress(Exception):
+        data["tail"] = _snapshot_insn(blk.tail)
+    return data
+
+
+def _collect_related_blocks(
+    mba: ida_hexrays.mba_t, initial_blocks: list[int] | set[int] | tuple[int, ...]
+) -> list[int]:
+    related: set[int] = set()
+    for serial in initial_blocks:
+        with contextlib.suppress(Exception):
+            if serial is None:
+                continue
+            serial_i = int(serial)
+            if serial_i < 0 or serial_i >= mba.qty:
+                continue
+            related.add(serial_i)
+            blk = mba.get_mblock(serial_i)
+            for succ in getattr(blk, "succset", []):
+                related.add(int(succ))
+            for pred in getattr(blk, "predset", []):
+                related.add(int(pred))
+            if getattr(blk, "nextb", None) is not None:
+                related.add(int(blk.nextb.serial))
+            if getattr(blk, "prevb", None) is not None:
+                related.add(int(blk.prevb.serial))
+    return sorted(
+        s for s in related
+        if isinstance(s, int) and 0 <= s < getattr(mba, "qty", 0)
+    )
+
+
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    return repr(value)
+
+
+def _capture_enabled() -> bool:
+    return os.environ.get("IDAVATOR_VERIFY_CAPTURE", "1") not in ("0", "false", "")
+
+
+def _capture_dir() -> str:
+    return os.environ.get(
+        "IDAVATOR_VERIFY_CAPTURE_DIR",
+        os.path.join(os.getcwd(), ".idavator", "verify"),
+    )
+
+
+def capture_failure_artifact(
+    mba: ida_hexrays.mba_t,
+    ctx: str,
+    error: Exception,
+    logger_func=helper_logger.error,
+    capture_blocks: list[int] | set[int] | tuple[int, ...] | None = None,
+    capture_metadata: dict[str, Any] | None = None,
+) -> str | None:
+    """Persist a compact CFG failure artifact for post-mortem debugging."""
+    if not _capture_enabled():
+        return None
+    output_dir = _capture_dir()
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+    except OSError as dir_exc:
+        logger_func("failed to create verify capture directory %s: %s", output_dir, dir_exc)
+        return None
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    entry_ea = 0
+    with contextlib.suppress(Exception):
+        entry_ea = int(getattr(mba, "entry_ea", 0) or 0)
+    filename = f"verify_fail_{timestamp}_{entry_ea:016X}_{os.getpid()}.json"
+    path = os.path.join(output_dir, filename)
+
+    focus_blocks = sorted(
+        {int(b) for b in (capture_blocks or []) if b is not None and isinstance(b, int)}
+    )
+    related_blocks = _collect_related_blocks(mba, focus_blocks)
+    if not related_blocks:
+        related_blocks = [
+            b for b in (getattr(mba, "qty", 0) - 2, getattr(mba, "qty", 1), 0)
+            if 0 <= b < getattr(mba, "qty", 0)
+        ]
+
+    payload: dict[str, Any] = {
+        "schema_version": 1,
+        "timestamp_utc": timestamp,
+        "context": ctx,
+        "error_type": type(error).__name__,
+        "error_message": str(error),
+        "mba": {
+            "entry_ea": entry_ea,
+            "entry_ea_hex": hex(entry_ea),
+            "maturity": int(getattr(mba, "maturity", -1)),
+            "qty": int(getattr(mba, "qty", 0)),
+        },
+        "focus_blocks": focus_blocks,
+        "captured_blocks": [],
+        "metadata": _json_safe(capture_metadata or {}),
+    }
+    for serial in related_blocks:
+        with contextlib.suppress(Exception):
+            payload["captured_blocks"].append(
+                snapshot_block_for_capture(mba.get_mblock(serial)))
+
+    try:
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True)
+        logger_func("verify failure artifact saved: %s", path)
+    except OSError as write_exc:
+        logger_func("failed to write verify failure artifact %s: %s", path, write_exc)
+        return None
+    return path
+
+
+__all__ = [
+    "_InterrCatcher",
+    "try_verify",
+    "safe_verify",
+    "capture_failure_artifact",
+    "snapshot_block_for_capture",
+    "log_block_info",
+    "_snapshot_insn",
+    "_collect_related_blocks",
+    "_json_safe",
+]
