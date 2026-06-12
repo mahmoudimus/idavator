@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextlib import suppress
 
 import ida_funcs
 import ida_hexrays as hx
@@ -39,6 +40,14 @@ _BINOP = {
 }
 # zext/sext/trunc -> microcode widening/narrowing.
 _CAST = {"zext": hx.m_xdu, "sext": hx.m_xds, "trunc": hx.m_low}
+
+# icmp predicate -> a 2-way conditional jump that branches to ``d`` when the
+# predicate holds (the fall-through, serial+1, takes the FALSE arm).
+_ICMP_JMP = {
+    "eq": hx.m_jz, "ne": hx.m_jnz,
+    "ugt": hx.m_ja, "uge": hx.m_jae, "ult": hx.m_jb, "ule": hx.m_jbe,
+    "sgt": hx.m_jg, "sge": hx.m_jge, "slt": hx.m_jl, "sle": hx.m_jle,
+}
 
 
 def _type_size(type_str) -> int:
@@ -147,16 +156,151 @@ class LLVMDropConverter:
         return (argregs, hx.reg2mreg(ida_idp.str2reg("rax")),
                 hx.reg2mreg(ida_idp.str2reg("ds")))
 
+    # -- microcode emit helpers -----------------------------------------
+    @staticmethod
+    def _fill(mop, d) -> None:
+        kind, val, size = d
+        if kind == "reg":
+            mop.make_reg(val, size)
+        else:
+            mop.make_number(val & ((1 << (8 * size)) - 1), size)
+
+    @staticmethod
+    def _desc(operand, vmap, default_size):
+        """Resolve an LLVM operand to a value descriptor (reg kreg / numeric)."""
+        nm = operand.name
+        if nm and nm in vmap:
+            return vmap[nm]
+        s = str(operand).strip()
+        num = re.search(r"(-?\d+)\s*$", s)
+        if num:
+            return ("num", int(num.group(1)), _type_size(s) or default_size)
+        raise ValueError(f"unhandled operand {s!r}")
+
+    @staticmethod
+    def _wire(blk, succs) -> None:
+        """Replace blk's successors with ``succs``, fixing peer predsets."""
+        mba = blk.mba
+        for old in [int(s) for s in blk.succset]:
+            blk.succset._del(old)
+            ob = mba.get_mblock(old)
+            if ob is not None:
+                with suppress(Exception):
+                    ob.predset._del(blk.serial)
+                ob.mark_lists_dirty()
+        for ns in succs:
+            blk.succset.push_back(ns)
+            nb = mba.get_mblock(ns)
+            if nb is not None and blk.serial not in [int(p) for p in nb.predset]:
+                nb.predset.push_back(blk.serial)
+                nb.mark_lists_dirty()
+        blk.mark_lists_dirty()
+
+    @staticmethod
+    def _clear(blk) -> None:
+        ins = blk.head
+        while ins is not None:
+            nxt = ins.next
+            blk.remove_from_block(ins)
+            ins = nxt
+        blk.mark_lists_dirty()
+
+    def _emit_value(self, mba, blk, anchor, ea, ins, vmap, ds):
+        """Emit one non-terminator LLVM instruction into ``blk`` before
+        ``anchor``; record its SSA result in ``vmap``. Returns the new anchor."""
+        op = ins.opcode
+        ops = list(ins.operands)
+        if op in _BINOP:
+            size = _type_size(ins.type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = _BINOP[op]
+            self._fill(mi.l, self._desc(ops[0], vmap, size))
+            r_desc = self._desc(ops[1], vmap, size)
+            if op in ("shl", "lshr", "ashr"):
+                # shift-amount operand must be size 1 (INTERR 50835).
+                r_desc = (r_desc[0], r_desc[1], 1)
+            self._fill(mi.r, r_desc)
+            kreg = mba.alloc_kreg(size)
+            mi.d.make_reg(kreg, size)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, size)
+            return mi
+        if op in _CAST:
+            in_sz = _type_size(ops[0].type)
+            out_sz = _type_size(ins.type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = _CAST[op]
+            self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
+            return mi
+        if op == "load":
+            # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
+            out_sz = _type_size(ins.type)
+            ad = self._desc(ops[0], vmap, 8)
+            mi = hx.minsn_t(ea)
+            mi.opcode = hx.m_ldx
+            mi.l.make_reg(ds, 2)
+            self._fill(mi.r, (ad[0], ad[1], 8))
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
+            return mi
+        if op == "store":
+            # store <ty> %v, <ty>* %p  ->  stx v, ds, p
+            val_sz = _type_size(ops[0].type)
+            vd = self._desc(ops[0], vmap, val_sz)
+            ad = self._desc(ops[1], vmap, 8)
+            mi = hx.minsn_t(ea)
+            mi.opcode = hx.m_stx
+            self._fill(mi.l, (vd[0], vd[1], val_sz))
+            mi.r.make_reg(ds, 2)
+            self._fill(mi.d, (ad[0], ad[1], 8))
+            blk.insert_into_block(mi, anchor)
+            return mi
+        if op == "icmp":
+            # Folded into the branch (see _build_multiblock); no value emitted.
+            return anchor
+        logger.warning("unhandled LLVM opcode: %s", op)
+        return anchor
+
+    def _emit_ret_value(self, blk, anchor, ea, term, eax, vmap):
+        """Emit `mov <retval>, eax` for an LLVM ret (no terminator)."""
+        ops = list(term.operands)
+        if not ops:
+            return anchor
+        sz = _type_size(ops[0].type)
+        mi = hx.minsn_t(ea)
+        mi.opcode = hx.m_mov
+        self._fill(mi.l, self._desc(ops[0], vmap, sz))
+        mi.d.make_reg(eax, sz)
+        blk.insert_into_block(mi, anchor)
+        return mi
+
+    # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
         argregs, eax, ds = self._abi()
-        # ret block (kept; block 0 + last must stay empty -- INTERR 51814).
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
                      and int(b.tail.opcode) == hx.m_ret), None)
         if retb is None:
             raise RuntimeError("host has no m_ret block at preoptimized")
-        ea = mba.entry_ea
 
+        vmap: dict[str, tuple] = {}
+        for i, a in enumerate(fn.arguments):
+            vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
+
+        if len(list(fn.blocks)) == 1:
+            self._build_singleblock(mba, fn, retb, eax, ds, vmap)
+        else:
+            self._build_multiblock(mba, fn, retb, eax, ds, vmap)
+        mba.mark_chains_dirty()
+
+    def _build_singleblock(self, mba, fn, retb, eax, ds, vmap) -> None:
+        ea = mba.entry_ea
         # full-body replace: drop every non-terminator instruction.
         for i in range(mba.qty):
             b = mba.get_mblock(i)
@@ -170,101 +314,124 @@ class LLVMDropConverter:
                 ins = nxt
             b.mark_lists_dirty()
 
-        # value descriptor map: name -> ("reg", mreg, size) | ("num", val, size)
-        vmap: dict[str, tuple] = {}
-        for i, a in enumerate(fn.arguments):
-            vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
-
-        def fill(mop, d):
-            kind, val, size = d
-            if kind == "reg":
-                mop.make_reg(val, size)
-            else:
-                mop.make_number(val & ((1 << (8 * size)) - 1), size)
-
-        def desc(operand, default_size):
-            nm = operand.name
-            if nm and nm in vmap:
-                return vmap[nm]
-            s = str(operand).strip()
-            num = re.search(r"(-?\d+)\s*$", s)
-            if num:
-                return ("num", int(num.group(1)), _type_size(s) or default_size)
-            raise ValueError(f"unhandled operand {s!r}")
-
-        blocks = list(fn.blocks)
-        if len(blocks) != 1:
-            raise NotImplementedError(
-                "multi-block control flow not yet wired into the module "
-                "(mechanic proven in tests/test_drop_controlflow.py)")
-
         anchor = retb.tail.prev
-        for ins in blocks[0].instructions:
-            op = ins.opcode
-            ops = list(ins.operands)
-            if op in _BINOP:
-                size = _type_size(ins.type)
-                mi = hx.minsn_t(ea)
-                mi.opcode = _BINOP[op]
-                fill(mi.l, desc(ops[0], size))
-                r_desc = desc(ops[1], size)
-                if op in ("shl", "lshr", "ashr"):
-                    # shift-amount operand must be size 1 (INTERR 50835).
-                    r_desc = (r_desc[0], r_desc[1], 1)
-                fill(mi.r, r_desc)
-                kreg = mba.alloc_kreg(size)
-                mi.d.make_reg(kreg, size)
-                retb.insert_into_block(mi, anchor)
-                anchor = mi
-                vmap[ins.name] = ("reg", kreg, size)
-            elif op in _CAST:
-                in_sz = _type_size(ops[0].type)
-                out_sz = _type_size(ins.type)
-                mi = hx.minsn_t(ea)
-                mi.opcode = _CAST[op]
-                fill(mi.l, desc(ops[0], in_sz))
-                kreg = mba.alloc_kreg(out_sz)
-                mi.d.make_reg(kreg, out_sz)
-                retb.insert_into_block(mi, anchor)
-                anchor = mi
-                vmap[ins.name] = ("reg", kreg, out_sz)
-            elif op == "load":
-                # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
-                out_sz = _type_size(ins.type)
-                ad = desc(ops[0], 8)
-                mi = hx.minsn_t(ea)
-                mi.opcode = hx.m_ldx
-                mi.l.make_reg(ds, 2)
-                fill(mi.r, (ad[0], ad[1], 8))
-                kreg = mba.alloc_kreg(out_sz)
-                mi.d.make_reg(kreg, out_sz)
-                retb.insert_into_block(mi, anchor)
-                anchor = mi
-                vmap[ins.name] = ("reg", kreg, out_sz)
-            elif op == "store":
-                # store <ty> %v, <ty>* %p  ->  stx v, ds, p
-                val_sz = _type_size(ops[0].type)
-                vd = desc(ops[0], val_sz)
-                ad = desc(ops[1], 8)
-                mi = hx.minsn_t(ea)
-                mi.opcode = hx.m_stx
-                fill(mi.l, (vd[0], vd[1], val_sz))
-                mi.r.make_reg(ds, 2)
-                fill(mi.d, (ad[0], ad[1], 8))
-                retb.insert_into_block(mi, anchor)
-                anchor = mi
-            elif op == "ret":
-                if ops:
-                    mi = hx.minsn_t(ea)
-                    mi.opcode = hx.m_mov
-                    fill(mi.l, desc(ops[0], 4))
-                    mi.d.make_reg(eax, 4)
-                    retb.insert_into_block(mi, anchor)
-                    anchor = mi
+        for ins in list(fn.blocks)[0].instructions:
+            if ins.opcode == "ret":
+                anchor = self._emit_ret_value(retb, anchor, ea, ins, eax, vmap)
             else:
-                logger.warning("unhandled LLVM opcode: %s", op)
+                anchor = self._emit_value(mba, retb, anchor, ea, ins, vmap, ds)
         retb.mark_lists_dirty()
-        mba.mark_chains_dirty()
+
+    def _build_multiblock(self, mba, fn, retb, eax, ds, vmap) -> None:
+        """One microcode block per LLVM block. Conditional ``br`` lowers to a
+        2-way jump whose FALSE arm is a trampoline placed at serial+1 (the jcc
+        fall-through is structurally the next block). Hex-Rays rebuilds the CFG
+        + lvars from these terminators after PREOPTIMIZED."""
+        ea = mba.entry_ea
+        llvm_blocks = list(fn.blocks)
+
+        # Pre-scan icmp defs so a `br %c` can fold its compare into the jump.
+        icmp_map: dict[str, tuple] = {}
+        for bb in llvm_blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "icmp":
+                    pred = re.search(r"icmp\s+(\w+)\s", str(ins).strip())
+                    icmp_map[ins.name] = (pred.group(1) if pred else "ne",
+                                          list(ins.operands))
+
+        # Plan the physical serial layout: code block per LLVM block, plus a
+        # trampoline immediately after each conditional branch.
+        plan, serial = [], 1
+        for bb in llvm_blocks:
+            term = list(bb.instructions)[-1]
+            is_cond = term.opcode == "br" and len(list(term.operands)) == 3
+            entry = {"bb": bb, "term": term, "code": serial, "tramp": None}
+            serial += 1
+            if is_cond:
+                entry["tramp"] = serial
+                serial += 1
+            plan.append(entry)
+        needed = serial - 1
+        name_serial = {e["bb"].name: e["code"] for e in plan}
+
+        # Mint enough code blocks before retb (copy_block inherits a valid
+        # start/end; INTERR 50869 otherwise). Existing host code blocks are
+        # serials 1..retb.serial-1; mint the remainder right before retb.
+        avail = retb.serial - 1
+        for _ in range(max(0, needed - avail)):
+            mba.copy_block(retb, retb.serial)
+        # Now serials 1..needed are code blocks; retb at needed+1. Clear them
+        # all (drops any copied m_ret) before emitting.
+        for s in range(1, needed + 1):
+            self._clear(mba.get_mblock(s))
+        # Any leftover host blocks between our code and retb -> dead goto retb.
+        for s in range(needed + 1, retb.serial):
+            lb = mba.get_mblock(s)
+            self._clear(lb)
+            g = hx.minsn_t(ea)
+            g.opcode = hx.m_goto
+            g.l.make_blkref(retb.serial)
+            lb.insert_into_block(g, None)
+            lb.type = hx.BLT_1WAY
+            self._wire(lb, [retb.serial])
+
+        for e in plan:
+            blk = mba.get_mblock(e["code"])
+            term, ops = e["term"], list(e["term"].operands)
+            anchor = None
+            for ins in e["bb"].instructions:
+                if ins is term:
+                    break
+                anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
+
+            if term.opcode == "ret":
+                anchor = self._emit_ret_value(blk, anchor, ea, term, eax, vmap)
+                g = hx.minsn_t(ea)
+                g.opcode = hx.m_goto
+                g.l.make_blkref(retb.serial)
+                blk.insert_into_block(g, anchor)
+                blk.type = hx.BLT_1WAY
+                self._wire(blk, [retb.serial])
+            elif term.opcode == "br" and len(ops) == 1:
+                # unconditional br %T
+                g = hx.minsn_t(ea)
+                g.opcode = hx.m_goto
+                g.l.make_blkref(name_serial[ops[0].name])
+                blk.insert_into_block(g, anchor)
+                blk.type = hx.BLT_1WAY
+                self._wire(blk, [name_serial[ops[0].name]])
+            elif term.opcode == "br":
+                # br %cond, %false, %true  (llvmlite operand order!)
+                cond, false_s = ops[0], name_serial[ops[1].name]
+                true_s = name_serial[ops[2].name]
+                mi = hx.minsn_t(ea)
+                if cond.name in icmp_map:
+                    pred, iops = icmp_map[cond.name]
+                    sz = _type_size(iops[0].type)
+                    mi.opcode = _ICMP_JMP.get(pred, hx.m_jnz)
+                    self._fill(mi.l, self._desc(iops[0], vmap, sz))
+                    self._fill(mi.r, self._desc(iops[1], vmap, sz))
+                else:
+                    sz = _type_size(cond.type)
+                    mi.opcode = hx.m_jnz  # jump to TRUE when cond != 0
+                    self._fill(mi.l, self._desc(cond, vmap, sz))
+                    mi.r.make_number(0, sz)
+                mi.d.make_blkref(true_s)
+                blk.insert_into_block(mi, anchor)
+                blk.type = hx.BLT_2WAY
+                # succset = [fall-through (trampoline), taken (true)].
+                self._wire(blk, [e["tramp"], true_s])
+                tramp = mba.get_mblock(e["tramp"])
+                g = hx.minsn_t(ea)
+                g.opcode = hx.m_goto
+                g.l.make_blkref(false_s)
+                tramp.insert_into_block(g, None)
+                tramp.type = hx.BLT_1WAY
+                self._wire(tramp, [false_s])
+            else:
+                raise NotImplementedError(
+                    f"unhandled terminator {term.opcode!r}")
+        retb.mark_lists_dirty()
 
 
 def drop_llvm_function(ir_text: str, host_ea: int, llvm_fn_name: str):
