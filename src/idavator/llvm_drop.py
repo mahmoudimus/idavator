@@ -910,11 +910,24 @@ class LLVMDropConverter:
             "__readfsqword", "__readgsqword", "__stack_chk_fail")
 
     @staticmethod
+    def _callee_is_noreturn(ins) -> bool:
+        """True if the call's DIRECT callee is __noreturn (xalloc_die/abort/...).
+        Such a call ends its block with NO successor (BLT_0WAY) and everything
+        after it is dead. Indirect/unresolved -> False."""
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR,
+                                         list(ins.operands)[-1].name)
+        if callee_ea == ida_idaapi.BADADDR:
+            return False
+        f = ida_funcs.get_func(callee_ea)
+        return bool(f is not None and (f.flags & ida_funcs.FUNC_NORET))
+
+    @staticmethod
     def _segment_block(bb):
         """Split an LLVM block's instruction stream into SEGMENTS at calls. A
         call must end its microcode block (BLT_1WAY, falls through), so each call
         closes a segment; the next segment captures that call's result at its
-        start. Returns [seg,...]; only the LAST seg carries the terminator."""
+        start. Returns [seg,...]; only the LAST seg carries the terminator. A
+        noreturn call closes the FINAL segment (BLT_0WAY) -- the rest is dead."""
         term = list(bb.instructions)[-1]
         segs, cur = [], {"values": [], "call": None, "term": None,
                          "prev_call": None}
@@ -925,6 +938,10 @@ class LLVMDropConverter:
                 continue
             if ins.opcode == "call" and not LLVMDropConverter._is_canary_call(ins):
                 cur["call"] = ins
+                if LLVMDropConverter._callee_is_noreturn(ins):
+                    cur["noreturn"] = True
+                    segs.append(cur)
+                    return segs  # noreturn -> no continuation; drop the dead tail
                 segs.append(cur)
                 cur = {"values": [], "call": None, "term": None,
                        "prev_call": ins}
@@ -1033,8 +1050,11 @@ class LLVMDropConverter:
                 anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
             if e["call"] is not None:
                 self._emit_call(mba, blk, anchor, ea, e["call"], vmap, argregs)
-                blk.type = hx.BLT_1WAY      # call tail -> continuation (serial+1)
-                self._wire(blk, [e["code"] + 1])
+                if e.get("noreturn"):
+                    blk.type = hx.BLT_0WAY  # noreturn tail: control never leaves
+                else:
+                    blk.type = hx.BLT_1WAY  # call tail -> continuation (serial+1)
+                    self._wire(blk, [e["code"] + 1])
 
         # PASS A.5: out-of-SSA phi copies onto each incoming edge block (append
         # after the values; pass B appends the terminator after them, so the copy
