@@ -94,6 +94,7 @@ class LLVMDropConverter:
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
         self._cur_mba = None         # current mba (make_stkvar needs it)
         self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
+        self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -475,6 +476,19 @@ class LLVMDropConverter:
             # Folded into the branch (see _build_multiblock); no value emitted.
             return anchor
         if op == "call":
+            callee = list(ins.operands)[-1].name
+            if callee in ("__readfsqword", "__readgsqword"):
+                # Stack canary read -> ONE shared (unwritten) kreg for every read,
+                # so `saved_canary == reread_canary` is `K == K` -> folds true ->
+                # Hex-Rays prunes the __stack_chk_fail branch (the optimizer elides
+                # the canary). See memory idavator_drop_canary_gate.
+                sz = _type_size(ins.type) or 8
+                if self._canary_kreg is None:
+                    self._canary_kreg = mba.alloc_kreg(sz)
+                vmap[ins.name] = ("reg", self._canary_kreg, sz)
+                return anchor
+            if callee == "__stack_chk_fail":
+                return anchor  # canary fail path -> elided (branch is dead)
             raise RuntimeError("call must be split into its own block "
                                "(handled by the segment splitter, not _emit_value)")
         logger.warning("unhandled LLVM opcode: %s", op)
@@ -744,6 +758,7 @@ class LLVMDropConverter:
     def _build(self, mba, fn) -> None:
         self._cur_mba = mba
         self._call_spd_ea = self._resting_frame_ea(mba)
+        self._canary_kreg = None
         argregs, eax, ds = self._abi()
         retb = next((mba.get_mblock(i) for i in range(mba.qty)
                      if (b := mba.get_mblock(i)) is not None and b.tail is not None
@@ -802,6 +817,17 @@ class LLVMDropConverter:
         return list(zip(ops, preds))
 
     @staticmethod
+    def _is_canary_call(ins) -> bool:
+        """A stack-protector call -- __readfsqword/__readgsqword (canary read) or
+        __stack_chk_fail (the fail path). These are ELIDED (not split into their
+        own block), matching the optimizer, which drops the canary from faithful
+        output. See memory idavator_drop_canary_gate."""
+        if ins.opcode != "call":
+            return False
+        return list(ins.operands)[-1].name in (
+            "__readfsqword", "__readgsqword", "__stack_chk_fail")
+
+    @staticmethod
     def _segment_block(bb):
         """Split an LLVM block's instruction stream into SEGMENTS at calls. A
         call must end its microcode block (BLT_1WAY, falls through), so each call
@@ -815,12 +841,13 @@ class LLVMDropConverter:
                 break
             if ins.opcode == "phi":
                 continue
-            if ins.opcode == "call":
+            if ins.opcode == "call" and not LLVMDropConverter._is_canary_call(ins):
                 cur["call"] = ins
                 segs.append(cur)
                 cur = {"values": [], "call": None, "term": None,
                        "prev_call": ins}
             else:
+                # canary calls stay in-segment -> _emit_value elides them.
                 cur["values"].append(ins)
         cur["term"] = term
         segs.append(cur)
@@ -1016,6 +1043,16 @@ class LLVMDropConverter:
                     tt.insert_into_block(gt, tt.tail)
                     tt.type = hx.BLT_1WAY
                     self._wire(tt, [true_s])
+            elif term.opcode == "unreachable":
+                # After a noreturn call or the elided canary fail path: a dead
+                # goto to the ret block (the block is unreachable once the canary
+                # compare folds, so Hex-Rays prunes it).
+                g = hx.minsn_t(ea)
+                g.opcode = hx.m_goto
+                g.l.make_blkref(retb.serial)
+                blk.insert_into_block(g, anchor)
+                blk.type = hx.BLT_1WAY
+                self._wire(blk, [retb.serial])
             else:
                 raise NotImplementedError(
                     f"unhandled terminator {term.opcode!r}")
