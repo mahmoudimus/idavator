@@ -548,6 +548,19 @@ class LLVMDropConverter:
             nxt = ins.next
             blk.remove_from_block(ins)
             ins = nxt
+        # A reused/minted host block may carry the host's stale MBL_NORET ("dead
+        # end: doesn't return execution control") -- set on blocks that, in the
+        # ORIGINAL function, sat after a noreturn call (xalloc_die / the
+        # __stack_chk_fail path). The drop repurposes such a block as a normal
+        # call-continuation or branch-arm that DOES fall through to the return.
+        # If the stale flag survives, Hex-Rays (from MMAT_CALLS on) severs the
+        # block's successor edge and DCEs its body -- silently dropping the
+        # COMPUTED return value it produces (e.g. `return hash_lookup(...) != 0`),
+        # leaving only the constant arm (`return 0`). The block's noreturn-ness
+        # must be re-derived from its NEW content, so clear the flag on wipe; a
+        # genuinely-noreturn tail relies on BLT_0WAY (set explicitly in PASS A),
+        # not on this inherited bit. See memory idavator_drop_retslot_mbl_noret.
+        blk.flags &= ~hx.MBL_NORET
         blk.mark_lists_dirty()
 
     def _emit_i1(self, mba, blk, anchor, ea, operand, vmap):
