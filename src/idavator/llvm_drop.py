@@ -19,7 +19,9 @@ from contextlib import suppress
 
 import ida_funcs
 import ida_hexrays as hx
+import ida_idaapi
 import ida_idp
+import ida_name
 import ida_typeinf
 import llvmlite.binding as llvm
 
@@ -80,6 +82,7 @@ class LLVMDropConverter:
                    if g.name == llvm_fn_name and not g.is_declaration), None)
         if fn is None:
             raise ValueError(f"no definition for @{llvm_fn_name}")
+        self._check_call_support(fn)  # raise pre-hook (the hook swallows errors)
         self._force_prototype(host_ea, fn)
 
         box = {"interr": None, "err": None}
@@ -140,13 +143,35 @@ class LLVMDropConverter:
             return "char"
         return "int"
 
+    @staticmethod
+    def _ret_ctype(fn) -> str:
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "ret":
+                    ops = list(ins.operands)
+                    if not ops:
+                        return "void"
+                    t = ops[0].type
+                    if getattr(t, "is_pointer", False) or str(t) == "ptr":
+                        return "void *"
+                    s = str(t)
+                    if "i64" in s:
+                        return "__int64"
+                    if "i16" in s:
+                        return "__int16"
+                    if "i8" in s:
+                        return "char"
+                    return "int"
+        return "void"
+
     @classmethod
     def _force_prototype(cls, host_ea: int, fn) -> None:
         args = list(fn.arguments)
         params = ", ".join(f"{cls._arg_ctype(a, fn)} a{i}"
                            for i, a in enumerate(args)) or "void"
+        ret = cls._ret_ctype(fn)
         tif = ida_typeinf.tinfo_t()
-        ida_typeinf.parse_decl(tif, None, f"int __fastcall f({params});", 0)
+        ida_typeinf.parse_decl(tif, None, f"{ret} __fastcall f({params});", 0)
         ida_typeinf.apply_tinfo(host_ea, tif, ida_typeinf.TINFO_DEFINITE)
 
     @staticmethod
@@ -261,6 +286,41 @@ class LLVMDropConverter:
             self._fill(mi.d, (ad[0], ad[1], 8))
             blk.insert_into_block(mi, anchor)
             return mi
+        if op == "call":
+            # callee is the LAST operand; preceding operands are the args.
+            # At PREOPTIMIZED a call is just `m_call l=gvar(callee)`; Hex-Rays
+            # reconstructs the args from the ABI registers + callee prototype.
+            # The call's `d` MUST be a non-empty register (else mblock_t::verify
+            # INTERR 50864 -- m_call with d.t==mop_z must be the block tail). We
+            # point d straight at the result kreg, which doubles as the value.
+            callee = ops[-1]
+            call_args = ops[:-1]
+            callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+            if callee_ea == ida_idaapi.BADADDR:
+                raise ValueError(f"unresolved callee @{callee.name}")
+            argregs, eax, _ds = self._abi()
+            for i, a in enumerate(call_args):
+                asz = _type_size(a.type)
+                mv = hx.minsn_t(ea)
+                mv.opcode = hx.m_mov
+                self._fill(mv.l, self._desc(a, vmap, asz))
+                mv.d.make_reg(argregs[i], asz)
+                blk.insert_into_block(mv, anchor)
+                anchor = mv
+            mc = hx.minsn_t(ea)
+            mc.opcode = hx.m_call
+            mc.l.make_gvar(callee_ea)
+            # `d` must be the REAL return register rax (non-empty -> legal
+            # mid-block per INTERR 50864). The result LIVES in rax: copying it to
+            # a scratch kreg breaks a later maturity pass, so point vmap at rax
+            # directly (a 2nd call before this result is consumed would clobber
+            # it -> spill-to-stack is a later refinement).
+            rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
+            mc.d.make_reg(eax, rsz)
+            blk.insert_into_block(mc, anchor)
+            if str(ins.type) != "void":
+                vmap[ins.name] = ("reg", eax, rsz)
+            return mc
         if op == "icmp":
             # Folded into the branch (see _build_multiblock); no value emitted.
             return anchor
@@ -279,6 +339,27 @@ class LLVMDropConverter:
         mi.d.make_reg(eax, sz)
         blk.insert_into_block(mi, anchor)
         return mi
+
+    @staticmethod
+    def _check_call_support(fn) -> None:
+        """Guard the call patterns that crash a later maturity pass. A call
+        result is only safe to keep in rax when it is unused or returned
+        directly (tail call); consuming it in arithmetic segfaults the pipeline
+        (the proper fix is a real mcallinfo `d`, currently SWIG-ownership
+        blocked). Raise a clean error instead of crashing."""
+        call_results = {ins.name for bb in fn.blocks for ins in bb.instructions
+                        if ins.opcode == "call" and str(ins.type) != "void"}
+        if not call_results:
+            return
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode in ("ret", "call"):
+                    continue
+                if any(op.name in call_results for op in ins.operands):
+                    raise NotImplementedError(
+                        "call result consumed by a non-return instruction is "
+                        "not yet supported (needs a real mcallinfo in d; "
+                        "see INTERR 50864 decode)")
 
     # -- build dispatch --------------------------------------------------
     def _build(self, mba, fn) -> None:
