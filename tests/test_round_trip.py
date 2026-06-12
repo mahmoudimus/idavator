@@ -91,9 +91,10 @@ class TestRealCpFunctionRoundTrip:
     its own EA and assert the result is semantically identical to the original."""
 
     # Real coreutils functions whose lifted IR is in the supported subset and
-    # round-trips byte-faithful through the oracle. rpl_fclose drops VERBATIM
-    # (goto/label body) -- caught by the oracle's exact-text fast path.
-    FAITHFUL = ["c_tolower", "quotearg_char", "rpl_fclose"]
+    # round-trips byte-faithful through the oracle (globals + alloca + calls).
+    # rpl_fclose drops VERBATIM (goto/label body) via the exact-text fast path.
+    FAITHFUL = ["c_tolower", "quotearg_char", "rpl_fclose", "rpl_fflush",
+                "xstrdup", "base_len"]
 
     @pytest.mark.parametrize("name", FAITHFUL)
     def test_real_function_round_trips(self, examples_dir: Path, name):
@@ -120,6 +121,43 @@ class TestRealCpFunctionRoundTrip:
                   f"err={res.error} ===\nledger={res.ledger}\n{res.dropped_c}")
             assert res.error is None, res.error
             assert res.ok, f"diverged: {res.ledger}"
+        finally:
+            idapro.close_database()
+
+    def test_faithful_round_trip_count(self, examples_dir: Path):
+        """Sweep the supported subset in one session and assert a large fraction
+        round-trips faithfully -- the headline drop-fidelity metric over cp.ll."""
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        import idapro
+        import ida_hexrays as hx
+        import ida_idaapi
+        import ida_name
+
+        if not (examples_dir / "cp").exists() or not (examples_dir / "cp.ll").exists():
+            pytest.skip("missing example binary / cp.ll")
+
+        idapro.open_database(str(examples_dir / "cp"), True)
+        try:
+            assert hx.init_hexrays_plugin()
+            ir = (examples_dir / "cp.ll").read_text()
+            cov = module_coverage(ir)
+            faithful = 0
+            for name in cov.supported:
+                ea = ida_name.get_name_ea(ida_idaapi.BADADDR, name)
+                if ea == ida_idaapi.BADADDR:
+                    continue
+                original = hx.decompile(ea)
+                if original is None:
+                    continue
+                try:
+                    res = round_trip(ir, name, ea, str(original))
+                except Exception:  # noqa: BLE001 - unsupported construct
+                    continue
+                if res.ok and not res.error:
+                    faithful += 1
+            print(f"\nfaithful round-trips: {faithful}/{len(cov.supported)}")
+            assert faithful >= 70, faithful
         finally:
             idapro.close_database()
 

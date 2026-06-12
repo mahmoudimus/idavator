@@ -206,6 +206,17 @@ class LLVMDropConverter:
         raise ValueError(f"unhandled operand {s!r}")
 
     @staticmethod
+    def _global_ea(operand):
+        """Resolve an LLVM global operand (``@name``) to its IDB address, or
+        None if it is not a (resolvable) global."""
+        nm = operand.name
+        if nm and "@" in str(operand):
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, nm)
+            if ea != ida_idaapi.BADADDR:
+                return ea
+        return None
+
+    @staticmethod
     def _wire(blk, succs) -> None:
         """Replace blk's successors with ``succs``, fixing peer predsets."""
         mba = blk.mba
@@ -285,6 +296,18 @@ class LLVMDropConverter:
                 blk.insert_into_block(mi, anchor)
                 vmap[ins.name] = ("reg", kreg, out_sz)
                 return mi
+            gea = self._global_ea(ops[0])
+            if gea is not None:
+                # %v = load <ty>, ptr @g  -> mov g, v  (the gvar IS the location)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                mi.l.make_gvar(gea)
+                mi.l.size = out_sz
+                kreg = mba.alloc_kreg(out_sz)
+                mi.d.make_reg(kreg, out_sz)
+                blk.insert_into_block(mi, anchor)
+                vmap[ins.name] = ("reg", kreg, out_sz)
+                return mi
             # %v = load <ty>, <ty>* %p  ->  ldx ds, p, v
             ad = self._desc(ops[0], vmap, 8)
             mi = hx.minsn_t(ea)
@@ -306,6 +329,16 @@ class LLVMDropConverter:
                 mi.opcode = hx.m_mov
                 self._fill(mi.l, (vd[0], vd[1], val_sz))
                 mi.d.make_reg(slot[0], val_sz)
+                blk.insert_into_block(mi, anchor)
+                return mi
+            gea = self._global_ea(ops[1])
+            if gea is not None:
+                # store <ty> %v, ptr @g  -> mov v, g  (the gvar IS the location)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                self._fill(mi.l, (vd[0], vd[1], val_sz))
+                mi.d.make_gvar(gea)
+                mi.d.size = val_sz
                 blk.insert_into_block(mi, anchor)
                 return mi
             # store <ty> %v, <ty>* %p  ->  stx v, ds, p
