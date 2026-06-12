@@ -285,6 +285,44 @@ class LLVMDropConverter:
             self._fill(mi.d, (ad[0], ad[1], 8))
             blk.insert_into_block(mi, anchor)
             return mi
+        if op == "getelementptr":
+            # %q = getelementptr <ty>, <ty>* %p, i64 %idx  ->  q = p + idx*sizeof(ty)
+            # (single-index array form; the result is an 8-byte address).
+            m = re.search(r"getelementptr\s+(?:inbounds\s+)?([\w]+)",
+                          str(ins).strip())
+            elem_sz = _type_size(m.group(1)) if m else 1
+            base = self._desc(ops[0], vmap, 8)
+            idx = self._desc(ops[1], vmap, 8)
+            if idx[0] == "num":
+                off = idx[1] * elem_sz
+                if off == 0:
+                    vmap[ins.name] = (base[0], base[1], 8)  # alias the base
+                    return anchor
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_add
+                self._fill(mi.l, (base[0], base[1], 8))
+                mi.r.make_number(off, 8)
+            else:
+                scaled = idx
+                if elem_sz != 1:
+                    ml = hx.minsn_t(ea)
+                    ml.opcode = hx.m_mul
+                    self._fill(ml.l, (idx[0], idx[1], 8))
+                    ml.r.make_number(elem_sz, 8)
+                    sk = mba.alloc_kreg(8)
+                    ml.d.make_reg(sk, 8)
+                    blk.insert_into_block(ml, anchor)
+                    anchor = ml
+                    scaled = ("reg", sk, 8)
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_add
+                self._fill(mi.l, (base[0], base[1], 8))
+                self._fill(mi.r, (scaled[0], scaled[1], 8))
+            kreg = mba.alloc_kreg(8)
+            mi.d.make_reg(kreg, 8)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, 8)
+            return mi
         if op == "icmp":
             # Folded into the branch (see _build_multiblock); no value emitted.
             return anchor
