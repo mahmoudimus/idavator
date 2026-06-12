@@ -27,10 +27,10 @@ import ida_typeinf
 import idaapi
 import idautils
 
-# Initialize LLVM
-llvm.initialize()
-llvm.initialize_native_target()
-llvm.initialize_native_asmprinter()
+from idavator.llvm_drop import LLVMDropConverter
+
+# NB: llvmlite now auto-initializes LLVM; the old explicit llvm.initialize*()
+# calls here are deprecated and RAISE in current llvmlite (broke module import).
 
 
 class LLVMToMicrocodeConverter:
@@ -740,32 +740,52 @@ def get_target_triple_from_ida() -> str:
     return f"{arch}-unknown-{os_name}"
 
 
-def apply_llvm_ir(ir_text: str, *, verbose: bool = False) -> bool:
+def apply_llvm_ir(
+    ir_text: str, *, verbose: bool = False, target_ea: int | None = None
+) -> bool:
     """
     Apply LLVM IR to the current IDA database (must already be open).
 
-    Updates Hex-Rays microcode in-place. There is no separate CLI artifact: output is
-    the mutated IDA database and decompiler state, with optional export/patch steps
-    handled from the plugin UI (not implemented yet).
+    Each defined LLVM function is DROPPED into the IDB function of the same name
+    (the Model-2 microcode-hook rebuild in :class:`LLVMDropConverter` -- the
+    converter rebuilds the target's microcode from the IR and lets ``decompile()``
+    run the full pipeline). ``target_ea`` forces a single host (used when the IR
+    holds exactly one definition and the caller already knows the destination).
 
     :param ir_text: LLVM IR source
     :param verbose: Enable DEBUG logging on the root logger
-    :return: True if conversion and apply succeeded
+    :param target_ea: optional explicit host EA for a single-function IR
+    :return: True if at least one function was applied
     """
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.getLogger().setLevel(logging.INFO)
+    logging.getLogger().setLevel(logging.DEBUG if verbose else logging.INFO)
 
     try:
-        converter = LLVMToMicrocodeConverter()
-        converter.convert_module(ir_text)
-        converter.apply_to_database()
-        logging.info("Applied LLVM IR to the open IDA database")
-        return True
-    except Exception as e:
-        logging.error("Failed to apply LLVM IR: %s", e, exc_info=verbose)
+        converter = LLVMDropConverter(ir_text)
+    except Exception as e:  # noqa: BLE001
+        logging.error("Failed to parse LLVM IR: %s", e, exc_info=verbose)
         return False
+
+    applied = 0
+    for fn in converter.module.functions:
+        if fn.is_declaration:
+            continue
+        host = (target_ea if target_ea is not None
+                else ida_name.get_name_ea(ida_idaapi.BADADDR, fn.name))
+        if host == ida_idaapi.BADADDR:
+            logging.warning("no IDB function named %s to drop into; skipping",
+                            fn.name)
+            continue
+        cf = converter.drop(host, fn.name)
+        if cf is None or converter.last_error:
+            logging.error("drop @%s failed (interr=%s err=%s)", fn.name,
+                          converter.last_interr, converter.last_error)
+            continue
+        logging.info("Applied @%s -> %#x", fn.name, host)
+        applied += 1
+
+    if applied == 0:
+        logging.error("No LLVM functions were applied")
+    return applied > 0
 
 
 def apply_llvm_ir_file(path: str, *, verbose: bool = False) -> bool:
