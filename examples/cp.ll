@@ -2545,30 +2545,32 @@ define i8* @"close_stdin"()
   store i8* %".37", i8** %"v0"
   %".39" = call i32* @"__errno_location"()
   store i32* %".39", i32** %"v1"
-  %".41" = bitcast i32** %"v1" to i32*
+  %".41" = load i32*, i32** %"v1"
   %".42" = load i32, i32* %".41"
   %".43" = getelementptr [7 x i8], [7 x i8]* @"aSS_1", i32 0, i32 0
   %".44" = load i8*, i8** %"v0"
   %".45" = load i8*, i8** %"close_error"
-  %".46" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".42", i8* %".43")
+  %".46" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i8*, i8*, ...)*
+  %".47" = call i8* (i32, i32, i8*, i8*, i8*, ...) %".46"(i32 0, i32 %".42", i8* %".43", i8* %".44", i8* %".45")
   br label %"@10"
 "@9":
-  %".48" = call i32* @"__errno_location"()
-  store i32* %".48", i32** %"v2"
-  %".50" = bitcast i32** %"v2" to i32*
-  %".51" = load i32, i32* %".50"
-  %".52" = bitcast i8** @"aS" to i8*
-  %".53" = load i8*, i8** %"close_error"
-  %".54" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".51", i8* %".52")
+  %".49" = call i32* @"__errno_location"()
+  store i32* %".49", i32** %"v2"
+  %".51" = load i32*, i32** %"v2"
+  %".52" = load i32, i32* %".51"
+  %".53" = bitcast i8** @"aS" to i8*
+  %".54" = load i8*, i8** %"close_error"
+  %".55" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i8*, ...)*
+  %".56" = call i8* (i32, i32, i8*, i8*, ...) %".55"(i32 0, i32 %".52", i8* %".53", i8* %".54")
   br label %"@10"
 "@10":
-  %".56" = call i8* @"close_stdout"()
-  %".57" = load i8, i8* %"fail"
-  %".58" = icmp eq i8 %".57", 0
-  br i1 %".58", label %"@12", label %"@11"
+  %".58" = call i8* @"close_stdout"()
+  %".59" = load i8, i8* %"fail"
+  %".60" = icmp eq i8 %".59", 0
+  br i1 %".60", label %"@12", label %"@11"
 "@11":
-  %".60" = load i32, i32* @"exit_failure"
-  %".61" = call i8* @"_exit"(i32 %".60")
+  %".62" = load i32, i32* @"exit_failure"
+  %".63" = call i8* @"_exit"(i32 %".62")
   br label %"@12"
 "@12":
   %".2" = load i8*, i8** %"funcresult"
@@ -36381,23 +36383,26 @@ define i8* @"emit_bug_reporting_address"()
   %".10" = load i8*, i8** %"v0"
   %".11" = getelementptr [22 x i8], [22 x i8]* @"aBugCoreutilsGn", i32 0, i32 0
   %".12" = ptrtoint i8* %".11" to i64
-  %".13" = call i32 (i8*, ...) @"printf"(i8* %".10")
-  %".14" = getelementptr [20 x i8], [20 x i8]* @"aSHomePageS", i32 0, i32 0
-  %".15" = call i8* @"gettext"(i8* %".14")
-  store i8* %".15", i8** %"v1"
-  %".17" = load i8*, i8** %"v1"
-  %".18" = getelementptr [14 x i8], [14 x i8]* @"aGnuCoreutils_0", i32 0, i32 0
-  %".19" = ptrtoint i8* %".18" to i64
-  %".20" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg_0", i32 0, i32 0
-  %".21" = ptrtoint i8* %".20" to i64
-  %".22" = call i32 (i8*, ...) @"printf"(i8* %".17")
-  %".23" = getelementptr [39 x i8], [39 x i8]* @"aGeneralHelpUsi", i32 0, i32 0
-  %".24" = call i8* @"gettext"(i8* %".23")
-  store i8* %".24", i8** %"v2"
-  %".26" = load i8*, i8** %"v2"
-  %".27" = getelementptr [29 x i8], [29 x i8]* @"aHttpsWwwGnuOrg_1", i32 0, i32 0
-  %".28" = ptrtoint i8* %".27" to i64
-  %".29" = call i32 (i8*, ...) @"printf"(i8* %".26")
+  %".13" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, ...)*
+  %".14" = call i32 (i8*, i64, ...) %".13"(i8* %".10", i64 %".12")
+  %".15" = getelementptr [20 x i8], [20 x i8]* @"aSHomePageS", i32 0, i32 0
+  %".16" = call i8* @"gettext"(i8* %".15")
+  store i8* %".16", i8** %"v1"
+  %".18" = load i8*, i8** %"v1"
+  %".19" = getelementptr [14 x i8], [14 x i8]* @"aGnuCoreutils_0", i32 0, i32 0
+  %".20" = ptrtoint i8* %".19" to i64
+  %".21" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg", i32 0, i32 0
+  %".22" = ptrtoint i8* %".21" to i64
+  %".23" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, i64, ...)*
+  %".24" = call i32 (i8*, i64, i64, ...) %".23"(i8* %".18", i64 %".20", i64 %".22")
+  %".25" = getelementptr [39 x i8], [39 x i8]* @"aGeneralHelpUsi", i32 0, i32 0
+  %".26" = call i8* @"gettext"(i8* %".25")
+  store i8* %".26", i8** %"v2"
+  %".28" = load i8*, i8** %"v2"
+  %".29" = getelementptr [29 x i8], [29 x i8]* @"aHttpsWwwGnuOrg_1", i32 0, i32 0
+  %".30" = ptrtoint i8* %".29" to i64
+  %".31" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, ...)*
+  %".32" = call i32 (i8*, i64, ...) %".31"(i8* %".28", i64 %".30")
   br label %"@2"
 "@2":
   %".2" = load i8*, i8** %"funcresult"
