@@ -1110,10 +1110,20 @@ class LLVMDropConverter:
         # arg (fixed prefix + varargs) so the call carries them deterministically.
         # Only when surplus args are actually present beyond the fixed prototype.
         ctif = ida_typeinf.tinfo_t()
-        if (ida_nalt.get_tinfo(ctif, callee_ea) and ctif.is_func()
-                and ctif.is_vararg_cc()
-                and len(call_args) > ctif.get_nargs()):
+        is_vararg = (ida_nalt.get_tinfo(ctif, callee_ea) and ctif.is_func()
+                     and ctif.is_vararg_cc())
+        if is_vararg and len(call_args) > ctif.get_nargs():
             return self._emit_call_vararg(
+                mba, blk, anchor, ea, ins, vmap, callee_ea, ctif)
+        # Variadic callee invoked with EXACTLY its fixed args (no surplus vararg).
+        # A bare `m_call gvar` to a variadic prototype still lets Hex-Rays' own
+        # vararg recovery invent trailing args -- e.g. `open("/dev/urandom", 0)`
+        # mis-renders as `open(a0, a1, a2)`, reading stale incoming-param regs as
+        # phantom varargs. Pin the call with an EXPLICIT fixed-arg variadic
+        # mcallinfo (FCI_FINAL) so no re-derivation occurs. set_type keeps the
+        # ellipsis cc; we fill only the fixed args (no surplus tail).
+        if is_vararg and len(call_args) <= ctif.get_nargs():
+            return self._emit_call_vararg_fixed(
                 mba, blk, anchor, ea, ins, vmap, callee_ea, ctif)
         # Resolve args once; a call that materializes a frame address (&local)
         # must carry the host resting-frame ea so Hex-Rays computes a
@@ -1261,6 +1271,103 @@ class LLVMDropConverter:
         mc.d.size = 0  # result discarded
         blk.insert_into_block(mc, anchor)
         return mc
+
+    def _emit_call_vararg_fixed(self, mba, blk, anchor, ea, ins, vmap,
+                                callee_ea, ctif):
+        """Emit a DIRECT call to a VARIADIC callee invoked with EXACTLY its fixed
+        args (NO surplus vararg), pinning the arg list so Hex-Rays does not invent
+        phantom trailing varargs.
+
+        A bare ``m_call gvar`` to a variadic prototype (e.g. ``open(const char *,
+        int, ...)``) lets Hex-Rays' own vararg recovery read stale incoming-param
+        registers as phantom varargs -- ``open("/dev/urandom", 0)`` mis-renders as
+        ``open(a0, a1, a2)``. We build an EXPLICIT mcallinfo: ``set_type`` with the
+        REAL variadic tinfo (KEEPS the ellipsis cc + the fixed-arg SysV arglocs),
+        fill ONLY the fixed args, and set ``FCI_FINAL`` so the call list is taken
+        as authoritative (no re-derivation).
+
+        Unlike ``_emit_call_vararg`` (which models a result-DISCARDED variadic tail
+        call), this handles both the discarded and the CONSUMED result: when the
+        result is used we seed retregs/return_regs (mirroring
+        ``_emit_call_stackargs``) and wrap the call in a ``mov ... => rax`` so the
+        continuation captures it; when discarded we emit a bare result-0 call."""
+        _argregs, eax, _ds = self._abi()
+        ops = list(ins.operands)
+        call_args = ops[:-1]
+        crettype = ctif.get_rettype()
+        rsz = crettype.get_size()
+        if rsz in (0, ida_idaapi.BADADDR) or crettype.is_void():
+            rsz = 8
+        fi = hx.mcallinfo_t(callee_ea, 0)
+        if not fi.set_type(ctif):
+            raise NotImplementedError(
+                f"fixed-arg vararg call: set_type failed for @{ops[-1].name}")
+        # Fill each FIXED formal arg's mop VALUE (set_type fixed its argloc/type);
+        # widen a narrower LLVM value into the formal slot (verifier wants
+        # mop.size == formal slot size).
+        for i in range(min(len(call_args), fi.args.size())):
+            arg = fi.args[i]
+            a = call_args[i]
+            fsz = arg.type.get_size()
+            asz = _type_size(a.type)
+            if fsz in (0, ida_idaapi.BADADDR):
+                fsz = asz
+            d = self._desc(a, vmap, asz)
+            if asz < fsz and d[0] in ("reg", "num"):
+                if d[0] == "num":
+                    d = ("num", d[1], fsz)
+                else:
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_xdu
+                    self._fill(mi.l, (d[0], d[1], asz))
+                    kreg = mba.alloc_kreg(fsz)
+                    mi.d.make_reg(kreg, fsz)
+                    blk.insert_into_block(mi, anchor)
+                    anchor = mi
+                    d = ("reg", kreg, fsz)
+            tmp = hx.mop_t()
+            self._fill(tmp, (d[0], d[1], fsz))
+            arg.copy_mop(tmp)
+            arg.size = fsz
+        # FCI_FINAL: take this arg list as authoritative (suppress phantom-vararg
+        # re-derivation). spoiled keeps rax clobbered (an ABI call destroys it).
+        fi.flags |= hx.FCI_FINAL
+        fi.spoiled.add(eax, rsz)
+        fi.return_type = (crettype if crettype.get_size() not in
+                          (0, ida_idaapi.BADADDR) and not crettype.is_void()
+                          else self._int_tinfo(rsz))
+        call_ea = (self._call_spd_ea
+                   if self._call_spd_ea is not None else ea)
+        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
+                                        call_ea) if ida_funcs.get_func(
+                                            mba.entry_ea) else 0
+        if not self._value_used(ins):
+            # Result discarded -> bare result-0 call (no retregs).
+            mc = hx.minsn_t(call_ea)
+            mc.opcode = hx.m_call
+            mc.l.make_gvar(callee_ea)
+            mc.d._make_callinfo(fi)
+            mc.d.size = 0
+            blk.insert_into_block(mc, anchor)
+            return mc
+        # Result consumed -> seed retregs/return_regs and wrap in mov => rax so the
+        # continuation captures the result (cf. _emit_call_stackargs).
+        ret_mop = hx.mop_t()
+        ret_mop.make_reg(eax, rsz)
+        fi.retregs.push_back(ret_mop)
+        fi.return_regs.add(eax, rsz)
+        inner = hx.minsn_t(call_ea)
+        inner.opcode = hx.m_call
+        inner.l.make_gvar(callee_ea)
+        inner.d._make_callinfo(fi)
+        inner.d.size = rsz
+        mov = hx.minsn_t(call_ea)
+        mov.opcode = hx.m_mov
+        mov.l.make_insn(inner)
+        mov.l.size = rsz
+        mov.d.make_reg(eax, rsz)
+        blk.insert_into_block(mov, anchor)
+        return mov
 
     def _emit_call_stackargs(self, mba, blk, anchor, ea, ins, vmap):
         """Emit a direct call with MORE integer args than ABI registers (the

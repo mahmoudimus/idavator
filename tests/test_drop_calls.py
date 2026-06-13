@@ -142,3 +142,55 @@ class TestCallDrop:
             assert "+ 1" in text, text
         finally:
             idapro.close_database()
+
+    def test_fixed_arg_vararg_call_pins_args(self, examples_dir: Path):
+        """A variadic callee invoked with EXACTLY its fixed args (no surplus
+        vararg) must carry those args faithfully. Real get_nonce calls
+        ``open("/dev/urandom", 0)`` -- ``open`` is variadic ``int(const char *,
+        int, ...)``. Without an explicit fixed-arg variadic mcallinfo, Hex-Rays'
+        own vararg recovery invents phantom trailing args off stale incoming-param
+        registers and mis-renders the call as ``open(a0, a1, a2)`` (the path
+        literal lost). The fix pins the call with FCI_FINAL; this guard fails
+        without it (the literal vanishes / phantom params appear).
+
+        Pristine-based: drops the real cp ``get_nonce`` against ``examples/cp``."""
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        import idapro
+        import ida_hexrays as hx
+        import ida_idaapi
+        import ida_name
+
+        if not (examples_dir / "cp").exists() or not (
+                examples_dir / "cp.ll").exists():
+            pytest.skip("missing example binary / IR")
+
+        ll = (examples_dir / "cp.ll").read_text()
+        idapro.open_database(str(examples_dir / "cp"), True)
+        try:
+            assert hx.init_hexrays_plugin()
+            from idavator.llvm_drop import LLVMDropConverter
+
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "get_nonce")
+            if ea == ida_idaapi.BADADDR:
+                pytest.skip("get_nonce not in this cp build")
+            conv = LLVMDropConverter(ll)
+            cf = conv.drop(ea, "get_nonce")
+            text = str(cf) if cf is not None else "<None>"
+            # A real drop (not a native fallback): no build error.
+            assert conv.last_error is None, conv.last_error
+            assert cf is not None, "decompile failed"
+            open_lines = [ln.strip() for ln in text.splitlines()
+                          if "open(" in ln]
+            assert open_lines, f"no open() call rendered in:\n{text}"
+            joined = "\n".join(open_lines)
+            # The /dev/urandom path literal must survive as open's first arg.
+            assert "/dev/urandom" in joined, (
+                f"open() lost its path literal (phantom-vararg "
+                f"mis-render):\n{joined}")
+            # And the phantom 3-arg form reading the function's own params must
+            # NOT appear (the pre-fix signature).
+            assert "open((const char *)a0" not in joined, (
+                f"open() mis-rendered with phantom params:\n{joined}")
+        finally:
+            idapro.close_database()
