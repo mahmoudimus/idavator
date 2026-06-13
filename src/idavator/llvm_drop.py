@@ -1815,9 +1815,62 @@ class LLVMDropConverter:
         # slot -> garbage decompile + the post-noreturn-merge INTERR 50342. Native
         # uses the true frame offsets; matching them by name de-collides the slot.
         host_off = self._host_frame_offsets(mba)
-        struct_allocas: set = set()
         self._ptr_allocas = {}
         allocas = {}
+        # A frame-slot alloca that the HOST FRAME ALSO NAMES must rest at its TRUE
+        # host offset, not at a synthetic sequential offset. The old packing (0, 8,
+        # 16, ...) ignored the host layout, so a host-named escaped slot routinely
+        # got an offset belonging to a DIFFERENT host variable and Hex-Rays then
+        # ALIASED the two distinct values onto one stkvar:
+        #   create_hole   -- ``punch_holes`` (escaped via ``bitcast i1*``) packed at
+        #                    synthetic +8 == host ``size`` (+8): the body read
+        #                    ``size = a2`` and gated on ``if (!size)`` (native gates
+        #                    on ``punch_holes``);
+        #   quotearg_buffer-- ``p`` packed at +8 == host ``o`` (+8);
+        #   sparse_copy   -- ``total_n_read`` (+8) / ``last_write_made_hole`` (+16)
+        #                    SWAPPED, so ``*total_n_read += n_read`` corrupted
+        #                    ``last_write_made_hole``.
+        # ANONYMOUS allocas (no anchorable host member -- a deref temp, an SROA
+        # leftover, or a host bool the frame byte-packs sub-qword) keep the original
+        # LOW synthetic packing from 0. Overlaying a host LOCAL slot is BENIGN
+        # (Hex-Rays treats an unnamed scratch slot sharing bytes with a host local as
+        # scratch, exactly as the old ``off=0`` packing did) and crucially stays in
+        # the LOCAL frame -- it must NOT be pushed UP into the ``__saved_registers`` /
+        # ``__return_address`` / outgoing-args region (that corrupts the frame:
+        # create_hard_link -> "local variable allocation has failed"; a synthetic slot
+        # landing on ``__saved_registers`` renders as ``savedregs``). The ONE thing
+        # the low packing must avoid is sharing a slot with a host-NAMED alloca
+        # RE-ANCHORED below, so it skips those placed ranges.
+        #
+        # Re-anchor ONLY to an 8-ALIGNED host offset. The destructive collisions are
+        # 8-byte slots at 8-aligned offsets (``punch_holes``@24 vs ``size``@8,
+        # ``p``@8 vs ``o``@8, ``total_n_read``@8 / ``last_write_made_hole``@16). A
+        # host frame's SUB-8 byte-packed bools (create_hard_link ``dereference``@4,
+        # last_component ``saw_slash``@23) are NOT a destructive alias -- the original
+        # synthetic packing handled them fine -- and re-anchoring an escaped slot to a
+        # mid-qword offset (then sizing it to 8 bytes) OVERLAPS the neighbouring packed
+        # member and itself trips the allocation failure. (The earlier struct-only
+        # re-anchor under-covered the named 8-aligned collision; scalar/ptr escaped
+        # slots need the SAME host-offset de-collision.)
+        def _anchorable(name: str) -> bool:
+            return name in host_off and host_off[name][0] % 8 == 0
+        placed = [
+            (host_off[ins.name][0],
+             host_off[ins.name][0] + max(self._alloca_elem_size(ins), 8))
+            for bb in fn.blocks for ins in bb.instructions
+            if ins.opcode == "alloca" and _anchorable(ins.name)
+            and (ins.name in gepd or ins.name in escaped)
+        ]
+
+        def _synthetic(start: int, size: int) -> int:
+            want = max(size, 8)
+            o, moved = start, True
+            while moved:
+                moved = False
+                for lo, hi in placed:
+                    if o < hi and lo < o + want:
+                        o, moved = (hi + 7) & ~7, True
+            return o
         off = 0
         for bb in fn.blocks:
             for ins in bb.instructions:
@@ -1825,24 +1878,34 @@ class LLVMDropConverter:
                     continue
                 nm = ins.name
                 sz = self._alloca_elem_size(ins)
-                if self._alloca_struct_key(ins) is not None:
-                    struct_allocas.add(nm)
+                named = _anchorable(nm)
                 if nm in gepd:
-                    # GEP'd alloca -> a frame slot sized to the WHOLE array; each
-                    # GEP resolves to &stkvar(off + field). Scalar/ptr element
-                    # arrays only; struct/va_list elements need real layout.
+                    # GEP'd alloca -> a frame slot sized to the WHOLE array; each GEP
+                    # resolves to &stkvar(slot + field). A host-named array rests at
+                    # its real offset; an anonymous one keeps a low synthetic slot.
                     dims = self._array_dims(str(ins))
                     if dims is None:
                         raise NotImplementedError(
                             f"GEP-on-stack alloca %{nm} (struct/va_list element "
                             f"needs real layout -- not the scalar-array slice)")
                     arr_sz = dims[0] * dims[2]
-                    self._addr_taken[nm] = (off, arr_sz)
-                    off += max(arr_sz, 8)
+                    if named:
+                        slot_off = host_off[nm][0]
+                    else:
+                        slot_off = _synthetic(off, arr_sz)
+                        off = slot_off + max(arr_sz, 8)
+                    self._addr_taken[nm] = (slot_off, arr_sz)
                 elif nm in escaped:
-                    # existing host frame slot -- NO frame extension (the
-                    # subframe INTERR chain). Distinct 8-aligned offsets.
-                    self._addr_taken[nm] = (off, sz)
+                    # An escaped slot (address used as a value / via a deref bitcast).
+                    # Host-named & 8-aligned -> its TRUE host offset (the de-collision
+                    # above); else a low synthetic slot skipping the re-anchored ones.
+                    # NO frame extension into host territory (the subframe INTERR chain).
+                    if named:
+                        slot_off = host_off[nm][0]
+                    else:
+                        slot_off = _synthetic(off, sz)
+                        off = slot_off + max(sz, 8)
+                    self._addr_taken[nm] = (slot_off, sz)
                     if self._alloca_is_ptr(ins):
                         # A pointer-typed slot: the lifter type-puns it via a no-op
                         # ``bitcast %slot`` for BOTH the pointer value (slot access)
@@ -1850,19 +1913,9 @@ class LLVMDropConverter:
                         # so the load/store emit can tell the two apart (the deref
                         # alias set + valtype rule, mirroring native's
                         # ``mov %slot, r; ldx ds, r``).
-                        self._ptr_allocas[nm] = off
-                    off += max(sz, 8)
+                        self._ptr_allocas[nm] = slot_off
                 else:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
-        # Re-anchor escaping STRUCT allocas at their real host-frame offset (by the
-        # lifter-preserved name). Scalar/ptr slots keep the synthetic offsets that
-        # already verify; only the struct slots need the de-collision (their base
-        # must not overlap a live host scalar). Keep the parsed (possibly larger)
-        # struct size for &local sizing.
-        for nm in struct_allocas:
-            cur = self._addr_taken.get(nm)
-            if cur is not None and nm in host_off:
-                self._addr_taken[nm] = (host_off[nm][0], cur[1])
         return allocas
 
     def _detect_ret_slot(self, fn) -> None:
