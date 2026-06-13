@@ -24098,9 +24098,10 @@ define i1 @"source_is_dst_backup"(i8* %".1", %"stat"* %".2", i8* %".3")
   %".81" = bitcast %"stat"* %".80" to i64*
   %".82" = load i64, i64* %".81"
   %".83" = bitcast %"stat"* %"dst_back_sb" to i8*
-  %".84" = bitcast i8* %".83" to i64*
-  %".85" = load i64, i64* %".84"
-  %".86" = icmp ne i64 %".82", %".85"
+  %".84" = getelementptr i8, i8* %".83", i32 8
+  %".85" = bitcast i8* %".84" to i64*
+  %".85x" = load i64, i64* %".85"
+  %".86" = icmp ne i64 %".82", %".85x"
   br i1 %".86", label %"@9", label %"@7"
 "@7":
   %".88" = bitcast %"stat"** %"src_st" to i64*
