@@ -27,6 +27,8 @@ Fail-without-fix: against the pre-fix classifier, ``safe_hasher`` drops
 """
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -56,7 +58,14 @@ def _drop_only(examples_dir: Path, name: str) -> str:
         pytest.skip("missing cp / cp.ll")
     from idavator.llvm_drop import LLVMDropConverter
 
-    idapro.open_database(str(binary), True)
+    # PRISTINE per-drop IDB: copy the binary to a throwaway dir so the drop's
+    # _force_prototype set_types (saved by close_database) never persists into the
+    # shared examples/cp.i64 -- forced-prototype writes accumulate across runs and
+    # poison the native baseline for later cases. cp.ll stays the real read-only IR.
+    tmp = Path(tempfile.mkdtemp(prefix="icall_key_"))
+    dst = tmp / "cp"
+    shutil.copy(binary, dst)
+    idapro.open_database(str(dst), True)
     try:
         assert ida_hexrays.init_hexrays_plugin()
         ea = ida_name.get_name_ea(ida_idaapi.BADADDR, name)
@@ -69,6 +78,7 @@ def _drop_only(examples_dir: Path, name: str) -> str:
         return str(cf)
     finally:
         idapro.close_database()
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @pytest.mark.ida

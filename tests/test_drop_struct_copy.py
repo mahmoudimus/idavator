@@ -27,6 +27,8 @@ so the .style-only render was a real, recoverable DROP defect. Ticket ida-45rg
 """
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -59,7 +61,15 @@ class TestWholeStructCopy:
 
         from idavator.llvm_drop import LLVMDropConverter
 
-        idapro.open_database(str(binary), True)
+        # PRISTINE per-drop IDB: copy the binary to a throwaway dir so the drop's
+        # _force_prototype set_types (saved by close_database) never persists into
+        # the shared examples/cp.i64 -- forced-prototype writes accumulate across
+        # runs and poison the native baseline for later cases. cp.ll stays the real
+        # read-only IR.
+        tmp = Path(tempfile.mkdtemp(prefix="struct_copy_"))
+        dst = tmp / "cp"
+        shutil.copy(binary, dst)
+        idapro.open_database(str(dst), True)
         try:
             assert ida_hexrays.init_hexrays_plugin()
             ea = ida_name.get_name_ea(
@@ -85,3 +95,4 @@ class TestWholeStructCopy:
             assert "&options)" in txt, txt
         finally:
             idapro.close_database()
+            shutil.rmtree(tmp, ignore_errors=True)

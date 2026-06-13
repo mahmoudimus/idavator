@@ -30,6 +30,8 @@ address-operand lift to ``dest=True`` and re-lifting these bodies).
 from __future__ import annotations
 
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -57,7 +59,15 @@ def _drop_only(examples_dir: Path, name: str) -> str:
     dropped pseudocode. Nothing decompiles the ea first -- a prior decompile of
     the same ea perturbs the lvar cache and reshapes the drop (idalib
     non-determinism), so the through-member deref check must run clean. A native
-    fallback (build error) is rejected: this asserts a REAL drop."""
+    fallback (build error) is rejected: this asserts a REAL drop.
+
+    Runs on a PRISTINE per-drop IDB: the binary is copied to a throwaway
+    ``mkdtemp`` dir before ``open_database`` so the drop's ``_force_prototype``
+    ``set_types`` (saved by ``close_database``) never persists into the SHARED
+    ``examples/cp.i64``. Without this the forced-prototype writes accumulate
+    across runs and poison the native baseline for later cases -- the drop is
+    correct but the polluted IDB renders a different shape. The ``cp.ll`` IR
+    stays the real ``examples_dir/cp.ll`` (read-only)."""
     import idapro
     import ida_hexrays
     import ida_idaapi
@@ -66,7 +76,10 @@ def _drop_only(examples_dir: Path, name: str) -> str:
     binary, ir_path = _paths(examples_dir)
     from idavator.llvm_drop import LLVMDropConverter
 
-    idapro.open_database(str(binary), True)
+    tmp = Path(tempfile.mkdtemp(prefix="missing_deref_"))
+    dst = tmp / "cp"
+    shutil.copy(binary, dst)
+    idapro.open_database(str(dst), True)
     try:
         assert ida_hexrays.init_hexrays_plugin()
         ea = ida_name.get_name_ea(ida_idaapi.BADADDR, name)
@@ -80,6 +93,7 @@ def _drop_only(examples_dir: Path, name: str) -> str:
         return str(cf)
     finally:
         idapro.close_database()
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 @pytest.mark.ida
