@@ -1689,6 +1689,39 @@ def lift_insn(
             # returning the loaded value, so a missing `d` must not abort the lift.
             if not need(r, "r"):
                 return None
+            # A pointer-slot DEFINE -- `bucket = table->bucket` (a through-pointer
+            # member load of a POINTER-typed field, at ANY byte offset: `->bucket`
+            # at 0, `->next` at +8), where the destination `d` is a bare pointer
+            # slot (`hash_entry**`, pointee is itself a pointer). The default lowers
+            # the load as `IntType(d.size*8)` (i64), then storecast/_store_as bitcast
+            # the pointer SLOT to `i64*` and store an i64 through it -- which is
+            # byte-identical in the IR to a deref-write `*X = v`. The drop renderer's
+            # _ptr_deref_alias rule keys off the stored value's TYPE (`_is_ptr_type`):
+            # an i64 reads as a deref, so the slot-define `bucket = table->bucket`
+            # rendered as `bucket->data = *(void**)a0` (one spurious deref). The
+            # microcode carried no width distinction (both 8 bytes) -- the pointer-
+            # ness was destroyed by typing the load `i64`. Preserve it: when `d` is a
+            # pointer-to-pointer slot and the load is pointer-width, load `r` as that
+            # pointee POINTER type and store the pointer VALUE into the slot, so the
+            # IR store is pointer-typed (`store hash_entry* v, hash_entry** %bucket`)
+            # -- distinct from a deref-write, matching native's `bucket = table->bucket`.
+            # Scope is narrow: only a pointer-WIDTH load into a pointer-to-pointer
+            # destination slot changes; sub-pointer-width loads (`*name` i8) keep the
+            # IntType lowering and the drop's width-based deref rule, and a value-
+            # context ldx (d is None) or a non-pointer destination is untouched.
+            if (
+                not ida_insn.is_fpinsn()
+                and d is not None
+                and ida_insn.d.size * 8 == ptrsize
+                and isinstance(getattr(d, "type", None), ir.PointerType)
+                and isinstance(d.type.pointee, ir.PointerType)
+            ):
+                slot_ptr_ty = d.type.pointee
+                r = typecast(r, slot_ptr_ty.as_pointer(), builder)
+                r = builder.load(r)
+                return typing.cast(
+                    ir.Instruction, builder.store(r, d)
+                )
             typ = (
                 float_type(ida_insn.d.size)
                 if ida_insn.is_fpinsn()

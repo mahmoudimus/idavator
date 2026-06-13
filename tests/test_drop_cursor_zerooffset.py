@@ -109,6 +109,14 @@ class TestZeroOffsetCursorWalk:
         # the "allocation has failed" blob banner must be gone.
         assert "allocation has failed" not in dropped, (
             f"cursor still an unallocated blob:\n{dropped}")
+        # The SPECIFIC zero-offset pointer-slot-DEFINE regression: the cursor init
+        # `bucket = table->bucket` (an off-0 POINTER-field load into a pointer slot)
+        # must lift pointer-typed -> render as a DEFINE, NOT the deref-WRITE
+        # `bucket->data = *(void **)a0` the pre-fix i64-typed load collapsed to.
+        assert "bucket->data = *(" not in dropped, (
+            f"zero-offset pointer-slot DEFINE collapsed to a deref-write "
+            f"(`bucket = table->bucket` rendered as `bucket->data = *...`):\n"
+            f"{dropped}")
 
     def test_hash_get_max_bucket_length_typed_inner_walk(
             self, examples_dir: Path) -> None:
@@ -130,13 +138,25 @@ class TestZeroOffsetCursorWalk:
     def test_hash_insert_if_absent_typed_bucket(
             self, examples_dir: Path) -> None:
         """``hash_insert_if_absent`` derefs ``bucket->data`` / ``bucket->next`` and
-        links ``new_entry`` -- the zero-offset deref + the typed cursor make these
-        ``->`` field accesses (not ``*(_QWORD*)`` blobs)."""
+        links ``new_entry`` (``new_entry->data`` / ``new_entry->next``) -- the
+        zero-offset deref + the typed cursor make these ``->`` field accesses, not
+        ``*(_QWORD*)`` blobs.
+
+        ``bucket`` here is the ``hash_find_entry(&bucket)`` out-param and ``new_entry``
+        is the ``allocate_entry`` result (a register, not a stack cursor), so the
+        struct TYPE NAME does not appear in the rendered BODY -- native itself renders
+        only the ``->`` field accesses (the type shows in the collapsed declarations).
+        The faithful signature is therefore the field-deref structure: at least four
+        ``->data``/``->next`` accesses and NO raw ``*(_QWORD *)`` bucket blob."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "hash_insert_if_absent")
 
-        assert "hash_entry" in dropped, f"cursor not typed:\n{dropped}"
         assert "->data" in dropped, f"`->data` deref lost:\n{dropped}"
         assert "->next" in dropped, f"`->next` deref lost:\n{dropped}"
+        # bucket->{data,next} + new_entry->{data,next}: the typed field accesses
+        # native renders. A blob walk would collapse these to *(_QWORD *) offsets.
+        assert dropped.count("->") >= 4, (
+            f"field-deref cursor walk collapsed (typed `->` accesses lost):\n"
+            f"{dropped}")
         assert "memcpy" not in dropped, f"spurious memcpy:\n{dropped}"

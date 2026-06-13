@@ -1668,18 +1668,98 @@ class LLVMDropConverter:
             key = re.sub(r"\.\d+$", "", key)
         return key if key in self._struct_size else None
 
+    def _cursor_struct_ptrs(self, fn, names, gepd, escaped, decl_types) -> set:
+        """Names of CLEAN (load/store-only -> would otherwise kreg) single-level
+        struct-pointer allocas that are genuine CURSORS deserving a typed frame
+        slot, not a propagated temporary.
+
+        After the m_ldx pointer-slot-define lift fix, a through-pointer pointer
+        member load (``bucket = table->bucket`` at off 0, ``cursor = cursor->next``
+        at +8) lowers to a pointer-typed ``store T* v, T** %slot`` -- correct
+        SEMANTICS (no spurious deref-write), but the slot is now accessed cleanly
+        so ``_scan_allocas`` kregs it and the decompiler renders an UNTYPED
+        ``void**`` walk (``i = *(void***)a0; *i; i += 2``) instead of native's typed
+        ``for(bucket=table->bucket;;++bucket){if(bucket->data)..}``. Re-anchoring
+        such a slot to a real frame slot (like native) lets ``_save_struct_ptr_lvar_
+        types`` type it ``T*`` and recover the field-access render.
+
+        A CURSOR must satisfy ALL of:
+          * a resolvable single-level struct-pointer pointee (``%hash_entry`` etc.);
+          * written at least once from a DERIVED pointer -- a ``load`` from memory
+            or a ``getelementptr`` result (the cursor advance / member read). This is
+            the pointer-slot-DEFINE the lift fix now emits;
+          * its LOADED value is USED beyond a bare ``ret`` -- it is dereferenced,
+            advanced, compared, or passed. A walked cursor reads back; a value that
+            is only defined-then-returned does not.
+
+        EXCLUSIONS (would otherwise regress self-consistency):
+          * the return slot ``funcresult`` -- stored from a ``load`` (``return *p``)
+            and loaded only to feed ``ret``; typing it as a frame cursor breaks the
+            return-slot promotion (clone_quoting_options, quoting_options_from_style).
+            The loaded-beyond-ret test already rejects it; the name guard is cheap
+            belt-and-braces.
+          * a pure PARAM-COPY slot (its only store value is an incoming argument,
+            ``store %".1", %table``): typing it pins a propagatable parameter into a
+            stack local and adds ``table = a0`` noise. Its store value is an argument
+            (not a load/gep), so it is not in ``derived_into``."""
+        clean = (names - gepd - escaped) - {"funcresult"}
+        if not clean:
+            return set()
+        # An operand ValueRef does NOT expose its defining instruction's opcode
+        # (llvmlite reports is_instruction=False for an operand), so map each
+        # named instruction's result -> opcode and look operands up there.
+        defop: dict = {}
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.name:
+                    defop[ins.name] = ins.opcode
+        # name of each load's pointer-source alloca: ``%v = load <ty>, ptr %slot``.
+        load_src: dict = {}
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "load" and ins.name:
+                    sops = list(ins.operands)
+                    if sops:
+                        load_src[ins.name] = sops[0].name
+        derived_into: set = set()
+        used_loaded: set = set()  # cursor whose loaded value is used beyond `ret`
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "store":
+                    sops = list(ins.operands)
+                    val, dst = sops[0], sops[1]
+                    if (dst.name in clean
+                            and defop.get(val.name) in ("load", "getelementptr")):
+                        derived_into.add(dst.name)
+                if ins.opcode == "ret":
+                    continue
+                # any non-ret instruction consuming a load-of-cursor result marks
+                # that cursor as genuinely walked (deref / advance / compare / arg).
+                for o in ins.operands:
+                    base = load_src.get(o.name)
+                    if base in clean:
+                        used_loaded.add(base)
+        out = set()
+        for nm in clean:
+            if nm not in derived_into or nm not in used_loaded:
+                continue
+            if self._pointee_struct_of_type(decl_types.get(nm, "")) is not None:
+                out.add(nm)
+        return out
+
     def _struct_ptr_alloca_slots(self, fn) -> dict:
         """``name -> (stkoff, struct_name)`` for every ESCAPING single-level
-        struct-pointer alloca, using the SAME synthetic frame-offset packing as
+        struct-pointer alloca (and every clean struct-pointer CURSOR -- see
+        ``_cursor_struct_ptrs``), using the SAME synthetic frame-offset packing as
         ``_scan_allocas`` so the offsets match the ``make_stkvar(mba, off)`` the
         drop emits -- i.e. the offset by which ``_save_struct_ptr_lvar_types``
         locates the decompiled cursor stkvar.
 
         The offset bookkeeping here is a faithful replica of ``_scan_allocas``'s
-        ``off`` accounting for gepd/escaped allocas; it needs no ``mba`` because
-        struct-pointer slots are never re-anchored to a host offset (only escaping
-        aggregate structs are) and scalar allocas (kreg) do not consume ``off``.
-        Mirrors the gepd/escaped classification exactly to avoid drift."""
+        ``off`` accounting for gepd/escaped/cursor allocas; it needs no ``mba``
+        because struct-pointer slots are never re-anchored to a host offset (only
+        escaping aggregate structs are) and scalar kreg allocas do not consume
+        ``off``. Mirrors the classification exactly to avoid drift."""
         names = {ins.name for bb in fn.blocks for ins in bb.instructions
                  if ins.opcode == "alloca"}
         if not names:
@@ -1700,6 +1780,7 @@ class LLVMDropConverter:
                         gepd.add(o.name)
                     else:
                         escaped.add(o.name)
+        cursors = self._cursor_struct_ptrs(fn, names, gepd, escaped, decl_types)
         out: dict = {}
         off = 0
         for bb in fn.blocks:
@@ -1714,14 +1795,14 @@ class LLVMDropConverter:
                         # _scan_allocas will raise on this; nothing to type here.
                         return out
                     off += max(dims[0] * dims[2], 8)
-                elif nm in escaped:
+                elif nm in escaped or nm in cursors:
                     # Opaque-pointer normalization erases the pointee from
                     # ``str(ins)``; resolve the struct from the source-text decl.
                     struct = self._pointee_struct_of_type(decl_types.get(nm, ""))
                     if struct is not None:
                         out[nm] = (off, struct)
                     off += max(sz, 8)
-                # scalar allocas (kreg) do not consume a frame offset
+                # scalar kreg allocas do not consume a frame offset
         return out
 
     @staticmethod
@@ -1919,6 +2000,16 @@ class LLVMDropConverter:
                         gepd.add(o.name)
                     else:
                         escaped.add(o.name)
+        # A clean (load/store-only) single-level struct-pointer CURSOR (e.g.
+        # ``bucket``/``cursor`` after the m_ldx pointer-slot-define lift fix) would
+        # otherwise be a kreg and render as an untyped ``void**`` walk. Re-anchor it
+        # to a real frame slot (the escaped path below) so ``_save_struct_ptr_lvar_
+        # types`` can type it ``T*`` -- recovering native's typed ``bucket->data`` /
+        # ``++bucket``. _cursor_struct_ptrs excludes pure param-copy slots. The set
+        # MUST match _struct_ptr_alloca_slots' so the typed stkoff lines up.
+        decl_types = self._alloca_decl_types(fn)
+        cursors = self._cursor_struct_ptrs(fn, names, gepd, escaped, decl_types)
+        escaped |= cursors
         # Host-frame member offsets, keyed by the source name the lifter preserved.
         # An escaping STRUCT alloca must rest at its REAL host offset: the synthetic
         # sequential packing below can land a struct's base on top of a DIFFERENT,
