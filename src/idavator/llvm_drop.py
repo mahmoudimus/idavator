@@ -322,6 +322,9 @@ class LLVMDropConverter:
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
+        self._arg_spill_kill: set = set()  # arg regs to KILL after the entry spill
+        # (an arg whose spill slot is read across a clobbering call -- create_hole's
+        # ``size``; see _arg_spill_slots_across_call).
         self._ptr_allocas: dict = {}  # ptr-typed addr_taken alloca name -> stkoff
         self._ptr_deref_alias: set = set()  # bitcast aliases rooted at a ptr alloca
         self._ptr_alloca_pointee: dict = {}  # ptr alloca name -> pointee byte width
@@ -2362,6 +2365,7 @@ class LLVMDropConverter:
         names = {ins.name for bb in fn.blocks for ins in bb.instructions
                  if ins.opcode == "alloca"}
         self._addr_taken = {}
+        self._arg_spill_kill = set()
         if not names:
             return {}
         gepd: set = set()
@@ -2389,6 +2393,30 @@ class LLVMDropConverter:
         decl_types = self._alloca_decl_types(fn)
         cursors = self._cursor_struct_ptrs(fn, names, gepd, escaped, decl_types)
         escaped |= cursors
+        # An incoming reg arg spilled to a slot that is then read ACROSS a call
+        # (and consumed by that call) must rest in a real frame slot, NOT a scalar
+        # kreg: Hex-Rays forwards a kreg copy of the raw incoming register into the
+        # clobbering call site, losing the post-clobber re-load (create_hole's
+        # ``size`` -> uninit ``v5``). Native keeps it on the stack. Force the slot
+        # ``escaped`` (the real-frame-slot path) and record its source register so
+        # _build_multiblock can KILL the register after the entry spill (else
+        # Hex-Rays back-substitutes the raw register past the spill). See
+        # _arg_spill_slots_across_call.
+        argregs, _eax, _ds = self._abi()
+        reg_arg_names = {a.name for i, a in enumerate(fn.arguments)
+                         if i < len(argregs)}
+        spill_slots = self._arg_spill_slots_across_call(fn, reg_arg_names)
+        if spill_slots:
+            arg_index = {a.name: i for i, a in enumerate(fn.arguments)}
+            for slot_name, arg_name in spill_slots.items():
+                # Only a pure scalar (load/store-only) spill slot -- a GEP'd or
+                # already-escaped slot has its own handling.
+                if slot_name in gepd or slot_name in escaped:
+                    continue
+                escaped.add(slot_name)
+                i = arg_index.get(arg_name)
+                if i is not None and i < len(argregs):
+                    self._arg_spill_kill.add(argregs[i])
         # Host-frame member offsets, keyed by the source name the lifter preserved.
         # An escaping STRUCT alloca must rest at its REAL host offset: the synthetic
         # sequential packing below can land a struct's base on top of a DIFFERENT,
@@ -2948,6 +2976,95 @@ class LLVMDropConverter:
         return out
 
     @staticmethod
+    def _arg_spill_slots_across_call(fn, reg_arg_names) -> dict:
+        """``{spill_alloca_name: arg_register_name}`` for each incoming NON-POINTER
+        scalar reg arg that is (1) passed BY VALUE to a call and (2) re-read AFTER
+        that call, both THROUGH its spill slot.
+
+        The lifter spills each param to an alloca (``store %arg, %slot``) and
+        re-loads it. ``_names_used_across_call`` catches an arg whose SSA name is
+        read past a call directly, but it MISSES the value that flows through the
+        spill slot: ``create_hole`` stores ``size`` (arg3=rcx, an ``i64``) to
+        ``%size`` at entry, then ``lseek(fd, load %size, 1)`` passes it BY VALUE
+        (clobbering rcx), and ``punch_hole(fd, file_end - load %size, load %size)``
+        re-loads it AFTER. ``%size``'s loads are the across-call reads, not ``%.4``.
+
+        c3f71ce's preserve-kreg does NOT rescue this: the value is consumed by the
+        clobbering call as its argument, so Hex-Rays copy-propagates the raw
+        incoming register forward INTO that call site (the register is still the
+        live representative there) and the post-clobber load resolves to a fresh,
+        undefined register version (``rcx1`` -> uninit ``v5``). Native keeps the
+        value on the STACK (``mov [rbp+size], rcx`` then re-loads ``[rbp+size]`` on
+        each use); the stack slot survives the clobber.
+
+        So a slot in this set must (a) rest in a real FRAME SLOT (not a scalar kreg
+        Hex-Rays freely forwards) and (b) have its source register KILLED after the
+        entry spill, so Hex-Rays cannot back-substitute the raw register past the
+        spill and must anchor on the stable slot -- mirroring native, where the arg
+        register is dead after the spill store.
+
+        NARROW on purpose -- the trigger that distinguishes the LOST value:
+        - NON-POINTER arg only. A POINTER arg spilled-and-reread (rpl_fflush's
+          ``stream``, transfer_entries/hash_insert_if_absent/safe_hasher's table/
+          entry pointers) is NOT lost: Hex-Rays preserves the pointer naturally,
+          and demoting+killing it only churns variable naming. A scalar value
+          (``size``) is the one the clobbering call's reg-setup destroys.
+        - The slot must be passed BY VALUE to a call (a direct load operand of a
+          ``call``), then loaded AGAIN after that SAME call. An arg merely live
+          across unrelated calls (no by-value consumption by the clobbering call)
+          keeps the raw register fine.
+        - Single-store (pure param spill) slot only; a re-stored slot is a normal
+          local, not a param spill."""
+        if not reg_arg_names:
+            return {}
+        # Non-pointer reg-arg SSA names (pointer args are preserved naturally).
+        scalar_args = {a.name for i, a in enumerate(fn.arguments)
+                       if a.name in reg_arg_names and str(a.type) != "ptr"}
+        if not scalar_args:
+            return {}
+        # Map each spill alloca to the scalar arg it is the (sole, entry) spill
+        # target of, and count stores (a re-stored slot is not a pure param spill).
+        spill: dict = {}        # slot_name -> arg_name
+        store_count: dict = {}  # slot_name -> number of stores
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode != "store":
+                    continue
+                ops = list(ins.operands)
+                if len(ops) < 2:
+                    continue
+                store_count[ops[1].name] = store_count.get(ops[1].name, 0) + 1
+                if ops[0].name in scalar_args and ops[1].name not in spill:
+                    spill[ops[1].name] = ops[0].name
+        if not spill:
+            return {}
+        # A load of a spill slot used directly as a CALL argument marks that slot
+        # as "consumed by value" at that call; a later load of the same slot is the
+        # post-clobber re-read. Walk in order: a value-arg load arms the slot; a
+        # subsequent load confirms the lost-across-clobbering-call pattern.
+        out: dict = {}
+        armed: set = set()         # slot loaded as a call arg, awaiting a re-read
+        load_def: dict = {}        # load-result SSA name -> slot it loaded
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "load":
+                    ld = list(ins.operands)
+                    if ld and ld[0].name in spill:
+                        if (store_count.get(ld[0].name, 0) == 1
+                                and ld[0].name in armed):
+                            out[ld[0].name] = spill[ld[0].name]
+                        load_def[ins.name] = ld[0].name
+                elif ins.opcode == "call":
+                    # Arm each spill slot whose load feeds this call BY VALUE
+                    # (a direct call operand). The callee operand is the last.
+                    call_ops = list(ins.operands)[:-1]
+                    for op in call_ops:
+                        slot = load_def.get(op.name)
+                        if slot is not None:
+                            armed.add(slot)
+        return out
+
+    @staticmethod
     def _callee_is_noreturn(ins) -> bool:
         """True if the call's DIRECT callee is __noreturn (xalloc_die/abort/...).
         Such a call ends its block with NO successor (BLT_0WAY) and everything
@@ -3151,6 +3268,35 @@ class LLVMDropConverter:
                 else:
                     blk.type = hx.BLT_1WAY  # call tail -> continuation (serial+1)
                     self._wire(blk, [e["code"] + 1])
+
+        # KILL each arg-spill source register right after its entry spill store.
+        # The lifter spills the arg (``mov argreg, stkvar``); the value then lives
+        # in the frame slot (read by both the clobbering call and the post-clobber
+        # re-load). Without this, Hex-Rays copy-propagates the raw incoming
+        # register forward into the clobbering call site and the post-clobber load
+        # resolves to a fresh, undefined register version (create_hole's ``size``
+        # -> uninit ``v5``). Writing the dead register (``mov #0, reg``) severs the
+        # copy chain so Hex-Rays must anchor on the stable slot -- native has the
+        # register dead after its ``mov [rbp+size], rcx`` spill. The kill goes AFTER
+        # the spill store (so the slot is written first) but in the ENTRY block,
+        # before any branch leaves it. See _arg_spill_slots_across_call.
+        if self._arg_spill_kill:
+            entry_blk = mba.get_mblock(plan[0]["code"])
+            killset = set(self._arg_spill_kill)
+            ins = entry_blk.head
+            while ins is not None and killset:
+                # The spill store of a killed register: ``mov <killreg>, <stkvar>``.
+                if (ins.opcode == hx.m_mov and ins.l.t == hx.mop_r
+                        and ins.l.r in killset and ins.d.t == hx.mop_S):
+                    reg = ins.l.r
+                    killset.discard(reg)
+                    kill = hx.minsn_t(ea)
+                    kill.opcode = hx.m_mov
+                    kill.l.make_number(0, 8)
+                    kill.d.make_reg(reg, 8)
+                    entry_blk.insert_into_block(kill, ins)
+                    ins = kill  # continue past the inserted kill
+                ins = ins.next
 
         # PASS A.5: out-of-SSA phi copies onto each incoming edge block (append
         # after the values; pass B appends the terminator after them, so the copy
