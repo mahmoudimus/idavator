@@ -8326,165 +8326,162 @@ define %"Hash_table"* @"hash_initialize"(i64 %".1", %"Hash_tuning"* %".2", i64 (
   br label %"@1"
 "@1":
   %".16" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".17" = bitcast %"Hash_tuning"* %".16" to i8*
-  %".18" = bitcast %"Hash_tuning"** %"tuninga" to i8*
-  %".19" = call i8* @"memcpy"(i8* %".18", i8* %".17", i64 20)
-  %".20" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hasher"
-  store i64 (i8*, i64)* %".20", i64 (i8*, i64)** %"hashera"
-  %".22" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparator"
-  store i1 (i8*, i8*)* %".22", i1 (i8*, i8*)** %"comparatora"
-  %".24" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hasher"
-  %".25" = ptrtoint i64 (i8*, i64)* %".24" to i64
-  %".26" = icmp ne i64 %".25", 0
-  br i1 %".26", label %"@3", label %"@2"
+  store %"Hash_tuning"* %".16", %"Hash_tuning"** %"tuninga"
+  %".18" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hasher"
+  store i64 (i8*, i64)* %".18", i64 (i8*, i64)** %"hashera"
+  %".20" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparator"
+  store i1 (i8*, i8*)* %".20", i1 (i8*, i8*)** %"comparatora"
+  %".22" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hasher"
+  %".23" = ptrtoint i64 (i8*, i64)* %".22" to i64
+  %".24" = icmp ne i64 %".23", 0
+  br i1 %".24", label %"@3", label %"@2"
 "@2":
   store i64 (i8*, i64)* @"raw_hasher", i64 (i8*, i64)** %"hashera"
   br label %"@3"
 "@3":
-  %".30" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparator"
-  %".31" = ptrtoint i1 (i8*, i8*)* %".30" to i64
-  %".32" = icmp ne i64 %".31", 0
-  br i1 %".32", label %"@5", label %"@4"
+  %".28" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparator"
+  %".29" = ptrtoint i1 (i8*, i8*)* %".28" to i64
+  %".30" = icmp ne i64 %".29", 0
+  br i1 %".30", label %"@5", label %"@4"
 "@4":
   store i1 (i8*, i8*)* @"raw_comparator", i1 (i8*, i8*)** %"comparatora"
   br label %"@5"
 "@5":
-  %".36" = call i8* @"malloc"(i64 80)
-  %".37" = bitcast %"Hash_table"** %"table" to i8**
-  store i8* %".36", i8** %".37"
-  %".39" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".40" = ptrtoint %"Hash_table"* %".39" to i64
-  %".41" = icmp ne i64 %".40", 0
-  br i1 %".41", label %"@7", label %"@6"
+  %".34" = call i8* @"malloc"(i64 80)
+  %".35" = bitcast %"Hash_table"** %"table" to i8**
+  store i8* %".34", i8** %".35"
+  %".37" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".38" = ptrtoint %"Hash_table"* %".37" to i64
+  %".39" = icmp ne i64 %".38", 0
+  br i1 %".39", label %"@7", label %"@6"
 "@6":
-  %".43" = bitcast %"Hash_table"** %"funcresult" to i64*
-  store i64 0, i64* %".43"
+  %".41" = bitcast %"Hash_table"** %"funcresult" to i64*
+  store i64 0, i64* %".41"
   br label %"@14"
 "@7":
-  %".46" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".47" = ptrtoint %"Hash_tuning"* %".46" to i64
-  %".48" = icmp ne i64 %".47", 0
-  br i1 %".48", label %"@9", label %"@8"
+  %".44" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".45" = ptrtoint %"Hash_tuning"* %".44" to i64
+  %".46" = icmp ne i64 %".45", 0
+  br i1 %".46", label %"@9", label %"@8"
 "@8":
-  %".50" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
-  %".51" = bitcast %"Hash_tuning"** %"tuninga" to float**
-  store float* %".50", float** %".51"
+  %".48" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
+  %".49" = bitcast %"Hash_tuning"** %"tuninga" to float**
+  store float* %".48", float** %".49"
   br label %"@9"
 "@9":
-  %".54" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuninga"
-  %".55" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".56" = bitcast %"Hash_table"* %".55" to i8*
-  %".57" = getelementptr i8, i8* %".56", i64 40
-  %".58" = bitcast i8* %".57" to %"Hash_table"*
-  %".59" = bitcast %"Hash_table"* %".58" to %"Hash_tuning"**
-  %".60" = bitcast %"Hash_tuning"* %".54" to i8*
-  %".61" = bitcast %"Hash_tuning"** %".59" to i8*
-  %".62" = call i8* @"memcpy"(i8* %".61", i8* %".60", i64 20)
-  %".63" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".64" = call i1 @"check_tuning"(%"Hash_table"* %".63")
-  %".65" = zext i1 %".64" to i8
-  %".66" = xor i8 %".65", 1
-  %".67" = icmp ne i8 %".66", 0
-  br i1 %".67", label %"@13", label %"@10"
+  %".52" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuninga"
+  %".53" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".54" = bitcast %"Hash_table"* %".53" to i8*
+  %".55" = getelementptr i8, i8* %".54", i64 40
+  %".56" = bitcast i8* %".55" to %"Hash_table"*
+  %".57" = bitcast %"Hash_table"* %".56" to %"Hash_tuning"**
+  store %"Hash_tuning"* %".52", %"Hash_tuning"** %".57"
+  %".59" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".60" = call i1 @"check_tuning"(%"Hash_table"* %".59")
+  %".61" = zext i1 %".60" to i8
+  %".62" = xor i8 %".61", 1
+  %".63" = icmp ne i8 %".62", 0
+  br i1 %".63", label %"@13", label %"@10"
 "@10":
-  %".69" = load i64, i64* %"candidate"
-  %".70" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuninga"
-  %".71" = call i64 @"compute_bucket_size"(i64 %".69", %"Hash_tuning"* %".70")
-  %".72" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".73" = bitcast %"Hash_table"* %".72" to i8*
-  %".74" = getelementptr i8, i8* %".73", i64 16
-  %".75" = bitcast i8* %".74" to %"Hash_table"*
-  %".76" = bitcast %"Hash_table"* %".75" to i64*
-  store i64 %".71", i64* %".76"
-  %".78" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".79" = bitcast %"Hash_table"* %".78" to i8*
-  %".80" = getelementptr i8, i8* %".79", i64 16
-  %".81" = bitcast i8* %".80" to %"Hash_table"*
-  %".82" = bitcast %"Hash_table"* %".81" to i64*
-  %".83" = load i64, i64* %".82"
-  %".84" = icmp eq i64 %".83", 0
-  br i1 %".84", label %"@13", label %"@11"
+  %".65" = load i64, i64* %"candidate"
+  %".66" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuninga"
+  %".67" = call i64 @"compute_bucket_size"(i64 %".65", %"Hash_tuning"* %".66")
+  %".68" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".69" = bitcast %"Hash_table"* %".68" to i8*
+  %".70" = getelementptr i8, i8* %".69", i64 16
+  %".71" = bitcast i8* %".70" to %"Hash_table"*
+  %".72" = bitcast %"Hash_table"* %".71" to i64*
+  store i64 %".67", i64* %".72"
+  %".74" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".75" = bitcast %"Hash_table"* %".74" to i8*
+  %".76" = getelementptr i8, i8* %".75", i64 16
+  %".77" = bitcast i8* %".76" to %"Hash_table"*
+  %".78" = bitcast %"Hash_table"* %".77" to i64*
+  %".79" = load i64, i64* %".78"
+  %".80" = icmp eq i64 %".79", 0
+  br i1 %".80", label %"@13", label %"@11"
 "@11":
-  %".86" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".87" = bitcast %"Hash_table"* %".86" to i8*
-  %".88" = getelementptr i8, i8* %".87", i64 16
-  %".89" = bitcast i8* %".88" to %"Hash_table"*
-  %".90" = bitcast %"Hash_table"* %".89" to i64*
-  %".91" = load i64, i64* %".90"
-  %".92" = call i8* @"calloc"(i64 %".91", i64 16)
-  %".93" = bitcast %"Hash_table"** %"table" to i8**
-  store i8* %".92", i8** %".93"
-  %".95" = bitcast %"Hash_table"** %"table" to i64*
-  %".96" = load i64, i64* %".95"
-  %".97" = icmp eq i64 %".96", 0
-  br i1 %".97", label %"@13", label %"@12"
+  %".82" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".83" = bitcast %"Hash_table"* %".82" to i8*
+  %".84" = getelementptr i8, i8* %".83", i64 16
+  %".85" = bitcast i8* %".84" to %"Hash_table"*
+  %".86" = bitcast %"Hash_table"* %".85" to i64*
+  %".87" = load i64, i64* %".86"
+  %".88" = call i8* @"calloc"(i64 %".87", i64 16)
+  %".89" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".90" = bitcast %"Hash_table"* %".89" to i8**
+  store i8* %".88", i8** %".90"
+  %".92" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".93" = bitcast %"Hash_table"* %".92" to i64*
+  %".94" = load i64, i64* %".93"
+  %".95" = icmp eq i64 %".94", 0
+  br i1 %".95", label %"@13", label %"@12"
 "@12":
-  %".99" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".100" = bitcast %"Hash_table"* %".99" to i8*
-  %".101" = getelementptr i8, i8* %".100", i64 16
-  %".102" = bitcast i8* %".101" to %"Hash_table"*
-  %".103" = bitcast %"Hash_table"* %".102" to i64*
-  %".104" = load i64, i64* %".103"
-  %".105" = mul i64 16, %".104"
-  %".106" = bitcast %"Hash_table"** %"table" to i64*
-  %".107" = load i64, i64* %".106"
-  %".108" = add i64 %".105", %".107"
-  %".109" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".110" = bitcast %"Hash_table"* %".109" to i8*
-  %".111" = getelementptr i8, i8* %".110", i64 8
-  %".112" = bitcast i8* %".111" to %"Hash_table"*
-  %".113" = bitcast %"Hash_table"* %".112" to i64*
-  store i64 %".108", i64* %".113"
-  %".115" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".116" = bitcast %"Hash_table"* %".115" to i8*
-  %".117" = getelementptr i8, i8* %".116", i64 24
-  %".118" = bitcast i8* %".117" to %"Hash_table"*
-  %".119" = bitcast %"Hash_table"* %".118" to i64*
-  store i64 0, i64* %".119"
-  %".121" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".122" = bitcast %"Hash_table"* %".121" to i8*
-  %".123" = getelementptr i8, i8* %".122", i64 32
-  %".124" = bitcast i8* %".123" to %"Hash_table"*
-  %".125" = bitcast %"Hash_table"* %".124" to i64*
-  store i64 0, i64* %".125"
-  %".127" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hashera"
-  %".128" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".129" = bitcast %"Hash_table"* %".128" to i8*
-  %".130" = getelementptr i8, i8* %".129", i64 48
-  %".131" = bitcast i8* %".130" to %"Hash_table"*
-  %".132" = bitcast %"Hash_table"* %".131" to i64 (i8*, i64)**
-  store i64 (i8*, i64)* %".127", i64 (i8*, i64)** %".132"
-  %".134" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparatora"
-  %".135" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".136" = bitcast %"Hash_table"* %".135" to i8*
-  %".137" = getelementptr i8, i8* %".136", i64 56
-  %".138" = bitcast i8* %".137" to %"Hash_table"*
-  %".139" = bitcast %"Hash_table"* %".138" to i1 (i8*, i8*)**
-  store i1 (i8*, i8*)* %".134", i1 (i8*, i8*)** %".139"
-  %".141" = load i8* (i8*)*, i8* (i8*)** %"data_freer"
-  %".142" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".143" = bitcast %"Hash_table"* %".142" to i8*
-  %".144" = getelementptr i8, i8* %".143", i64 64
-  %".145" = bitcast i8* %".144" to %"Hash_table"*
-  %".146" = bitcast %"Hash_table"* %".145" to i8* (i8*)**
-  store i8* (i8*)* %".141", i8* (i8*)** %".146"
-  %".148" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".149" = bitcast %"Hash_table"* %".148" to i8*
-  %".150" = getelementptr i8, i8* %".149", i64 72
-  %".151" = bitcast i8* %".150" to %"Hash_table"*
-  %".152" = bitcast %"Hash_table"* %".151" to i64*
-  store i64 0, i64* %".152"
-  %".154" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".155" = bitcast %"Hash_table"* %".154" to i8*
-  %".156" = bitcast %"Hash_table"** %"funcresult" to i8*
-  %".157" = call i8* @"memcpy"(i8* %".156", i8* %".155", i64 80)
+  %".97" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".98" = bitcast %"Hash_table"* %".97" to i8*
+  %".99" = getelementptr i8, i8* %".98", i64 16
+  %".100" = bitcast i8* %".99" to %"Hash_table"*
+  %".101" = bitcast %"Hash_table"* %".100" to i64*
+  %".102" = load i64, i64* %".101"
+  %".103" = mul i64 16, %".102"
+  %".104" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".105" = bitcast %"Hash_table"* %".104" to i64*
+  %".106" = load i64, i64* %".105"
+  %".107" = add i64 %".103", %".106"
+  %".108" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".109" = bitcast %"Hash_table"* %".108" to i8*
+  %".110" = getelementptr i8, i8* %".109", i64 8
+  %".111" = bitcast i8* %".110" to %"Hash_table"*
+  %".112" = bitcast %"Hash_table"* %".111" to i64*
+  store i64 %".107", i64* %".112"
+  %".114" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".115" = bitcast %"Hash_table"* %".114" to i8*
+  %".116" = getelementptr i8, i8* %".115", i64 24
+  %".117" = bitcast i8* %".116" to %"Hash_table"*
+  %".118" = bitcast %"Hash_table"* %".117" to i64*
+  store i64 0, i64* %".118"
+  %".120" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".121" = bitcast %"Hash_table"* %".120" to i8*
+  %".122" = getelementptr i8, i8* %".121", i64 32
+  %".123" = bitcast i8* %".122" to %"Hash_table"*
+  %".124" = bitcast %"Hash_table"* %".123" to i64*
+  store i64 0, i64* %".124"
+  %".126" = load i64 (i8*, i64)*, i64 (i8*, i64)** %"hashera"
+  %".127" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".128" = bitcast %"Hash_table"* %".127" to i8*
+  %".129" = getelementptr i8, i8* %".128", i64 48
+  %".130" = bitcast i8* %".129" to %"Hash_table"*
+  %".131" = bitcast %"Hash_table"* %".130" to i64 (i8*, i64)**
+  store i64 (i8*, i64)* %".126", i64 (i8*, i64)** %".131"
+  %".133" = load i1 (i8*, i8*)*, i1 (i8*, i8*)** %"comparatora"
+  %".134" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".135" = bitcast %"Hash_table"* %".134" to i8*
+  %".136" = getelementptr i8, i8* %".135", i64 56
+  %".137" = bitcast i8* %".136" to %"Hash_table"*
+  %".138" = bitcast %"Hash_table"* %".137" to i1 (i8*, i8*)**
+  store i1 (i8*, i8*)* %".133", i1 (i8*, i8*)** %".138"
+  %".140" = load i8* (i8*)*, i8* (i8*)** %"data_freer"
+  %".141" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".142" = bitcast %"Hash_table"* %".141" to i8*
+  %".143" = getelementptr i8, i8* %".142", i64 64
+  %".144" = bitcast i8* %".143" to %"Hash_table"*
+  %".145" = bitcast %"Hash_table"* %".144" to i8* (i8*)**
+  store i8* (i8*)* %".140", i8* (i8*)** %".145"
+  %".147" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".148" = bitcast %"Hash_table"* %".147" to i8*
+  %".149" = getelementptr i8, i8* %".148", i64 72
+  %".150" = bitcast i8* %".149" to %"Hash_table"*
+  %".151" = bitcast %"Hash_table"* %".150" to i64*
+  store i64 0, i64* %".151"
+  %".153" = load %"Hash_table"*, %"Hash_table"** %"table"
+  store %"Hash_table"* %".153", %"Hash_table"** %"funcresult"
   br label %"@14"
 "@13":
-  %".159" = bitcast %"Hash_table"** %"table" to i8**
-  %".160" = load i8*, i8** %".159"
-  %".161" = call i8* @"__imp_free"(i8* %".160")
-  %".162" = bitcast %"Hash_table"** %"funcresult" to i64*
-  store i64 0, i64* %".162"
+  %".156" = bitcast %"Hash_table"** %"table" to i8**
+  %".157" = load i8*, i8** %".156"
+  %".158" = call i8* @"__imp_free"(i8* %".157")
+  %".159" = bitcast %"Hash_table"** %"funcresult" to i64*
+  store i64 0, i64* %".159"
   br label %"@14"
 "@14":
   %".13" = load %"Hash_table"*, %"Hash_table"** %"funcresult"
@@ -16162,79 +16159,83 @@ define i32 @"renameatu"(i32 %".1", i8* %".2", i32 %".3", i8* %".4", i32 %".5")
   br i1 %".121", label %"@26", label %"@24"
 "@24":
   %".123" = bitcast %"stat"* %"src_st" to i8*
-  %".124" = bitcast i8* %".123" to i16*
-  %".125" = load i16, i16* %".124"
-  %".126" = and i16 %".125", 61440
-  %".127" = zext i16 %".126" to i32
-  %".128" = icmp eq i32 %".127", 16384
-  br i1 %".128", label %"@34", label %"@25"
+  %".124" = getelementptr i8, i8* %".123", i32 24
+  %".125" = bitcast i8* %".124" to i16*
+  %".126" = load i16, i16* %".125"
+  %".127" = and i16 %".126", 61440
+  %".128" = zext i16 %".127" to i32
+  %".129" = icmp eq i32 %".128", 16384
+  br i1 %".129", label %"@34", label %"@25"
 "@25":
-  %".130" = call i32 @"errno_fail"(i32 2)
-  store i32 %".130", i32* %"funcresult"
+  %".131" = call i32 @"errno_fail"(i32 2)
+  store i32 %".131", i32* %"funcresult"
   br label %"@35"
 "@26":
-  %".133" = load i32, i32* %"fd2"
-  %".134" = load i8*, i8** %"dst"
-  %".135" = bitcast %"stat"* %"dst_st" to i8*
-  %".136" = bitcast i8* %".135" to %"stat"*
-  %".137" = call i32 @"lstatat"(i32 %".133", i8* %".134", %"stat"* %".136")
-  %".138" = icmp eq i32 %".137", 0
-  br i1 %".138", label %"@30", label %"@27"
+  %".134" = load i32, i32* %"fd2"
+  %".135" = load i8*, i8** %"dst"
+  %".136" = bitcast %"stat"* %"dst_st" to i8*
+  %".137" = bitcast i8* %".136" to %"stat"*
+  %".138" = call i32 @"lstatat"(i32 %".134", i8* %".135", %"stat"* %".137")
+  %".139" = icmp eq i32 %".138", 0
+  br i1 %".139", label %"@30", label %"@27"
 "@27":
-  %".140" = call i32* @"__errno_location"()
-  %".141" = load i32, i32* %".140"
-  %".142" = icmp ne i32 %".141", 2
-  br i1 %".142", label %"@29", label %"@28"
+  %".141" = call i32* @"__errno_location"()
+  %".142" = load i32, i32* %".141"
+  %".143" = icmp ne i32 %".142", 2
+  br i1 %".143", label %"@29", label %"@28"
 "@28":
-  %".144" = bitcast %"stat"* %"src_st" to i8*
-  %".145" = bitcast i8* %".144" to i16*
-  %".146" = load i16, i16* %".145"
-  %".147" = and i16 %".146", 61440
-  %".148" = zext i16 %".147" to i32
-  %".149" = icmp eq i32 %".148", 16384
-  br i1 %".149", label %"@34", label %"@29"
+  %".145" = bitcast %"stat"* %"src_st" to i8*
+  %".146" = getelementptr i8, i8* %".145", i32 24
+  %".147" = bitcast i8* %".146" to i16*
+  %".148" = load i16, i16* %".147"
+  %".149" = and i16 %".148", 61440
+  %".150" = zext i16 %".149" to i32
+  %".151" = icmp eq i32 %".150", 16384
+  br i1 %".151", label %"@34", label %"@29"
 "@29":
   store i32 4294967295, i32* %"funcresult"
   br label %"@35"
 "@30":
-  %".153" = bitcast %"stat"* %"dst_st" to i8*
-  %".154" = bitcast i8* %".153" to i16*
-  %".155" = load i16, i16* %".154"
-  %".156" = and i16 %".155", 61440
-  %".157" = zext i16 %".156" to i32
-  %".158" = icmp eq i32 %".157", 16384
-  br i1 %".158", label %"@32", label %"@31"
+  %".155" = bitcast %"stat"* %"dst_st" to i8*
+  %".156" = getelementptr i8, i8* %".155", i32 24
+  %".157" = bitcast i8* %".156" to i16*
+  %".158" = load i16, i16* %".157"
+  %".159" = and i16 %".158", 61440
+  %".160" = zext i16 %".159" to i32
+  %".161" = icmp eq i32 %".160", 16384
+  br i1 %".161", label %"@32", label %"@31"
 "@31":
-  %".160" = call i32 @"errno_fail"(i32 20)
-  store i32 %".160", i32* %"funcresult"
+  %".163" = call i32 @"errno_fail"(i32 20)
+  store i32 %".163", i32* %"funcresult"
   br label %"@35"
 "@32":
-  %".163" = bitcast %"stat"* %"src_st" to i8*
-  %".164" = bitcast i8* %".163" to i16*
-  %".165" = load i16, i16* %".164"
-  %".166" = and i16 %".165", 61440
-  %".167" = zext i16 %".166" to i32
-  %".168" = icmp eq i32 %".167", 16384
-  br i1 %".168", label %"@34", label %"@33"
+  %".166" = bitcast %"stat"* %"src_st" to i8*
+  %".167" = getelementptr i8, i8* %".166", i32 24
+  %".168" = bitcast i8* %".167" to i16*
+  %".169" = load i16, i16* %".168"
+  %".170" = and i16 %".169", 61440
+  %".171" = zext i16 %".170" to i32
+  %".172" = icmp eq i32 %".171", 16384
+  br i1 %".172", label %"@34", label %"@33"
 "@33":
-  %".170" = call i32 @"errno_fail"(i32 21)
-  store i32 %".170", i32* %"funcresult"
+  %".174" = call i32 @"errno_fail"(i32 21)
+  store i32 %".174", i32* %"funcresult"
   br label %"@35"
 "@34":
-  %".173" = load i32, i32* %"fd1"
-  %".174" = load i8*, i8** %"src"
-  %".175" = load i32, i32* %"fd2"
-  %".176" = load i8*, i8** %"dst"
-  %".177" = call i32 @"renameat"(i32 %".173", i8* %".174", i32 %".175", i8* %".176")
-  store i32 %".177", i32* %"ret_vala"
-  %".179" = call i32* @"__errno_location"()
-  %".180" = load i32, i32* %".179"
-  store i32 %".180", i32* %"rename_errno"
-  %".182" = load i32, i32* %"rename_errno"
+  %".177" = load i32, i32* %"fd1"
+  %".178" = load i8*, i8** %"src"
+  %".179" = load i32, i32* %"fd2"
+  %".180" = load i8*, i8** %"dst"
+  %".181" = call i32 @"renameat"(i32 %".177", i8* %".178", i32 %".179", i8* %".180")
+  store i32 %".181", i32* %"ret_vala"
   %".183" = call i32* @"__errno_location"()
-  store i32 %".182", i32* %".183"
-  %".185" = load i32, i32* %"ret_vala"
-  store i32 %".185", i32* %"funcresult"
+  %".184" = load i32, i32* %".183"
+  store i32 %".184", i32* %"rename_errno"
+  %".186" = load i32, i32* %"rename_errno"
+  %".187" = call i32* @"__errno_location"()
+  store i32 %".186", i32* %".187"
+  %".189" = load i32, i32* %"ret_vala"
+  store i32 %".189", i32* %"funcresult"
   br label %"@35"
 "@35":
   %".15" = load i32, i32* %"funcresult"
