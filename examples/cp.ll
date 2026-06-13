@@ -39,6 +39,8 @@ target datalayout = ""
 %"symlink_arg" = type {i8*, i32}
 %"extent_scan" = type {i32, i64, i32, i64, i1, i1, %"extent_info"*}
 %"extent_info" = type {i64, i64, i32}
+%"fiemap" = type {i64, i64, i32, i32, i32, i32}
+%"$88D1DA29C59129EC502E1C4D3EEBB178" = type {%"fiemap", [4096 x i8]}
 %"permission_context" = type {i32}
 @"dword_0" = global i32 1179403647
 @"data_4" = global i8 2
@@ -29098,7 +29100,7 @@ define i1 @"extent_scan_read"(%"extent_scan"* %".1")
   %"new_logical" = alloca i64
   %"prev_idx" = alloca i64
   %"length_adjust" = alloca i64
-  %"fiemap_buf" = alloca %"struct"
+  %"fiemap_buf" = alloca %"$88D1DA29C59129EC502E1C4D3EEBB178"
   %"v9" = alloca i64
   store %"extent_scan"* %".1", %"extent_scan"** %"scan"
   br label %"@1"
@@ -29110,585 +29112,614 @@ define i1 @"extent_scan_read"(%"extent_scan"* %".1")
   %".11" = bitcast %"extent_scan"* %".10" to i8*
   %".12" = getelementptr i8, i8* %".11", i64 40
   %".13" = bitcast i8* %".12" to %"extent_scan"*
-  %".14" = bitcast %"extent_scan"* %".13" to i64*
-  %".15" = load i64, i64* %".14"
-  %".16" = bitcast %"extent_info"** %"last_ei" to i64*
-  store i64 %".15", i64* %".16"
+  %".14" = bitcast %"extent_scan"* %".13" to %"extent_info"**
+  %".15" = load %"extent_info"*, %"extent_info"** %".14"
+  store %"extent_info"* %".15", %"extent_info"** %"last_ei"
   br label %"@2"
 "@2":
-  %".19" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".20" = trunc i64 4096 to i32
-  %".21" = call i8* @"memset"(i8* %".19", i32 0, i32 %".20")
-  %".22" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".23" = bitcast %"extent_scan"* %".22" to i8*
-  %".24" = getelementptr i8, i8* %".23", i64 8
-  %".25" = bitcast i8* %".24" to %"extent_scan"*
-  %".26" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".27" = bitcast i8* %".26" to i64*
-  %".28" = bitcast %"extent_scan"* %".25" to i64*
-  %".29" = load i64, i64* %".28"
-  store i64 %".29", i64* %".27"
-  %".31" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".32" = bitcast %"extent_scan"* %".31" to i8*
-  %".33" = getelementptr i8, i8* %".32", i64 16
-  %".34" = bitcast i8* %".33" to %"extent_scan"*
-  %".35" = bitcast %"struct"* %"fiemap_buf" to i8*
+  %".18" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".19" = trunc i64 4096 to i32
+  %".20" = call i8* @"memset"(i8* %".18", i32 0, i32 %".19")
+  %".21" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".22" = bitcast %"extent_scan"* %".21" to i8*
+  %".23" = getelementptr i8, i8* %".22", i64 8
+  %".24" = bitcast i8* %".23" to %"extent_scan"*
+  %".25" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".26" = bitcast i8* %".25" to i64*
+  %".27" = bitcast %"extent_scan"* %".24" to i64*
+  %".28" = load i64, i64* %".27"
+  store i64 %".28", i64* %".26"
+  %".30" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".31" = bitcast %"extent_scan"* %".30" to i8*
+  %".32" = getelementptr i8, i8* %".31", i64 16
+  %".33" = bitcast i8* %".32" to %"extent_scan"*
+  %".34" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".35" = getelementptr i8, i8* %".34", i32 16
   %".36" = bitcast i8* %".35" to i32*
-  %".37" = bitcast %"extent_scan"* %".34" to i32*
+  %".37" = bitcast %"extent_scan"* %".33" to i32*
   %".38" = load i32, i32* %".37"
   store i32 %".38", i32* %".36"
-  %".40" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".41" = bitcast i8* %".40" to i32*
-  store i32 72, i32* %".41"
-  %".43" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".44" = bitcast %"extent_scan"* %".43" to i8*
-  %".45" = getelementptr i8, i8* %".44", i64 8
-  %".46" = bitcast i8* %".45" to %"extent_scan"*
-  %".47" = bitcast %"extent_scan"* %".46" to i64*
-  %".48" = load i64, i64* %".47"
-  %".49" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".50" = bitcast i8* %".49" to i64*
-  %".51" = xor i64 %".48", -1
-  store i64 %".51", i64* %".50"
-  %".53" = bitcast %"extent_scan"** %"scan" to i32*
-  %".54" = load i32, i32* %".53"
-  %".55" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".56" = ptrtoint i8* %".55" to i64
-  %".57" = call i32 (i32, i64, ...) @"ioctl"(i32 %".54", i64 3223348747)
-  %".58" = icmp sge i32 %".57", 0
-  br i1 %".58", label %"@6", label %"@3"
+  %".40" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".41" = getelementptr i8, i8* %".40", i32 24
+  %".42" = bitcast i8* %".41" to i32*
+  store i32 72, i32* %".42"
+  %".44" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".45" = bitcast %"extent_scan"* %".44" to i8*
+  %".46" = getelementptr i8, i8* %".45", i64 8
+  %".47" = bitcast i8* %".46" to %"extent_scan"*
+  %".48" = bitcast %"extent_scan"* %".47" to i64*
+  %".49" = load i64, i64* %".48"
+  %".50" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".51" = getelementptr i8, i8* %".50", i32 8
+  %".52" = bitcast i8* %".51" to i64*
+  %".53" = xor i64 %".49", -1
+  store i64 %".53", i64* %".52"
+  %".55" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".56" = bitcast %"extent_scan"* %".55" to i32*
+  %".57" = load i32, i32* %".56"
+  %".58" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".59" = ptrtoint i8* %".58" to i64
+  %".60" = bitcast i32 (i32, i64, ...)* @"ioctl" to i32 (i32, i64, i64, ...)*
+  %".61" = call i32 (i32, i64, i64, ...) %".60"(i32 %".57", i64 3223348747, i64 %".59")
+  %".62" = icmp sge i32 %".61", 0
+  br i1 %".62", label %"@6", label %"@3"
 "@3":
-  %".60" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".61" = bitcast %"extent_scan"* %".60" to i8*
-  %".62" = getelementptr i8, i8* %".61", i64 8
-  %".63" = bitcast i8* %".62" to %"extent_scan"*
-  %".64" = bitcast %"extent_scan"* %".63" to i64*
-  %".65" = load i64, i64* %".64"
-  %".66" = icmp ne i64 %".65", 0
-  br i1 %".66", label %"@5", label %"@4"
+  %".64" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".65" = bitcast %"extent_scan"* %".64" to i8*
+  %".66" = getelementptr i8, i8* %".65", i64 8
+  %".67" = bitcast i8* %".66" to %"extent_scan"*
+  %".68" = bitcast %"extent_scan"* %".67" to i64*
+  %".69" = load i64, i64* %".68"
+  %".70" = icmp ne i64 %".69", 0
+  br i1 %".70", label %"@5", label %"@4"
 "@4":
-  %".68" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".69" = bitcast %"extent_scan"* %".68" to i8*
-  %".70" = getelementptr i8, i8* %".69", i64 32
-  %".71" = bitcast i8* %".70" to %"extent_scan"*
-  %".72" = bitcast %"extent_scan"* %".71" to i8*
-  store i8 1, i8* %".72"
+  %".72" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".73" = bitcast %"extent_scan"* %".72" to i8*
+  %".74" = getelementptr i8, i8* %".73", i64 32
+  %".75" = bitcast i8* %".74" to %"extent_scan"*
+  %".76" = bitcast %"extent_scan"* %".75" to i8*
+  store i8 1, i8* %".76"
   br label %"@5"
 "@5":
-  %".75" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".75"
+  %".79" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".79"
   br label %"@40"
 "@6":
-  %".78" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".79" = bitcast i8* %".78" to i32*
-  %".80" = load i32, i32* %".79"
-  %".81" = icmp ne i32 %".80", 0
-  br i1 %".81", label %"@8", label %"@7"
+  %".82" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".83" = getelementptr i8, i8* %".82", i32 20
+  %".84" = bitcast i8* %".83" to i32*
+  %".85" = load i32, i32* %".84"
+  %".86" = icmp ne i32 %".85", 0
+  br i1 %".86", label %"@8", label %"@7"
 "@7":
-  %".83" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".84" = bitcast %"extent_scan"* %".83" to i8*
-  %".85" = getelementptr i8, i8* %".84", i64 33
-  %".86" = bitcast i8* %".85" to %"extent_scan"*
-  %".87" = bitcast %"extent_scan"* %".86" to i8*
-  store i8 1, i8* %".87"
-  %".89" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".90" = bitcast %"extent_scan"* %".89" to i8*
-  %".91" = getelementptr i8, i8* %".90", i64 8
-  %".92" = bitcast i8* %".91" to %"extent_scan"*
-  %".93" = bitcast %"extent_scan"* %".92" to i64*
-  %".94" = load i64, i64* %".93"
-  %".95" = bitcast i1* %"funcresult" to i8*
-  %".96" = icmp ne i64 %".94", 0
-  %".97" = select  i1 %".96", i8 1, i8 0
-  store i8 %".97", i8* %".95"
+  %".88" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".89" = bitcast %"extent_scan"* %".88" to i8*
+  %".90" = getelementptr i8, i8* %".89", i64 33
+  %".91" = bitcast i8* %".90" to %"extent_scan"*
+  %".92" = bitcast %"extent_scan"* %".91" to i8*
+  store i8 1, i8* %".92"
+  %".94" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".95" = bitcast %"extent_scan"* %".94" to i8*
+  %".96" = getelementptr i8, i8* %".95", i64 8
+  %".97" = bitcast i8* %".96" to %"extent_scan"*
+  %".98" = bitcast %"extent_scan"* %".97" to i64*
+  %".99" = load i64, i64* %".98"
+  %".100" = bitcast i1* %"funcresult" to i8*
+  %".101" = icmp ne i64 %".99", 0
+  %".102" = select  i1 %".101", i8 1, i8 0
+  store i8 %".102", i8* %".100"
   br label %"@40"
 "@8":
-  %".100" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".101" = bitcast %"extent_scan"* %".100" to i8*
-  %".102" = getelementptr i8, i8* %".101", i64 24
-  %".103" = bitcast i8* %".102" to %"extent_scan"*
-  %".104" = bitcast %"extent_scan"* %".103" to i64*
-  %".105" = load i64, i64* %".104"
-  %".106" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".107" = bitcast i8* %".106" to i32*
-  %".108" = load i32, i32* %".107"
-  %".109" = zext i32 %".108" to i64
-  %".110" = xor i64 %".109", -1
-  %".111" = icmp ule i64 %".105", %".110"
-  br i1 %".111", label %"@10", label %"@9"
+  %".105" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".106" = bitcast %"extent_scan"* %".105" to i8*
+  %".107" = getelementptr i8, i8* %".106", i64 24
+  %".108" = bitcast i8* %".107" to %"extent_scan"*
+  %".109" = bitcast %"extent_scan"* %".108" to i64*
+  %".110" = load i64, i64* %".109"
+  %".111" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".112" = getelementptr i8, i8* %".111", i32 20
+  %".113" = bitcast i8* %".112" to i32*
+  %".114" = load i32, i32* %".113"
+  %".115" = zext i32 %".114" to i64
+  %".116" = xor i64 %".115", -1
+  %".117" = icmp ule i64 %".110", %".116"
+  br i1 %".117", label %"@10", label %"@9"
 "@9":
-  %".113" = getelementptr [55 x i8], [55 x i8]* @"aScanEiCountSiz", i32 0, i32 0
-  %".114" = getelementptr [21 x i8], [21 x i8]* @"aSrcExtentScanC", i32 0, i32 0
-  %".115" = getelementptr [17 x i8], [17 x i8]* @"__PRETTY_FUNCTION__.0", i32 0, i32 0
-  %".116" = call i8* @"__assert_fail"(i8* %".113", i8* %".114", i32 127, i8* %".115")
+  %".119" = getelementptr [55 x i8], [55 x i8]* @"aScanEiCountSiz", i32 0, i32 0
+  %".120" = getelementptr [21 x i8], [21 x i8]* @"aSrcExtentScanC", i32 0, i32 0
+  %".121" = getelementptr [17 x i8], [17 x i8]* @"__PRETTY_FUNCTION__.0", i32 0, i32 0
+  %".122" = call i8* @"__assert_fail"(i8* %".119", i8* %".120", i32 127, i8* %".121")
   br label %"@10"
 "@10":
-  %".118" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".119" = bitcast i8* %".118" to i32*
-  %".120" = load i32, i32* %".119"
-  %".121" = zext i32 %".120" to i64
-  %".122" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".123" = bitcast %"extent_scan"* %".122" to i8*
-  %".124" = getelementptr i8, i8* %".123", i64 24
-  %".125" = bitcast i8* %".124" to %"extent_scan"*
-  %".126" = bitcast %"extent_scan"* %".125" to i64*
-  %".127" = load i64, i64* %".126"
-  %".128" = add i64 %".121", %".127"
+  %".124" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".125" = getelementptr i8, i8* %".124", i32 20
+  %".126" = bitcast i8* %".125" to i32*
+  %".127" = load i32, i32* %".126"
+  %".128" = zext i32 %".127" to i64
   %".129" = load %"extent_scan"*, %"extent_scan"** %"scan"
   %".130" = bitcast %"extent_scan"* %".129" to i8*
   %".131" = getelementptr i8, i8* %".130", i64 24
   %".132" = bitcast i8* %".131" to %"extent_scan"*
   %".133" = bitcast %"extent_scan"* %".132" to i64*
-  store i64 %".128", i64* %".133"
-  %".135" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".134" = load i64, i64* %".133"
+  %".135" = add i64 %".128", %".134"
   %".136" = load %"extent_scan"*, %"extent_scan"** %"scan"
   %".137" = bitcast %"extent_scan"* %".136" to i8*
-  %".138" = getelementptr i8, i8* %".137", i64 40
+  %".138" = getelementptr i8, i8* %".137", i64 24
   %".139" = bitcast i8* %".138" to %"extent_scan"*
   %".140" = bitcast %"extent_scan"* %".139" to i64*
-  %".141" = load i64, i64* %".140"
-  %".142" = sub i64 0, %".141"
-  %".143" = bitcast %"extent_info"* %".135" to i8*
-  %".144" = getelementptr i8, i8* %".143", i64 %".142"
-  %".145" = bitcast i8* %".144" to %"extent_info"*
-  %".146" = ptrtoint %"extent_info"* %".145" to i64
-  %".147" = zext i8 3 to i64
-  %".148" = ashr i64 %".146", %".147"
-  %".149" = mul i64 12297829382473034411, %".148"
-  store i64 %".149", i64* %"prev_idx"
-  %".151" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".152" = bitcast %"extent_scan"* %".151" to i8*
-  %".153" = getelementptr i8, i8* %".152", i64 40
-  %".154" = bitcast i8* %".153" to %"extent_scan"*
-  %".155" = bitcast %"extent_scan"* %".154" to i64*
-  %".156" = load i64, i64* %".155"
-  %".157" = inttoptr i64 %".156" to i8*
+  store i64 %".135", i64* %".140"
+  %".142" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".143" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".144" = bitcast %"extent_scan"* %".143" to i8*
+  %".145" = getelementptr i8, i8* %".144", i64 40
+  %".146" = bitcast i8* %".145" to %"extent_scan"*
+  %".147" = bitcast %"extent_scan"* %".146" to i64*
+  %".148" = load i64, i64* %".147"
+  %".149" = sub i64 0, %".148"
+  %".150" = bitcast %"extent_info"* %".142" to i8*
+  %".151" = getelementptr i8, i8* %".150", i64 %".149"
+  %".152" = bitcast i8* %".151" to %"extent_info"*
+  %".153" = ptrtoint %"extent_info"* %".152" to i64
+  %".154" = zext i8 3 to i64
+  %".155" = ashr i64 %".153", %".154"
+  %".156" = mul i64 12297829382473034411, %".155"
+  store i64 %".156", i64* %"prev_idx"
   %".158" = load %"extent_scan"*, %"extent_scan"** %"scan"
   %".159" = bitcast %"extent_scan"* %".158" to i8*
-  %".160" = getelementptr i8, i8* %".159", i64 24
+  %".160" = getelementptr i8, i8* %".159", i64 40
   %".161" = bitcast i8* %".160" to %"extent_scan"*
   %".162" = bitcast %"extent_scan"* %".161" to i64*
   %".163" = load i64, i64* %".162"
-  %".164" = call i8* @"xnrealloc"(i8* %".157", i64 %".163", i64 24)
+  %".164" = inttoptr i64 %".163" to i8*
   %".165" = load %"extent_scan"*, %"extent_scan"** %"scan"
   %".166" = bitcast %"extent_scan"* %".165" to i8*
-  %".167" = getelementptr i8, i8* %".166", i64 40
+  %".167" = getelementptr i8, i8* %".166", i64 24
   %".168" = bitcast i8* %".167" to %"extent_scan"*
-  %".169" = bitcast %"extent_scan"* %".168" to i8**
-  store i8* %".164", i8** %".169"
-  %".171" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".172" = bitcast %"extent_scan"* %".171" to i8*
-  %".173" = getelementptr i8, i8* %".172", i64 40
-  %".174" = bitcast i8* %".173" to %"extent_scan"*
-  %".175" = bitcast %"extent_scan"* %".174" to i64*
-  %".176" = load i64, i64* %".175"
-  %".177" = load i64, i64* %"prev_idx"
-  %".178" = mul i64 24, %".177"
-  %".179" = add i64 %".176", %".178"
-  %".180" = bitcast %"extent_info"** %"last_ei" to i64*
-  store i64 %".179", i64* %".180"
+  %".169" = bitcast %"extent_scan"* %".168" to i64*
+  %".170" = load i64, i64* %".169"
+  %".171" = call i8* @"xnrealloc"(i8* %".164", i64 %".170", i64 24)
+  %".172" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".173" = bitcast %"extent_scan"* %".172" to i8*
+  %".174" = getelementptr i8, i8* %".173", i64 40
+  %".175" = bitcast i8* %".174" to %"extent_scan"*
+  %".176" = bitcast %"extent_scan"* %".175" to i8**
+  store i8* %".171", i8** %".176"
+  %".178" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".179" = bitcast %"extent_scan"* %".178" to i8*
+  %".180" = getelementptr i8, i8* %".179", i64 40
+  %".181" = bitcast i8* %".180" to %"extent_scan"*
+  %".182" = bitcast %"extent_scan"* %".181" to i64*
+  %".183" = load i64, i64* %".182"
+  %".184" = load i64, i64* %"prev_idx"
+  %".185" = mul i64 24, %".184"
+  %".186" = add i64 %".183", %".185"
+  %".187" = bitcast %"extent_info"** %"last_ei" to i64*
+  store i64 %".186", i64* %".187"
   store i32 0, i32* %"i"
   br label %"@31"
 "@11":
-  %".184" = load i32, i32* %"i"
-  %".185" = zext i32 %".184" to i64
-  %".186" = mul i64 56, %".185"
-  %".187" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".188" = getelementptr i8, i8* %".187", i64 %".186"
-  %".189" = bitcast i8* %".188" to i64*
-  %".190" = load i64, i64* %".189"
   %".191" = load i32, i32* %"i"
   %".192" = zext i32 %".191" to i64
   %".193" = mul i64 56, %".192"
-  %".194" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".195" = getelementptr i8, i8* %".194", i64 %".193"
-  %".196" = getelementptr i8, i8* %".195", i64 16
+  %".194" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".195" = getelementptr i8, i8* %".194", i32 32
+  %".196" = getelementptr i8, i8* %".195", i64 %".193"
   %".197" = bitcast i8* %".196" to i64*
   %".198" = load i64, i64* %".197"
-  %".199" = sub i64 9223372036854775807, %".198"
-  %".200" = icmp ule i64 %".190", %".199"
-  br i1 %".200", label %"@13", label %"@12"
+  %".199" = load i32, i32* %"i"
+  %".200" = zext i32 %".199" to i64
+  %".201" = mul i64 56, %".200"
+  %".202" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".203" = getelementptr i8, i8* %".202", i32 32
+  %".204" = getelementptr i8, i8* %".203", i64 %".201"
+  %".205" = getelementptr i8, i8* %".204", i64 16
+  %".206" = bitcast i8* %".205" to i64*
+  %".207" = load i64, i64* %".206"
+  %".208" = sub i64 9223372036854775807, %".207"
+  %".209" = icmp ule i64 %".198", %".208"
+  br i1 %".209", label %"@13", label %"@12"
 "@12":
-  %".202" = getelementptr [64 x i8], [64 x i8]* @"aFmExtentsIFeLo", i32 0, i32 0
-  %".203" = getelementptr [21 x i8], [21 x i8]* @"aSrcExtentScanC", i32 0, i32 0
-  %".204" = getelementptr [17 x i8], [17 x i8]* @"__PRETTY_FUNCTION__.0", i32 0, i32 0
-  %".205" = call i8* @"__assert_fail"(i8* %".202", i8* %".203", i32 141, i8* %".204")
+  %".211" = getelementptr [64 x i8], [64 x i8]* @"aFmExtentsIFeLo", i32 0, i32 0
+  %".212" = getelementptr [21 x i8], [21 x i8]* @"aSrcExtentScanC", i32 0, i32 0
+  %".213" = getelementptr [17 x i8], [17 x i8]* @"__PRETTY_FUNCTION__.0", i32 0, i32 0
+  %".214" = call i8* @"__assert_fail"(i8* %".211", i8* %".212", i32 141, i8* %".213")
   br label %"@13"
 "@13":
-  %".207" = load i32, i32* %"si_0"
-  %".208" = icmp eq i32 %".207", 0
-  br i1 %".208", label %"@17", label %"@14"
+  %".216" = load i32, i32* %"si_0"
+  %".217" = icmp eq i32 %".216", 0
+  br i1 %".217", label %"@17", label %"@14"
 "@14":
-  %".210" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".211" = bitcast %"extent_info"* %".210" to i8*
-  %".212" = getelementptr i8, i8* %".211", i64 16
-  %".213" = bitcast i8* %".212" to %"extent_info"*
-  %".214" = bitcast %"extent_info"* %".213" to i32*
-  %".215" = load i32, i32* %".214"
-  %".216" = load i32, i32* %"i"
-  %".217" = zext i32 %".216" to i64
-  %".218" = mul i64 56, %".217"
-  %".219" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".220" = getelementptr i8, i8* %".219", i64 %".218"
-  %".221" = getelementptr i8, i8* %".220", i64 40
-  %".222" = bitcast i8* %".221" to i32*
-  %".223" = load i32, i32* %".222"
-  %".224" = and i32 %".223", 4294967294
-  %".225" = icmp ne i32 %".215", %".224"
-  br i1 %".225", label %"@17", label %"@15"
+  %".219" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".220" = bitcast %"extent_info"* %".219" to i8*
+  %".221" = getelementptr i8, i8* %".220", i64 16
+  %".222" = bitcast i8* %".221" to %"extent_info"*
+  %".223" = bitcast %"extent_info"* %".222" to i32*
+  %".224" = load i32, i32* %".223"
+  %".225" = load i32, i32* %"i"
+  %".226" = zext i32 %".225" to i64
+  %".227" = mul i64 56, %".226"
+  %".228" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".229" = getelementptr i8, i8* %".228", i32 32
+  %".230" = getelementptr i8, i8* %".229", i64 %".227"
+  %".231" = getelementptr i8, i8* %".230", i64 40
+  %".232" = bitcast i8* %".231" to i32*
+  %".233" = load i32, i32* %".232"
+  %".234" = and i32 %".233", 4294967294
+  %".235" = icmp ne i32 %".224", %".234"
+  br i1 %".235", label %"@17", label %"@15"
 "@15":
-  %".227" = bitcast %"extent_info"** %"last_ei" to i64*
-  %".228" = load i64, i64* %".227"
-  %".229" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".230" = bitcast %"extent_info"* %".229" to i8*
-  %".231" = getelementptr i8, i8* %".230", i64 8
-  %".232" = bitcast i8* %".231" to %"extent_info"*
-  %".233" = bitcast %"extent_info"* %".232" to i64*
-  %".234" = load i64, i64* %".233"
-  %".235" = add i64 %".228", %".234"
-  %".236" = load i32, i32* %"i"
-  %".237" = zext i32 %".236" to i64
-  %".238" = mul i64 56, %".237"
-  %".239" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".240" = getelementptr i8, i8* %".239", i64 %".238"
-  %".241" = bitcast i8* %".240" to i64*
-  %".242" = load i64, i64* %".241"
-  %".243" = icmp ne i64 %".235", %".242"
-  br i1 %".243", label %"@17", label %"@16"
+  %".237" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".238" = bitcast %"extent_info"* %".237" to i64*
+  %".239" = load i64, i64* %".238"
+  %".240" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".241" = bitcast %"extent_info"* %".240" to i8*
+  %".242" = getelementptr i8, i8* %".241", i64 8
+  %".243" = bitcast i8* %".242" to %"extent_info"*
+  %".244" = bitcast %"extent_info"* %".243" to i64*
+  %".245" = load i64, i64* %".244"
+  %".246" = add i64 %".239", %".245"
+  %".247" = load i32, i32* %"i"
+  %".248" = zext i32 %".247" to i64
+  %".249" = mul i64 56, %".248"
+  %".250" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".251" = getelementptr i8, i8* %".250", i32 32
+  %".252" = getelementptr i8, i8* %".251", i64 %".249"
+  %".253" = bitcast i8* %".252" to i64*
+  %".254" = load i64, i64* %".253"
+  %".255" = icmp ne i64 %".246", %".254"
+  br i1 %".255", label %"@17", label %"@16"
 "@16":
-  %".245" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".246" = bitcast %"extent_info"* %".245" to i8*
-  %".247" = getelementptr i8, i8* %".246", i64 8
-  %".248" = bitcast i8* %".247" to %"extent_info"*
-  %".249" = bitcast %"extent_info"* %".248" to i64*
-  %".250" = load i64, i64* %".249"
-  %".251" = load i32, i32* %"i"
-  %".252" = zext i32 %".251" to i64
-  %".253" = mul i64 56, %".252"
-  %".254" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".255" = getelementptr i8, i8* %".254", i64 %".253"
-  %".256" = getelementptr i8, i8* %".255", i64 16
-  %".257" = bitcast i8* %".256" to i64*
-  %".258" = load i64, i64* %".257"
-  %".259" = add i64 %".250", %".258"
-  %".260" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".261" = bitcast %"extent_info"* %".260" to i8*
-  %".262" = getelementptr i8, i8* %".261", i64 8
-  %".263" = bitcast i8* %".262" to %"extent_info"*
-  %".264" = bitcast %"extent_info"* %".263" to i64*
-  store i64 %".259", i64* %".264"
-  %".266" = load i32, i32* %"i"
-  %".267" = zext i32 %".266" to i64
-  %".268" = mul i64 56, %".267"
-  %".269" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".270" = getelementptr i8, i8* %".269", i64 %".268"
-  %".271" = getelementptr i8, i8* %".270", i64 40
-  %".272" = bitcast i8* %".271" to i32*
-  %".273" = load i32, i32* %".272"
-  %".274" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".275" = bitcast %"extent_info"* %".274" to i8*
-  %".276" = getelementptr i8, i8* %".275", i64 16
-  %".277" = bitcast i8* %".276" to %"extent_info"*
-  %".278" = bitcast %"extent_info"* %".277" to i32*
-  store i32 %".273", i32* %".278"
+  %".257" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".258" = bitcast %"extent_info"* %".257" to i8*
+  %".259" = getelementptr i8, i8* %".258", i64 8
+  %".260" = bitcast i8* %".259" to %"extent_info"*
+  %".261" = bitcast %"extent_info"* %".260" to i64*
+  %".262" = load i64, i64* %".261"
+  %".263" = load i32, i32* %"i"
+  %".264" = zext i32 %".263" to i64
+  %".265" = mul i64 56, %".264"
+  %".266" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".267" = getelementptr i8, i8* %".266", i32 32
+  %".268" = getelementptr i8, i8* %".267", i64 %".265"
+  %".269" = getelementptr i8, i8* %".268", i64 16
+  %".270" = bitcast i8* %".269" to i64*
+  %".271" = load i64, i64* %".270"
+  %".272" = add i64 %".262", %".271"
+  %".273" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".274" = bitcast %"extent_info"* %".273" to i8*
+  %".275" = getelementptr i8, i8* %".274", i64 8
+  %".276" = bitcast i8* %".275" to %"extent_info"*
+  %".277" = bitcast %"extent_info"* %".276" to i64*
+  store i64 %".272", i64* %".277"
+  %".279" = load i32, i32* %"i"
+  %".280" = zext i32 %".279" to i64
+  %".281" = mul i64 56, %".280"
+  %".282" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".283" = getelementptr i8, i8* %".282", i32 32
+  %".284" = getelementptr i8, i8* %".283", i64 %".281"
+  %".285" = getelementptr i8, i8* %".284", i64 40
+  %".286" = bitcast i8* %".285" to i32*
+  %".287" = load i32, i32* %".286"
+  %".288" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".289" = bitcast %"extent_info"* %".288" to i8*
+  %".290" = getelementptr i8, i8* %".289", i64 16
+  %".291" = bitcast i8* %".290" to %"extent_info"*
+  %".292" = bitcast %"extent_info"* %".291" to i32*
+  store i32 %".287", i32* %".292"
   br label %"@30"
 "@17":
-  %".281" = load i32, i32* %"si_0"
-  %".282" = icmp ne i32 %".281", 0
-  br i1 %".282", label %"@19", label %"@18"
+  %".295" = load i32, i32* %"si_0"
+  %".296" = icmp ne i32 %".295", 0
+  br i1 %".296", label %"@19", label %"@18"
 "@18":
-  %".284" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".285" = bitcast %"extent_scan"* %".284" to i8*
-  %".286" = getelementptr i8, i8* %".285", i64 8
-  %".287" = bitcast i8* %".286" to %"extent_scan"*
-  %".288" = bitcast %"extent_scan"* %".287" to i64*
-  %".289" = load i64, i64* %".288"
-  %".290" = load i32, i32* %"i"
-  %".291" = zext i32 %".290" to i64
-  %".292" = mul i64 56, %".291"
-  %".293" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".294" = getelementptr i8, i8* %".293", i64 %".292"
-  %".295" = bitcast i8* %".294" to i64*
-  %".296" = load i64, i64* %".295"
-  %".297" = icmp ugt i64 %".289", %".296"
-  br i1 %".297", label %"@21", label %"@19"
-"@19":
-  %".299" = load i32, i32* %"si_0"
-  %".300" = icmp eq i32 %".299", 0
-  br i1 %".300", label %"@29", label %"@20"
-"@20":
-  %".302" = bitcast %"extent_info"** %"last_ei" to i64*
+  %".298" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".299" = bitcast %"extent_scan"* %".298" to i8*
+  %".300" = getelementptr i8, i8* %".299", i64 8
+  %".301" = bitcast i8* %".300" to %"extent_scan"*
+  %".302" = bitcast %"extent_scan"* %".301" to i64*
   %".303" = load i64, i64* %".302"
-  %".304" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".305" = bitcast %"extent_info"* %".304" to i8*
-  %".306" = getelementptr i8, i8* %".305", i64 8
-  %".307" = bitcast i8* %".306" to %"extent_info"*
-  %".308" = bitcast %"extent_info"* %".307" to i64*
-  %".309" = load i64, i64* %".308"
-  %".310" = add i64 %".303", %".309"
-  %".311" = load i32, i32* %"i"
-  %".312" = zext i32 %".311" to i64
-  %".313" = mul i64 56, %".312"
-  %".314" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".315" = getelementptr i8, i8* %".314", i64 %".313"
-  %".316" = bitcast i8* %".315" to i64*
-  %".317" = load i64, i64* %".316"
-  %".318" = icmp ule i64 %".310", %".317"
-  br i1 %".318", label %"@29", label %"@21"
+  %".304" = load i32, i32* %"i"
+  %".305" = zext i32 %".304" to i64
+  %".306" = mul i64 56, %".305"
+  %".307" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".308" = getelementptr i8, i8* %".307", i32 32
+  %".309" = getelementptr i8, i8* %".308", i64 %".306"
+  %".310" = bitcast i8* %".309" to i64*
+  %".311" = load i64, i64* %".310"
+  %".312" = icmp ugt i64 %".303", %".311"
+  br i1 %".312", label %"@21", label %"@19"
+"@19":
+  %".314" = load i32, i32* %"si_0"
+  %".315" = icmp eq i32 %".314", 0
+  br i1 %".315", label %"@29", label %"@20"
+"@20":
+  %".317" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".318" = bitcast %"extent_info"* %".317" to i64*
+  %".319" = load i64, i64* %".318"
+  %".320" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".321" = bitcast %"extent_info"* %".320" to i8*
+  %".322" = getelementptr i8, i8* %".321", i64 8
+  %".323" = bitcast i8* %".322" to %"extent_info"*
+  %".324" = bitcast %"extent_info"* %".323" to i64*
+  %".325" = load i64, i64* %".324"
+  %".326" = add i64 %".319", %".325"
+  %".327" = load i32, i32* %"i"
+  %".328" = zext i32 %".327" to i64
+  %".329" = mul i64 56, %".328"
+  %".330" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".331" = getelementptr i8, i8* %".330", i32 32
+  %".332" = getelementptr i8, i8* %".331", i64 %".329"
+  %".333" = bitcast i8* %".332" to i64*
+  %".334" = load i64, i64* %".333"
+  %".335" = icmp ule i64 %".326", %".334"
+  br i1 %".335", label %"@29", label %"@21"
 "@21":
-  %".320" = load i32, i32* %"si_0"
-  %".321" = icmp ne i32 %".320", 0
-  br i1 %".321", label %"@23", label %"@22"
+  %".337" = load i32, i32* %"si_0"
+  %".338" = icmp ne i32 %".337", 0
+  br i1 %".338", label %"@23", label %"@22"
 "@22":
-  %".323" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".324" = bitcast %"extent_scan"* %".323" to i8*
-  %".325" = getelementptr i8, i8* %".324", i64 8
-  %".326" = bitcast i8* %".325" to %"extent_scan"*
-  %".327" = bitcast %"extent_scan"* %".326" to i64*
-  %".328" = load i64, i64* %".327"
-  store i64 %".328", i64* %"new_logical"
+  %".340" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".341" = bitcast %"extent_scan"* %".340" to i8*
+  %".342" = getelementptr i8, i8* %".341", i64 8
+  %".343" = bitcast i8* %".342" to %"extent_scan"*
+  %".344" = bitcast %"extent_scan"* %".343" to i64*
+  %".345" = load i64, i64* %".344"
+  store i64 %".345", i64* %"new_logical"
   br label %"@24"
 "@23":
-  %".331" = bitcast %"extent_info"** %"last_ei" to i64*
-  %".332" = load i64, i64* %".331"
-  %".333" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".334" = bitcast %"extent_info"* %".333" to i8*
-  %".335" = getelementptr i8, i8* %".334", i64 8
-  %".336" = bitcast i8* %".335" to %"extent_info"*
-  %".337" = bitcast %"extent_info"* %".336" to i64*
-  %".338" = load i64, i64* %".337"
-  %".339" = add i64 %".332", %".338"
-  store i64 %".339", i64* %"new_logical"
+  %".348" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".349" = bitcast %"extent_info"* %".348" to i64*
+  %".350" = load i64, i64* %".349"
+  %".351" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".352" = bitcast %"extent_info"* %".351" to i8*
+  %".353" = getelementptr i8, i8* %".352", i64 8
+  %".354" = bitcast i8* %".353" to %"extent_info"*
+  %".355" = bitcast %"extent_info"* %".354" to i64*
+  %".356" = load i64, i64* %".355"
+  %".357" = add i64 %".350", %".356"
+  store i64 %".357", i64* %"new_logical"
   br label %"@24"
 "@24":
-  %".342" = load i64, i64* %"new_logical"
-  %".343" = load i32, i32* %"i"
-  %".344" = zext i32 %".343" to i64
-  %".345" = mul i64 56, %".344"
-  %".346" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".347" = getelementptr i8, i8* %".346", i64 %".345"
-  %".348" = bitcast i8* %".347" to i64*
-  %".349" = load i64, i64* %".348"
-  %".350" = sub i64 %".342", %".349"
-  store i64 %".350", i64* %"length_adjust"
-  %".352" = load i64, i64* %"length_adjust"
-  %".353" = load i32, i32* %"i"
-  %".354" = zext i32 %".353" to i64
-  %".355" = mul i64 56, %".354"
-  %".356" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".357" = getelementptr i8, i8* %".356", i64 %".355"
-  %".358" = getelementptr i8, i8* %".357", i64 16
-  %".359" = bitcast i8* %".358" to i64*
-  %".360" = load i64, i64* %".359"
-  %".361" = icmp uge i64 %".352", %".360"
-  br i1 %".361", label %"@28", label %"@25"
-"@25":
-  %".363" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".364" = bitcast %"extent_scan"* %".363" to i8*
-  %".365" = getelementptr i8, i8* %".364", i64 8
-  %".366" = bitcast i8* %".365" to %"extent_scan"*
-  %".367" = bitcast %"extent_scan"* %".366" to i64*
+  %".360" = load i64, i64* %"new_logical"
+  %".361" = load i32, i32* %"i"
+  %".362" = zext i32 %".361" to i64
+  %".363" = mul i64 56, %".362"
+  %".364" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".365" = getelementptr i8, i8* %".364", i32 32
+  %".366" = getelementptr i8, i8* %".365", i64 %".363"
+  %".367" = bitcast i8* %".366" to i64*
   %".368" = load i64, i64* %".367"
-  %".369" = icmp ne i64 %".368", 0
-  br i1 %".369", label %"@27", label %"@26"
+  %".369" = sub i64 %".360", %".368"
+  store i64 %".369", i64* %"length_adjust"
+  %".371" = load i64, i64* %"length_adjust"
+  %".372" = load i32, i32* %"i"
+  %".373" = zext i32 %".372" to i64
+  %".374" = mul i64 56, %".373"
+  %".375" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".376" = getelementptr i8, i8* %".375", i32 32
+  %".377" = getelementptr i8, i8* %".376", i64 %".374"
+  %".378" = getelementptr i8, i8* %".377", i64 16
+  %".379" = bitcast i8* %".378" to i64*
+  %".380" = load i64, i64* %".379"
+  %".381" = icmp uge i64 %".371", %".380"
+  br i1 %".381", label %"@28", label %"@25"
+"@25":
+  %".383" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".384" = bitcast %"extent_scan"* %".383" to i8*
+  %".385" = getelementptr i8, i8* %".384", i64 8
+  %".386" = bitcast i8* %".385" to %"extent_scan"*
+  %".387" = bitcast %"extent_scan"* %".386" to i64*
+  %".388" = load i64, i64* %".387"
+  %".389" = icmp ne i64 %".388", 0
+  br i1 %".389", label %"@27", label %"@26"
 "@26":
-  %".371" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".372" = bitcast %"extent_scan"* %".371" to i8*
-  %".373" = getelementptr i8, i8* %".372", i64 32
-  %".374" = bitcast i8* %".373" to %"extent_scan"*
-  %".375" = bitcast %"extent_scan"* %".374" to i8*
-  store i8 1, i8* %".375"
+  %".391" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".392" = bitcast %"extent_scan"* %".391" to i8*
+  %".393" = getelementptr i8, i8* %".392", i64 32
+  %".394" = bitcast i8* %".393" to %"extent_scan"*
+  %".395" = bitcast %"extent_scan"* %".394" to i8*
+  store i8 1, i8* %".395"
   br label %"@27"
 "@27":
-  %".378" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".378"
+  %".398" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".398"
   br label %"@40"
 "@28":
-  %".381" = load i64, i64* %"new_logical"
-  %".382" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".383" = load i32, i32* %"i"
-  %".384" = zext i32 %".383" to i64
-  %".385" = mul i64 56, %".384"
-  %".386" = getelementptr i8, i8* %".382", i64 %".385"
-  %".387" = bitcast i8* %".386" to i64*
-  store i64 %".381", i64* %".387"
-  %".389" = load i32, i32* %"i"
-  %".390" = zext i32 %".389" to i64
-  %".391" = mul i64 56, %".390"
-  %".392" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".393" = getelementptr i8, i8* %".392", i64 %".391"
-  %".394" = getelementptr i8, i8* %".393", i64 16
-  %".395" = bitcast i8* %".394" to i64*
-  %".396" = load i64, i64* %".395"
-  %".397" = load i64, i64* %"length_adjust"
-  %".398" = sub i64 %".396", %".397"
-  %".399" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".400" = load i32, i32* %"i"
-  %".401" = zext i32 %".400" to i64
-  %".402" = mul i64 56, %".401"
-  %".403" = getelementptr i8, i8* %".399", i64 %".402"
-  %".404" = getelementptr i8, i8* %".403", i64 16
-  %".405" = bitcast i8* %".404" to i64*
-  store i64 %".398", i64* %".405"
-  %".407" = load i32, i32* %"i"
-  %".408" = sub i32 %".407", 1
-  store i32 %".408", i32* %"i"
-  br label %"@30"
-"@29":
-  %".411" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".412" = bitcast %"extent_scan"* %".411" to i8*
-  %".413" = getelementptr i8, i8* %".412", i64 40
-  %".414" = bitcast i8* %".413" to %"extent_scan"*
-  %".415" = bitcast %"extent_scan"* %".414" to i64*
-  %".416" = load i64, i64* %".415"
-  %".417" = load i32, i32* %"si_0"
-  %".418" = zext i32 %".417" to i64
-  %".419" = mul i64 24, %".418"
-  %".420" = add i64 %".416", %".419"
-  %".421" = bitcast %"extent_info"** %"last_ei" to i64*
-  store i64 %".420", i64* %".421"
+  %".401" = load i64, i64* %"new_logical"
+  %".402" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".403" = getelementptr i8, i8* %".402", i32 32
+  %".404" = load i32, i32* %"i"
+  %".405" = zext i32 %".404" to i64
+  %".406" = mul i64 56, %".405"
+  %".407" = getelementptr i8, i8* %".403", i64 %".406"
+  %".408" = bitcast i8* %".407" to i64*
+  store i64 %".401", i64* %".408"
+  %".410" = load i32, i32* %"i"
+  %".411" = zext i32 %".410" to i64
+  %".412" = mul i64 56, %".411"
+  %".413" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".414" = getelementptr i8, i8* %".413", i32 32
+  %".415" = getelementptr i8, i8* %".414", i64 %".412"
+  %".416" = getelementptr i8, i8* %".415", i64 16
+  %".417" = bitcast i8* %".416" to i64*
+  %".418" = load i64, i64* %".417"
+  %".419" = load i64, i64* %"length_adjust"
+  %".420" = sub i64 %".418", %".419"
+  %".421" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".422" = getelementptr i8, i8* %".421", i32 32
   %".423" = load i32, i32* %"i"
   %".424" = zext i32 %".423" to i64
   %".425" = mul i64 56, %".424"
-  %".426" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".427" = getelementptr i8, i8* %".426", i64 %".425"
+  %".426" = getelementptr i8, i8* %".422", i64 %".425"
+  %".427" = getelementptr i8, i8* %".426", i64 16
   %".428" = bitcast i8* %".427" to i64*
-  %".429" = load i64, i64* %".428"
-  %".430" = bitcast %"extent_info"** %"last_ei" to i64*
-  store i64 %".429", i64* %".430"
-  %".432" = load i32, i32* %"i"
-  %".433" = zext i32 %".432" to i64
-  %".434" = mul i64 56, %".433"
-  %".435" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".436" = getelementptr i8, i8* %".435", i64 %".434"
-  %".437" = getelementptr i8, i8* %".436", i64 16
-  %".438" = bitcast i8* %".437" to i64*
+  store i64 %".420", i64* %".428"
+  %".430" = load i32, i32* %"i"
+  %".431" = sub i32 %".430", 1
+  store i32 %".431", i32* %"i"
+  br label %"@30"
+"@29":
+  %".434" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".435" = bitcast %"extent_scan"* %".434" to i8*
+  %".436" = getelementptr i8, i8* %".435", i64 40
+  %".437" = bitcast i8* %".436" to %"extent_scan"*
+  %".438" = bitcast %"extent_scan"* %".437" to i64*
   %".439" = load i64, i64* %".438"
-  %".440" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".441" = bitcast %"extent_info"* %".440" to i8*
-  %".442" = getelementptr i8, i8* %".441", i64 8
-  %".443" = bitcast i8* %".442" to %"extent_info"*
-  %".444" = bitcast %"extent_info"* %".443" to i64*
-  store i64 %".439", i64* %".444"
+  %".440" = load i32, i32* %"si_0"
+  %".441" = zext i32 %".440" to i64
+  %".442" = mul i64 24, %".441"
+  %".443" = add i64 %".439", %".442"
+  %".444" = bitcast %"extent_info"** %"last_ei" to i64*
+  store i64 %".443", i64* %".444"
   %".446" = load i32, i32* %"i"
   %".447" = zext i32 %".446" to i64
   %".448" = mul i64 56, %".447"
-  %".449" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".450" = getelementptr i8, i8* %".449", i64 %".448"
-  %".451" = getelementptr i8, i8* %".450", i64 40
-  %".452" = bitcast i8* %".451" to i32*
-  %".453" = load i32, i32* %".452"
+  %".449" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".450" = getelementptr i8, i8* %".449", i32 32
+  %".451" = getelementptr i8, i8* %".450", i64 %".448"
+  %".452" = bitcast i8* %".451" to i64*
+  %".453" = load i64, i64* %".452"
   %".454" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".455" = bitcast %"extent_info"* %".454" to i8*
-  %".456" = getelementptr i8, i8* %".455", i64 16
-  %".457" = bitcast i8* %".456" to %"extent_info"*
-  %".458" = bitcast %"extent_info"* %".457" to i32*
-  store i32 %".453", i32* %".458"
-  %".460" = load i32, i32* %"si_0"
-  %".461" = add i32 %".460", 1
-  store i32 %".461", i32* %"si_0"
+  %".455" = bitcast %"extent_info"* %".454" to i64*
+  store i64 %".453", i64* %".455"
+  %".457" = load i32, i32* %"i"
+  %".458" = zext i32 %".457" to i64
+  %".459" = mul i64 56, %".458"
+  %".460" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".461" = getelementptr i8, i8* %".460", i32 32
+  %".462" = getelementptr i8, i8* %".461", i64 %".459"
+  %".463" = getelementptr i8, i8* %".462", i64 16
+  %".464" = bitcast i8* %".463" to i64*
+  %".465" = load i64, i64* %".464"
+  %".466" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".467" = bitcast %"extent_info"* %".466" to i8*
+  %".468" = getelementptr i8, i8* %".467", i64 8
+  %".469" = bitcast i8* %".468" to %"extent_info"*
+  %".470" = bitcast %"extent_info"* %".469" to i64*
+  store i64 %".465", i64* %".470"
+  %".472" = load i32, i32* %"i"
+  %".473" = zext i32 %".472" to i64
+  %".474" = mul i64 56, %".473"
+  %".475" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".476" = getelementptr i8, i8* %".475", i32 32
+  %".477" = getelementptr i8, i8* %".476", i64 %".474"
+  %".478" = getelementptr i8, i8* %".477", i64 40
+  %".479" = bitcast i8* %".478" to i32*
+  %".480" = load i32, i32* %".479"
+  %".481" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".482" = bitcast %"extent_info"* %".481" to i8*
+  %".483" = getelementptr i8, i8* %".482", i64 16
+  %".484" = bitcast i8* %".483" to %"extent_info"*
+  %".485" = bitcast %"extent_info"* %".484" to i32*
+  store i32 %".480", i32* %".485"
+  %".487" = load i32, i32* %"si_0"
+  %".488" = add i32 %".487", 1
+  store i32 %".488", i32* %"si_0"
   br label %"@30"
 "@30":
-  %".464" = load i32, i32* %"i"
-  %".465" = add i32 %".464", 1
-  store i32 %".465", i32* %"i"
+  %".491" = load i32, i32* %"i"
+  %".492" = add i32 %".491", 1
+  store i32 %".492", i32* %"i"
   br label %"@31"
 "@31":
-  %".468" = load i32, i32* %"i"
-  %".469" = bitcast %"struct"* %"fiemap_buf" to i8*
-  %".470" = bitcast i8* %".469" to i32*
-  %".471" = load i32, i32* %".470"
-  %".472" = icmp ult i32 %".468", %".471"
-  br i1 %".472", label %"@11", label %"@32"
+  %".495" = load i32, i32* %"i"
+  %".496" = bitcast %"$88D1DA29C59129EC502E1C4D3EEBB178"* %"fiemap_buf" to i8*
+  %".497" = getelementptr i8, i8* %".496", i32 20
+  %".498" = bitcast i8* %".497" to i32*
+  %".499" = load i32, i32* %".498"
+  %".500" = icmp ult i32 %".495", %".499"
+  br i1 %".500", label %"@11", label %"@32"
 "@32":
-  %".474" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".475" = bitcast %"extent_info"* %".474" to i8*
-  %".476" = getelementptr i8, i8* %".475", i64 16
-  %".477" = bitcast i8* %".476" to %"extent_info"*
-  %".478" = bitcast %"extent_info"* %".477" to i32*
-  %".479" = load i32, i32* %".478"
-  %".480" = and i32 %".479", 1
-  %".481" = icmp eq i32 %".480", 0
-  br i1 %".481", label %"@34", label %"@33"
+  %".502" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".503" = bitcast %"extent_info"* %".502" to i8*
+  %".504" = getelementptr i8, i8* %".503", i64 16
+  %".505" = bitcast i8* %".504" to %"extent_info"*
+  %".506" = bitcast %"extent_info"* %".505" to i32*
+  %".507" = load i32, i32* %".506"
+  %".508" = and i32 %".507", 1
+  %".509" = icmp eq i32 %".508", 0
+  br i1 %".509", label %"@34", label %"@33"
 "@33":
-  %".483" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".484" = bitcast %"extent_scan"* %".483" to i8*
-  %".485" = getelementptr i8, i8* %".484", i64 33
-  %".486" = bitcast i8* %".485" to %"extent_scan"*
-  %".487" = bitcast %"extent_scan"* %".486" to i8*
-  store i8 1, i8* %".487"
+  %".511" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".512" = bitcast %"extent_scan"* %".511" to i8*
+  %".513" = getelementptr i8, i8* %".512", i64 33
+  %".514" = bitcast i8* %".513" to %"extent_scan"*
+  %".515" = bitcast %"extent_scan"* %".514" to i8*
+  store i8 1, i8* %".515"
   br label %"@34"
 "@34":
-  %".490" = load i32, i32* %"si_0"
-  %".491" = icmp ule i32 %".490", 72
-  br i1 %".491", label %"@37", label %"@35"
+  %".518" = load i32, i32* %"si_0"
+  %".519" = icmp ule i32 %".518", 72
+  br i1 %".519", label %"@37", label %"@35"
 "@35":
-  %".493" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".494" = bitcast %"extent_scan"* %".493" to i8*
-  %".495" = getelementptr i8, i8* %".494", i64 33
-  %".496" = bitcast i8* %".495" to %"extent_scan"*
-  %".497" = bitcast %"extent_scan"* %".496" to i8*
-  %".498" = load i8, i8* %".497"
-  %".499" = xor i8 %".498", 1
-  %".500" = icmp eq i8 %".499", 0
-  br i1 %".500", label %"@37", label %"@36"
-"@36":
-  %".502" = load i32, i32* %"si_0"
-  %".503" = sub i32 %".502", 1
-  store i32 %".503", i32* %"si_0"
-  %".505" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".506" = bitcast %"extent_scan"* %".505" to i8*
-  %".507" = getelementptr i8, i8* %".506", i64 40
-  %".508" = bitcast i8* %".507" to %"extent_scan"*
-  %".509" = bitcast %"extent_scan"* %".508" to i64*
-  %".510" = load i64, i64* %".509"
-  %".511" = load i32, i32* %"si_0"
-  %".512" = zext i32 %".511" to i64
-  %".513" = mul i64 24, %".512"
-  %".514" = sub i64 %".513", 24
-  %".515" = add i64 %".510", %".514"
-  %".516" = bitcast %"extent_info"** %"last_ei" to i64*
-  store i64 %".515", i64* %".516"
-  br label %"@37"
-"@37":
-  %".519" = load i32, i32* %"si_0"
-  %".520" = zext i32 %".519" to i64
   %".521" = load %"extent_scan"*, %"extent_scan"** %"scan"
   %".522" = bitcast %"extent_scan"* %".521" to i8*
-  %".523" = getelementptr i8, i8* %".522", i64 24
+  %".523" = getelementptr i8, i8* %".522", i64 33
   %".524" = bitcast i8* %".523" to %"extent_scan"*
-  %".525" = bitcast %"extent_scan"* %".524" to i64*
-  store i64 %".520", i64* %".525"
-  %".527" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".528" = bitcast %"extent_scan"* %".527" to i8*
-  %".529" = getelementptr i8, i8* %".528", i64 33
-  %".530" = bitcast i8* %".529" to %"extent_scan"*
-  %".531" = bitcast %"extent_scan"* %".530" to i8*
-  %".532" = load i8, i8* %".531"
-  %".533" = icmp ne i8 %".532", 0
-  br i1 %".533", label %"@39", label %"@38"
+  %".525" = bitcast %"extent_scan"* %".524" to i8*
+  %".526" = load i8, i8* %".525"
+  %".527" = xor i8 %".526", 1
+  %".528" = icmp eq i8 %".527", 0
+  br i1 %".528", label %"@37", label %"@36"
+"@36":
+  %".530" = load i32, i32* %"si_0"
+  %".531" = sub i32 %".530", 1
+  store i32 %".531", i32* %"si_0"
+  %".533" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".534" = bitcast %"extent_scan"* %".533" to i8*
+  %".535" = getelementptr i8, i8* %".534", i64 40
+  %".536" = bitcast i8* %".535" to %"extent_scan"*
+  %".537" = bitcast %"extent_scan"* %".536" to i64*
+  %".538" = load i64, i64* %".537"
+  %".539" = load i32, i32* %"si_0"
+  %".540" = zext i32 %".539" to i64
+  %".541" = mul i64 24, %".540"
+  %".542" = sub i64 %".541", 24
+  %".543" = add i64 %".538", %".542"
+  %".544" = bitcast %"extent_info"** %"last_ei" to i64*
+  store i64 %".543", i64* %".544"
+  br label %"@37"
+"@37":
+  %".547" = load i32, i32* %"si_0"
+  %".548" = zext i32 %".547" to i64
+  %".549" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".550" = bitcast %"extent_scan"* %".549" to i8*
+  %".551" = getelementptr i8, i8* %".550", i64 24
+  %".552" = bitcast i8* %".551" to %"extent_scan"*
+  %".553" = bitcast %"extent_scan"* %".552" to i64*
+  store i64 %".548", i64* %".553"
+  %".555" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".556" = bitcast %"extent_scan"* %".555" to i8*
+  %".557" = getelementptr i8, i8* %".556", i64 33
+  %".558" = bitcast i8* %".557" to %"extent_scan"*
+  %".559" = bitcast %"extent_scan"* %".558" to i8*
+  %".560" = load i8, i8* %".559"
+  %".561" = icmp ne i8 %".560", 0
+  br i1 %".561", label %"@39", label %"@38"
 "@38":
-  %".535" = load %"extent_info"*, %"extent_info"** %"last_ei"
-  %".536" = bitcast %"extent_info"* %".535" to i8*
-  %".537" = getelementptr i8, i8* %".536", i64 8
-  %".538" = bitcast i8* %".537" to %"extent_info"*
-  %".539" = bitcast %"extent_info"* %".538" to i64*
-  %".540" = load i64, i64* %".539"
-  %".541" = bitcast %"extent_info"** %"last_ei" to i64*
-  %".542" = load i64, i64* %".541"
-  %".543" = add i64 %".540", %".542"
-  %".544" = load %"extent_scan"*, %"extent_scan"** %"scan"
-  %".545" = bitcast %"extent_scan"* %".544" to i8*
-  %".546" = getelementptr i8, i8* %".545", i64 8
-  %".547" = bitcast i8* %".546" to %"extent_scan"*
-  %".548" = bitcast %"extent_scan"* %".547" to i64*
-  store i64 %".543", i64* %".548"
-  %".550" = load i32, i32* %"si_0"
-  %".551" = icmp ule i32 %".550", 71
-  br i1 %".551", label %"@2", label %"@39"
+  %".563" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".564" = bitcast %"extent_info"* %".563" to i8*
+  %".565" = getelementptr i8, i8* %".564", i64 8
+  %".566" = bitcast i8* %".565" to %"extent_info"*
+  %".567" = bitcast %"extent_info"* %".566" to i64*
+  %".568" = load i64, i64* %".567"
+  %".569" = load %"extent_info"*, %"extent_info"** %"last_ei"
+  %".570" = bitcast %"extent_info"* %".569" to i64*
+  %".571" = load i64, i64* %".570"
+  %".572" = add i64 %".568", %".571"
+  %".573" = load %"extent_scan"*, %"extent_scan"** %"scan"
+  %".574" = bitcast %"extent_scan"* %".573" to i8*
+  %".575" = getelementptr i8, i8* %".574", i64 8
+  %".576" = bitcast i8* %".575" to %"extent_scan"*
+  %".577" = bitcast %"extent_scan"* %".576" to i64*
+  store i64 %".572", i64* %".577"
+  %".579" = load i32, i32* %"si_0"
+  %".580" = icmp ule i32 %".579", 71
+  br i1 %".580", label %"@2", label %"@39"
 "@39":
-  %".553" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".553"
+  %".582" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".582"
   br label %"@40"
 "@40":
   %".4" = load i1, i1* %"funcresult"

@@ -325,6 +325,13 @@ class LLVMDropConverter:
         self._ptr_allocas: dict = {}  # ptr-typed addr_taken alloca name -> stkoff
         self._ptr_deref_alias: set = set()  # bitcast aliases rooted at a ptr alloca
         self._ptr_alloca_pointee: dict = {}  # ptr alloca name -> pointee byte width
+        self._ptr_alloca_pointee_struct: set = set()  # ptr alloca/alias names whose
+        # pointee is a known multi-field STRUCT (cursor slot, e.g. extent_info*).
+        # A direct-bitcast pointer-WIDTH store of a NON-pointer arithmetic value
+        # into such a slot DEFINES the pointer (cursor advance) rather than writing
+        # the struct pointee -- an 8-byte store can never be a full struct-pointee
+        # write; native renders it `cur = base + idx`. A SCALAR pointee (i64* ->
+        # *total_n_read = 0) stays a deref.
         self._cur_mba = None         # current mba (make_stkvar needs it)
         self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
@@ -1018,7 +1025,9 @@ class LLVMDropConverter:
                 blk.insert_into_block(mi, anchor)
                 return mi
             if (ops[1].name in self._ptr_deref_alias
-                    and not _is_ptr_type(ops[0].type)):
+                    and not _is_ptr_type(ops[0].type)
+                    and not (val_sz == 8
+                             and ops[1].name in self._ptr_alloca_pointee_struct)):
                 # *X = v (deref write) of a pointer-alloca slot: a store through
                 # the no-op bitcast writes the POINTEE *X (e.g. `oa->style = 10`,
                 # or a pointer-width `*total_n_read = 0` where total_n_read is a
@@ -1028,7 +1037,17 @@ class LLVMDropConverter:
                 # a POINTER value (`_is_ptr_type(ops[0].type)`) instead DEFINES the
                 # pointer and falls through to the slot-write path below (e.g.
                 # `bucket = *table`, `oa = &default`). A non-pointer value of ANY
-                # width (i8 field OR a full i64 `*p = 0`) is a deref.
+                # width (i8 field OR a full i64 `*p = 0`) is a deref -- EXCEPT a
+                # pointer-WIDTH (8B) store into a STRUCT-pointee slot
+                # (`_ptr_alloca_pointee_struct`): the lifter lowers cursor
+                # arithmetic `last_ei = scan->ext_info + idx` to `store i64
+                # <ptrtoint+add>, bitcast(%last_ei to i64*)` -- a non-pointer i64
+                # value, but it DEFINES the cursor (an 8-byte store can never be a
+                # full struct-pointee write; a genuine first-field deref
+                # `last_ei->ext_logical = v` LOADs the pointer first so its bitcast
+                # is rooted at the load, not the alloca -> not in
+                # `_ptr_deref_alias`). A scalar i64 pointee (`*total_n_read`) is
+                # NOT struct -> stays a deref.
                 poff = self._ptr_deref_off(ops[1], vmap)
                 pr = mba.alloc_kreg(8)
                 mv = hx.minsn_t(ea)
@@ -2231,6 +2250,10 @@ class LLVMDropConverter:
                         # legacy behaviour for an opaque / pointer-pointee slot).
                         self._ptr_alloca_pointee[ins.name] = \
                             self._ptr_alloca_pointee.get(src, 8)
+                        # Inherit the struct-pointee flag so a direct-bitcast
+                        # cursor DEFINE through the alias is recognised.
+                        if src in self._ptr_alloca_pointee_struct:
+                            self._ptr_alloca_pointee_struct.add(ins.name)
                         changed = True
 
     def _alloca_elem_size(self, ins) -> int:
@@ -2376,6 +2399,7 @@ class LLVMDropConverter:
         host_off = self._host_frame_offsets(mba)
         self._ptr_allocas = {}
         self._ptr_alloca_pointee = {}
+        self._ptr_alloca_pointee_struct = set()
         allocas = {}
         # A frame-slot alloca that the HOST FRAME ALSO NAMES must rest at its TRUE
         # host offset, not at a synthetic sequential offset. The old packing (0, 8,
@@ -2487,6 +2511,13 @@ class LLVMDropConverter:
                         # ORIGINAL IR text (``decl_types`` = ``i8*``).
                         self._ptr_alloca_pointee[nm] = \
                             self._pointee_size_of_decl(decl_types.get(nm))
+                        # A single-level struct-pointer slot (``%extent_info*``):
+                        # remember the pointee is a multi-field struct so a
+                        # direct-bitcast pointer-width store of arithmetic is
+                        # recognised as a cursor DEFINE, not a struct-pointee write.
+                        if self._pointee_struct_of_type(
+                                decl_types.get(nm, "")) is not None:
+                            self._ptr_alloca_pointee_struct.add(nm)
                 else:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
         return allocas
