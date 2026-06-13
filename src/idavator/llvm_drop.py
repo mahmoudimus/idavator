@@ -2768,9 +2768,25 @@ class LLVMDropConverter:
         self._detect_ret_phi(fn)
         vmap: dict[str, tuple] = {}
         recv_stkoffs = self._incoming_stack_offsets(mba, fn, len(argregs))
+        # Reg args whose value is read across a call need a stable kreg home (the
+        # raw caller-saved arg register is clobbered by the intervening call's
+        # arg-setup). Mirrors the lifter's plain-IR spill-to-alloca that the SROA
+        # fallback removed. The entry block materialises ``mov argreg, kreg`` for
+        # each (see _build_multiblock); args used only before any call keep the
+        # raw register (inert -- no copy emitted).
+        reg_arg_names = {a.name for i, a in enumerate(fn.arguments)
+                         if i < len(argregs)}
+        preserve = self._names_used_across_call(fn, reg_arg_names)
+        arg_preserve: list[tuple] = []  # (kreg, argreg, size) entry copies
         for i, a in enumerate(fn.arguments):
             if i < len(argregs):
-                vmap[a.name] = ("reg", argregs[i], _type_size(a.type))
+                sz = _type_size(a.type)
+                if a.name in preserve:
+                    kreg = mba.alloc_kreg(max(sz, 8))
+                    arg_preserve.append((kreg, argregs[i], max(sz, 8)))
+                    vmap[a.name] = ("reg", kreg, sz)
+                else:
+                    vmap[a.name] = ("reg", argregs[i], sz)
                 continue
             # Incoming param 7+ (SysV): the caller spilled it to its stack; after
             # the standard prologue it rests in the host frame's incoming-args
@@ -2791,7 +2807,8 @@ class LLVMDropConverter:
         if len(list(fn.blocks)) == 1 and not has_call:
             self._build_singleblock(mba, fn, retb, eax, ds, vmap)
         else:
-            self._build_multiblock(mba, fn, retb, eax, ds, vmap)
+            self._build_multiblock(mba, fn, retb, eax, ds, vmap,
+                                   arg_preserve)
         mba.mark_chains_dirty()
 
     def _build_singleblock(self, mba, fn, retb, eax, ds, vmap) -> None:
@@ -2872,6 +2889,34 @@ class LLVMDropConverter:
         return False
 
     @staticmethod
+    def _names_used_across_call(fn, names) -> set:
+        """Subset of ``names`` (incoming-arg SSA names) whose VALUE is consumed
+        at-or-after a ``call`` in the function's linearised instruction order.
+
+        An incoming integer argument lives in a SysV caller-saved register
+        (rdi/rsi/...); a ``call`` clobbers every such register (its own argument
+        setup overwrites them). When a function reads an arg's value AFTER a call
+        -- as the SROA-promoted ``remember_copied`` reads ``name`` (rdi) for
+        ``xstrdup`` only AFTER ``xmalloc`` whose ``mov 0x18, rdi`` arg-setup
+        already clobbered rdi -- the raw arg register is stale. Such args need a
+        STABLE home (a kreg the decompiler can place in a callee-saved register /
+        stack), mirroring the lifter's plain-IR spill-to-alloca that the SROA
+        fallback optimised away. Args used only BEFORE any call keep the raw
+        register (no clobber, no copy -- inert)."""
+        if not names:
+            return set()
+        seen_call = False
+        out: set = set()
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                for op in ins.operands:
+                    if seen_call and op.name in names:
+                        out.add(op.name)
+                if ins.opcode == "call":
+                    seen_call = True
+        return out
+
+    @staticmethod
     def _callee_is_noreturn(ins) -> bool:
         """True if the call's DIRECT callee is __noreturn (xalloc_die/abort/...).
         Such a call ends its block with NO successor (BLT_0WAY) and everything
@@ -2917,7 +2962,8 @@ class LLVMDropConverter:
         segs.append(cur)
         return segs
 
-    def _build_multiblock(self, mba, fn, retb, eax, ds, vmap) -> None:
+    def _build_multiblock(self, mba, fn, retb, eax, ds, vmap,
+                          arg_preserve=None) -> None:
         """One microcode block per SEGMENT (an LLVM block split at calls).
         A call-segment is a BLT_1WAY tail that falls through to its continuation;
         the terminal segment carries the LLVM terminator. Conditional ``br``
@@ -3031,11 +3077,32 @@ class LLVMDropConverter:
                     phi_kreg[pname] = (kreg, sz)
                     vmap[pname] = ("reg", kreg, sz)
 
+        # Preserve clobbered reg args: copy each incoming arg register that is
+        # read across a call into its stable kreg at the ENTRY block head, BEFORE
+        # any value emission (so the first call's arg-setup overwrites the raw
+        # register, not the saved kreg). The decompiler propagates the kreg away
+        # when nothing clobbers the source register (inert for non-clobbered
+        # args). vmap already points each preserved arg at its kreg.
+        if arg_preserve:
+            entry_blk = mba.get_mblock(plan[0]["code"])
+            anchor = None
+            for kreg, argreg, sz in arg_preserve:
+                mv = hx.minsn_t(ea)
+                mv.opcode = hx.m_mov
+                mv.l.make_reg(argreg, sz)
+                mv.d.make_reg(kreg, sz)
+                entry_blk.insert_into_block(mv, anchor)
+                anchor = mv
+
         # PASS A: per segment, capture the previous call's result, emit value
         # instructions, then (for a call-segment) the call tail + fall-through.
         for e in plan:
             blk = mba.get_mblock(e["code"])
             anchor = None
+            if e is plan[0] and arg_preserve:
+                # The entry block already holds the arg-preservation copies; emit
+                # this segment's values AFTER them (not at the block head).
+                anchor = entry_blk.tail
             if (e["prev_call"] is not None
                     and str(e["prev_call"].type) != "void"
                     and self._value_used(e["prev_call"])):
