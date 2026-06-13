@@ -45,6 +45,79 @@ FS_SEGMENT_SIZE = 0x10000  # 64KB
 # Default fallback value for float extraction failures
 DEFAULT_FLOAT_VALUE = 1.0
 
+# Floating-point compare opcode -> (ordered?, cmpop) for LLVM ``fcmp``.
+#
+# The decompiler REUSES the integer set/jump opcodes for FPU compares, flagged by
+# ``minsn_t.is_fpinsn()`` (SDK ``*F`` marker on m_setp/m_setnz/m_setz/m_setae/m_setb/
+# m_seta/m_setbe and the matching m_j* jumps). On x86 a NaN operand of ``ucomiss``
+# sets CF=ZF=PF=1, so the carry-based codes are ASYMMETRIC w.r.t. ordering:
+#   ja / jae  (CF=0[/&ZF=0])  -> taken ONLY when ordered      -> ogt / oge
+#   jb / jbe  (CF=1[|ZF=1])   -> taken when less-or UNORDERED  -> ult / ule
+#   jz        (ZF=1)          -> equal or UNORDERED            -> ueq
+#   jnz       (ZF=0)          -> ordered and not-equal         -> one
+# Verified against LLVM's own x86 backend (``llc -mtriple=x86_64`` of each ``fcmp``
+# predicate): ogt->seta, oge->setae, ult->setb, ule->setbe, ueq->sete, one->setne.
+# This is the polarity the int-cast+icmp path silently destroyed (it truncated both
+# float operands to int and compared the bit patterns), inverting compares such as
+# ``growth_threshold > 0.1`` into ``(unsigned)0.1`` == 0 nonsense. The OPCODE (not the
+# generic cmpop string) decides ordered-vs-unordered, so this map is keyed by opcode.
+def _fp_cmp_predicate_table():
+    hx = ida_hexrays
+    return {
+        hx.m_seta: (True, ">"),    # ogt
+        hx.m_ja: (True, ">"),
+        hx.m_setae: (True, ">="),  # oge
+        hx.m_jae: (True, ">="),
+        hx.m_setb: (False, "<"),   # ult
+        hx.m_jb: (False, "<"),
+        hx.m_setbe: (False, "<="),  # ule
+        hx.m_jbe: (False, "<="),
+        hx.m_setz: (False, "=="),  # ueq
+        hx.m_jz: (False, "=="),
+        hx.m_setnz: (True, "!="),  # one
+        hx.m_jnz: (True, "!="),
+    }
+
+
+_FP_CMP_PREDICATE = _fp_cmp_predicate_table()
+
+
+def _fp_compare(builder, l, r, ida_insn):
+    """Emit an LLVM ``fcmp`` for a floating-point microcode compare, or ``None`` if
+    the operands are not float / the opcode has no FP form. ``l`` and ``r`` are the
+    lifted operand values; the ordered-vs-unordered predicate is chosen from the
+    microcode OPCODE (see ``_FP_CMP_PREDICATE``)."""
+    if l is None or r is None:
+        return None
+    l_fp = isinstance(getattr(l, "type", None), (ir.FloatType, ir.DoubleType))
+    r_fp = isinstance(getattr(r, "type", None), (ir.FloatType, ir.DoubleType))
+    if not (l_fp or r_fp):
+        return None
+    entry = _FP_CMP_PREDICATE.get(ida_insn.opcode)
+    if entry is None:
+        return None
+    # Promote operands to a common float type so an asymmetric pair (a double field
+    # compared against a float literal) is WIDENED, never truncated -- the bug being
+    # fixed truncated BOTH sides to int. The wider float type wins (double > float);
+    # an int operand (e.g. a constant 0 lifted as i32) is converted to that float
+    # type. Width is taken from the actual lifted operand IR types when float (so no
+    # precision is lost vs the load), falling back to the microcode operand size.
+    def _fp_bits(val, mc_size):
+        t = getattr(val, "type", None)
+        if isinstance(t, ir.DoubleType):
+            return 64
+        if isinstance(t, ir.FloatType):
+            return 32
+        return mc_size * 8
+
+    typ = float_type(max(_fp_bits(l, ida_insn.l.size), _fp_bits(r, ida_insn.r.size)) // 8)
+    l = typecast(l, typ, builder)
+    r = typecast(r, typ, builder)
+    ordered, cmpop = entry
+    if ordered:
+        return builder.fcmp_ordered(cmpop, l, r)
+    return builder.fcmp_unordered(cmpop, l, r)
+
 # Fidelity ledger: each lossy lift decision is emitted here and persisted
 # asynchronously to sqlite3 (see idavator.persistence). The store subscribes to
 # this emitter in lift_binary_to_llvm and drains on stop().
@@ -1527,6 +1600,18 @@ def _handle_comparison(l, r, d, cmp_op, blk, builder, ida_insn, signed=False):
     if l is None or r is None:
         logging.warning("comparison operand lift failed for instruction %s", ida_insn)
         return None
+    # A floating-point compare (``is_fpinsn`` set, FP operand) must emit ``fcmp`` with
+    # the correct ordered/unordered predicate -- NOT cast both floats to int and
+    # ``icmp`` them, which truncates the values and inverts the result.
+    if ida_insn.is_fpinsn():
+        fcond = _fp_compare(builder, l, r, ida_insn)
+        if fcond is not None:
+            result = builder.select(
+                fcond,
+                ir.IntType(ida_insn.d.size * 8)(1),
+                ir.IntType(ida_insn.d.size * 8)(0),
+            )
+            return _store_as(result, d, blk, builder)
     l = typecast(l, ir.IntType(ida_insn.l.size * 8), builder)
     r = typecast(r, ir.IntType(ida_insn.r.size * 8), builder)
 
@@ -1550,6 +1635,12 @@ def _handle_conditional_jump(
     if l is None or r is None:
         logging.warning("jump operand lift failed for instruction %s", ida_insn)
         return None
+    # FP conditional jump: branch on an ``fcmp`` with the right ordered/unordered
+    # predicate instead of truncating both float operands to int and ``icmp``-ing.
+    if ida_insn.is_fpinsn():
+        fcond = _fp_compare(builder, l, r, ida_insn)
+        if fcond is not None:
+            return builder.cbranch(fcond, d, next_blk)
     l = typecast(l, ir.IntType(ida_insn.l.size * 8), builder)
     r = typecast(r, ir.IntType(ida_insn.r.size * 8), builder)
 

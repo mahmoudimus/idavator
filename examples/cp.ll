@@ -8571,119 +8571,103 @@ define i1 @"check_tuning"(%"Hash_table"* %".1")
   %".8" = bitcast %"Hash_table"* %".7" to i8*
   %".9" = getelementptr i8, i8* %".8", i64 40
   %".10" = bitcast i8* %".9" to %"Hash_table"*
-  %".11" = bitcast %"Hash_table"* %".10" to i64*
-  %".12" = load i64, i64* %".11"
-  %".13" = bitcast %"Hash_tuning"** %"tuning" to i64*
-  store i64 %".12", i64* %".13"
-  %".15" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".16" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
-  %".17" = ptrtoint %"Hash_tuning"* %".15" to i64
-  %".18" = ptrtoint float* %".16" to i64
-  %".19" = icmp ne i64 %".17", %".18"
-  br i1 %".19", label %"@3", label %"@2"
+  %".11" = bitcast %"Hash_table"* %".10" to %"Hash_tuning"**
+  %".12" = load %"Hash_tuning"*, %"Hash_tuning"** %".11"
+  store %"Hash_tuning"* %".12", %"Hash_tuning"** %"tuning"
+  %".14" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".15" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
+  %".16" = ptrtoint %"Hash_tuning"* %".14" to i64
+  %".17" = ptrtoint float* %".15" to i64
+  %".18" = icmp ne i64 %".16", %".17"
+  br i1 %".18", label %"@3", label %"@2"
 "@2":
-  %".21" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".21"
+  %".20" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".20"
   br label %"@12"
 "@3":
-  %".24" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".25" = bitcast %"Hash_tuning"* %".24" to i8*
-  %".26" = getelementptr i8, i8* %".25", i64 8
-  %".27" = bitcast i8* %".26" to %"Hash_tuning"*
-  %".28" = bitcast %"Hash_tuning"* %".27" to double*
-  %".29" = load double, double* %".28"
-  %".30" = fptoui double %".29" to i32
-  %".31" = fptoui float 0x3fb99999a0000000 to i32
-  %".32" = icmp ule i32 %".30", %".31"
-  br i1 %".32", label %"@11", label %"@4"
+  %".23" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".24" = bitcast %"Hash_tuning"* %".23" to i8*
+  %".25" = getelementptr i8, i8* %".24", i64 8
+  %".26" = bitcast i8* %".25" to %"Hash_tuning"*
+  %".27" = bitcast %"Hash_tuning"* %".26" to float*
+  %".28" = load float, float* %".27"
+  %".29" = fcmp ule float %".28", 0x3fb99999a0000000
+  br i1 %".29", label %"@11", label %"@4"
 "@4":
-  %".34" = fsub float 0x3ff0000000000000, 0x3fb99999a0000000
-  %".35" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".36" = bitcast %"Hash_tuning"* %".35" to i8*
-  %".37" = getelementptr i8, i8* %".36", i64 8
-  %".38" = bitcast i8* %".37" to %"Hash_tuning"*
-  %".39" = bitcast %"Hash_tuning"* %".38" to double*
-  %".40" = load double, double* %".39"
-  %".41" = fptoui double %".40" to i32
-  %".42" = fptoui float %".34" to i32
-  %".43" = icmp ule i32 %".42", %".41"
-  br i1 %".43", label %"@11", label %"@5"
+  %".31" = fsub float 0x3ff0000000000000, 0x3fb99999a0000000
+  %".32" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".33" = bitcast %"Hash_tuning"* %".32" to i8*
+  %".34" = getelementptr i8, i8* %".33", i64 8
+  %".35" = bitcast i8* %".34" to %"Hash_tuning"*
+  %".36" = bitcast %"Hash_tuning"* %".35" to float*
+  %".37" = load float, float* %".36"
+  %".38" = fcmp ule float %".31", %".37"
+  br i1 %".38", label %"@11", label %"@5"
 "@5":
-  %".45" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".46" = bitcast %"Hash_tuning"* %".45" to i8*
-  %".47" = getelementptr i8, i8* %".46", i64 12
-  %".48" = bitcast i8* %".47" to %"Hash_tuning"*
-  %".49" = bitcast %"Hash_tuning"* %".48" to double*
-  %".50" = load double, double* %".49"
-  %".51" = fptoui double %".50" to i32
-  %".52" = fadd float 0x3fb99999a0000000, 0x3ff0000000000000
-  %".53" = fptoui float %".52" to i32
-  %".54" = icmp ule i32 %".51", %".53"
-  br i1 %".54", label %"@11", label %"@6"
+  %".40" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".41" = bitcast %"Hash_tuning"* %".40" to i8*
+  %".42" = getelementptr i8, i8* %".41", i64 12
+  %".43" = bitcast i8* %".42" to %"Hash_tuning"*
+  %".44" = bitcast %"Hash_tuning"* %".43" to float*
+  %".45" = load float, float* %".44"
+  %".46" = fadd float 0x3fb99999a0000000, 0x3ff0000000000000
+  %".47" = fcmp ule float %".45", %".46"
+  br i1 %".47", label %"@11", label %"@6"
 "@6":
-  %".56" = bitcast %"Hash_tuning"** %"tuning" to double*
-  %".57" = load double, double* %".56"
-  %".58" = fptoui double %".57" to i32
-  %".59" = fptoui float              0x0 to i32
-  %".60" = icmp ult i32 %".58", %".59"
-  br i1 %".60", label %"@11", label %"@7"
+  %".49" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".50" = bitcast %"Hash_tuning"* %".49" to float*
+  %".51" = load float, float* %".50"
+  %".52" = fcmp ult float %".51",              0x0
+  br i1 %".52", label %"@11", label %"@7"
 "@7":
-  %".62" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".63" = bitcast %"Hash_tuning"* %".62" to i8*
-  %".64" = getelementptr i8, i8* %".63", i64 4
-  %".65" = bitcast i8* %".64" to %"Hash_tuning"*
-  %".66" = bitcast %"Hash_tuning"* %".65" to double*
-  %".67" = load double, double* %".66"
-  %".68" = fptoui double %".67" to i32
-  %".69" = bitcast %"Hash_tuning"** %"tuning" to double*
-  %".70" = load double, double* %".69"
-  %".71" = fptoui double %".70" to i32
-  %".72" = uitofp i32 %".71" to float
-  %".73" = fadd float %".72", 0x3fb99999a0000000
-  %".74" = fptoui float %".73" to i32
-  %".75" = icmp ule i32 %".68", %".74"
-  br i1 %".75", label %"@11", label %"@8"
+  %".54" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".55" = bitcast %"Hash_tuning"* %".54" to i8*
+  %".56" = getelementptr i8, i8* %".55", i64 4
+  %".57" = bitcast i8* %".56" to %"Hash_tuning"*
+  %".58" = bitcast %"Hash_tuning"* %".57" to float*
+  %".59" = load float, float* %".58"
+  %".60" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".61" = bitcast %"Hash_tuning"* %".60" to float*
+  %".62" = load float, float* %".61"
+  %".63" = fadd float %".62", 0x3fb99999a0000000
+  %".64" = fcmp ule float %".59", %".63"
+  br i1 %".64", label %"@11", label %"@8"
 "@8":
-  %".77" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".78" = bitcast %"Hash_tuning"* %".77" to i8*
-  %".79" = getelementptr i8, i8* %".78", i64 4
-  %".80" = bitcast i8* %".79" to %"Hash_tuning"*
-  %".81" = bitcast %"Hash_tuning"* %".80" to double*
-  %".82" = load double, double* %".81"
-  %".83" = fptoui double %".82" to i32
-  %".84" = fptoui float 0x3ff0000000000000 to i32
-  %".85" = icmp ugt i32 %".83", %".84"
-  br i1 %".85", label %"@11", label %"@9"
+  %".66" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".67" = bitcast %"Hash_tuning"* %".66" to i8*
+  %".68" = getelementptr i8, i8* %".67", i64 4
+  %".69" = bitcast i8* %".68" to %"Hash_tuning"*
+  %".70" = bitcast %"Hash_tuning"* %".69" to float*
+  %".71" = load float, float* %".70"
+  %".72" = fcmp ogt float %".71", 0x3ff0000000000000
+  br i1 %".72", label %"@11", label %"@9"
 "@9":
-  %".87" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".88" = bitcast %"Hash_tuning"* %".87" to i8*
-  %".89" = getelementptr i8, i8* %".88", i64 8
-  %".90" = bitcast i8* %".89" to %"Hash_tuning"*
-  %".91" = bitcast %"Hash_tuning"* %".90" to double*
-  %".92" = load double, double* %".91"
-  %".93" = fptoui double %".92" to i32
-  %".94" = bitcast %"Hash_tuning"** %"tuning" to double*
-  %".95" = load double, double* %".94"
-  %".96" = fptoui double %".95" to i32
-  %".97" = uitofp i32 %".96" to float
-  %".98" = fadd float %".97", 0x3fb99999a0000000
-  %".99" = fptoui float %".98" to i32
-  %".100" = icmp ule i32 %".93", %".99"
-  br i1 %".100", label %"@11", label %"@10"
+  %".74" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".75" = bitcast %"Hash_tuning"* %".74" to i8*
+  %".76" = getelementptr i8, i8* %".75", i64 8
+  %".77" = bitcast i8* %".76" to %"Hash_tuning"*
+  %".78" = bitcast %"Hash_tuning"* %".77" to float*
+  %".79" = load float, float* %".78"
+  %".80" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".81" = bitcast %"Hash_tuning"* %".80" to float*
+  %".82" = load float, float* %".81"
+  %".83" = fadd float %".82", 0x3fb99999a0000000
+  %".84" = fcmp ule float %".79", %".83"
+  br i1 %".84", label %"@11", label %"@10"
 "@10":
-  %".102" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".102"
+  %".86" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".86"
   br label %"@12"
 "@11":
-  %".105" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
-  %".106" = load %"Hash_table"*, %"Hash_table"** %"table"
-  %".107" = bitcast %"Hash_table"* %".106" to i8*
-  %".108" = getelementptr i8, i8* %".107", i64 40
-  %".109" = bitcast i8* %".108" to %"Hash_table"*
-  %".110" = bitcast %"Hash_table"* %".109" to float**
-  store float* %".105", float** %".110"
-  %".112" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".112"
+  %".89" = getelementptr %"Hash_tuning", %"Hash_tuning"* @"default_tuning", i32 0, i32 0
+  %".90" = load %"Hash_table"*, %"Hash_table"** %"table"
+  %".91" = bitcast %"Hash_table"* %".90" to i8*
+  %".92" = getelementptr i8, i8* %".91", i64 40
+  %".93" = bitcast i8* %".92" to %"Hash_table"*
+  %".94" = bitcast %"Hash_table"* %".93" to float**
+  store float* %".89", float** %".94"
+  %".96" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".96"
   br label %"@12"
 "@12":
   %".4" = load i1, i1* %"funcresult"
@@ -8724,102 +8708,97 @@ define i64 @"compute_bucket_size"(i64 %".1", %"Hash_tuning"* %".2")
   %".23" = bitcast i64* %"candidate" to i32*
   %".24" = load i32, i32* %".23"
   %".25" = sitofp i32 %".24" to float
+  store float %".25", float* %"v2"
   br label %"@5"
 "@4":
-  %".27" = bitcast i64* %"candidate" to i8*
-  %".28" = load i8, i8* %".27"
-  %".29" = and i8 %".28", 1
-  %".30" = zext i8 %".29" to i32
-  %".31" = load i64, i64* %"candidate"
-  %".32" = zext i8 1 to i64
-  %".33" = ashr i64 %".31", %".32"
-  %".34" = trunc i64 %".33" to i32
-  %".35" = or i32 %".30", %".34"
-  %".36" = sitofp i32 %".35" to float
-  %".37" = bitcast i64* %"candidate" to i8*
-  %".38" = load i8, i8* %".37"
-  %".39" = and i8 %".38", 1
-  %".40" = zext i8 %".39" to i32
-  %".41" = load i64, i64* %"candidate"
-  %".42" = zext i8 1 to i64
-  %".43" = ashr i64 %".41", %".42"
-  %".44" = trunc i64 %".43" to i32
-  %".45" = or i32 %".40", %".44"
-  %".46" = sitofp i32 %".45" to float
-  %".47" = fadd float %".36", %".46"
-  store float %".47", float* %"v2"
+  %".28" = bitcast i64* %"candidate" to i8*
+  %".29" = load i8, i8* %".28"
+  %".30" = and i8 %".29", 1
+  %".31" = zext i8 %".30" to i32
+  %".32" = load i64, i64* %"candidate"
+  %".33" = zext i8 1 to i64
+  %".34" = ashr i64 %".32", %".33"
+  %".35" = trunc i64 %".34" to i32
+  %".36" = or i32 %".31", %".35"
+  %".37" = sitofp i32 %".36" to float
+  %".38" = bitcast i64* %"candidate" to i8*
+  %".39" = load i8, i8* %".38"
+  %".40" = and i8 %".39", 1
+  %".41" = zext i8 %".40" to i32
+  %".42" = load i64, i64* %"candidate"
+  %".43" = zext i8 1 to i64
+  %".44" = ashr i64 %".42", %".43"
+  %".45" = trunc i64 %".44" to i32
+  %".46" = or i32 %".41", %".45"
+  %".47" = sitofp i32 %".46" to float
+  %".48" = fadd float %".37", %".47"
+  store float %".48", float* %"v2"
   br label %"@5"
 "@5":
-  %".50" = load float, float* %"v2"
-  %".51" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
-  %".52" = bitcast %"Hash_tuning"* %".51" to i8*
-  %".53" = getelementptr i8, i8* %".52", i64 8
-  %".54" = bitcast i8* %".53" to %"Hash_tuning"*
-  %".55" = bitcast %"Hash_tuning"* %".54" to double*
-  %".56" = load double, double* %".55"
-  %".57" = fptoui double %".56" to i32
-  %".58" = uitofp i32 %".57" to float
-  %".59" = fdiv float %".50", %".58"
-  store float %".59", float* %"new_candidate"
-  %".61" = load float, float* %"new_candidate"
-  %".62" = fptoui float %".61" to i32
-  %".63" = fptoui float 0x43f0000000000000 to i32
-  %".64" = icmp ult i32 %".62", %".63"
-  br i1 %".64", label %"@7", label %"@6"
+  %".51" = load float, float* %"v2"
+  %".52" = load %"Hash_tuning"*, %"Hash_tuning"** %"tuning"
+  %".53" = bitcast %"Hash_tuning"* %".52" to i8*
+  %".54" = getelementptr i8, i8* %".53", i64 8
+  %".55" = bitcast i8* %".54" to %"Hash_tuning"*
+  %".56" = bitcast %"Hash_tuning"* %".55" to float*
+  %".57" = load float, float* %".56"
+  %".58" = fdiv float %".51", %".57"
+  store float %".58", float* %"new_candidate"
+  %".60" = load float, float* %"new_candidate"
+  %".61" = fcmp ult float %".60", 0x43f0000000000000
+  br i1 %".61", label %"@7", label %"@6"
 "@6":
   store i64 0, i64* %"funcresult"
   br label %"@15"
 "@7":
-  %".68" = load float, float* %"new_candidate"
-  %".69" = fptoui float %".68" to i32
-  %".70" = fptoui float 0x43e0000000000000 to i32
-  %".71" = icmp uge i32 %".69", %".70"
-  br i1 %".71", label %"@9", label %"@8"
+  %".65" = load float, float* %"new_candidate"
+  %".66" = fcmp oge float %".65", 0x43e0000000000000
+  br i1 %".66", label %"@9", label %"@8"
 "@8":
-  %".73" = load float, float* %"new_candidate"
-  %".74" = fptosi float %".73" to i32
-  %".75" = zext i32 %".74" to i64
-  store i64 %".75", i64* %"candidatea"
+  %".68" = load float, float* %"new_candidate"
+  %".69" = fptosi float %".68" to i32
+  %".70" = zext i32 %".69" to i64
+  store i64 %".70", i64* %"candidatea"
   br label %"@10"
 "@9":
-  %".78" = load float, float* %"new_candidate"
-  %".79" = fsub float %".78", 0x43e0000000000000
-  %".80" = fptosi float %".79" to i32
-  %".81" = zext i32 %".80" to i64
-  %".82" = xor i64 %".81", 9223372036854775808
-  store i64 %".82", i64* %"candidatea"
+  %".73" = load float, float* %"new_candidate"
+  %".74" = fsub float %".73", 0x43e0000000000000
+  %".75" = fptosi float %".74" to i32
+  %".76" = zext i32 %".75" to i64
+  %".77" = xor i64 %".76", 9223372036854775808
+  store i64 %".77", i64* %"candidatea"
   br label %"@10"
 "@10":
-  %".85" = load i64, i64* %"candidatea"
-  %".86" = call i64 @"next_prime"(i64 %".85")
-  store i64 %".86", i64* %"candidateb"
-  %".88" = load i64, i64* %"candidateb"
-  %".89" = zext i8 61 to i64
-  %".90" = ashr i64 %".88", %".89"
-  %".91" = bitcast i1* %"v4" to i8*
-  %".92" = icmp ne i64 %".90", 0
-  %".93" = select  i1 %".92", i8 1, i8 0
-  store i8 %".93", i8* %".91"
-  %".95" = load i64, i64* %"candidateb"
-  %".96" = and i64 %".95", 1152921504606846976
-  %".97" = icmp eq i64 %".96", 0
-  br i1 %".97", label %"@12", label %"@11"
+  %".80" = load i64, i64* %"candidatea"
+  %".81" = call i64 @"next_prime"(i64 %".80")
+  store i64 %".81", i64* %"candidateb"
+  %".83" = load i64, i64* %"candidateb"
+  %".84" = zext i8 61 to i64
+  %".85" = ashr i64 %".83", %".84"
+  %".86" = bitcast i1* %"v4" to i8*
+  %".87" = icmp ne i64 %".85", 0
+  %".88" = select  i1 %".87", i8 1, i8 0
+  store i8 %".88", i8* %".86"
+  %".90" = load i64, i64* %"candidateb"
+  %".91" = and i64 %".90", 1152921504606846976
+  %".92" = icmp eq i64 %".91", 0
+  br i1 %".92", label %"@12", label %"@11"
 "@11":
-  %".99" = bitcast i1* %"v4" to i8*
-  store i8 1, i8* %".99"
+  %".94" = bitcast i1* %"v4" to i8*
+  store i8 1, i8* %".94"
   br label %"@12"
 "@12":
-  %".102" = bitcast i1* %"v4" to i8*
-  %".103" = load i8, i8* %".102"
-  %".104" = and i8 %".103", 1
-  %".105" = icmp eq i8 %".104", 0
-  br i1 %".105", label %"@14", label %"@13"
+  %".97" = bitcast i1* %"v4" to i8*
+  %".98" = load i8, i8* %".97"
+  %".99" = and i8 %".98", 1
+  %".100" = icmp eq i8 %".99", 0
+  br i1 %".100", label %"@14", label %"@13"
 "@13":
   store i64 0, i64* %"funcresult"
   br label %"@15"
 "@14":
-  %".109" = load i64, i64* %"candidateb"
-  store i64 %".109", i64* %"funcresult"
+  %".104" = load i64, i64* %"candidateb"
+  store i64 %".104", i64* %"funcresult"
   br label %"@15"
 "@15":
   %".6" = load i64, i64* %"funcresult"

@@ -86,6 +86,29 @@ _FPU_SET = {
     "eq": hx.m_setz, "ne": hx.m_setnz,
 }
 
+# An LLVM ``fcmp`` predicate -> the FPU conditional jump that branches when it
+# holds (with set_fpinsn). The ida2llvm lifter now emits ``fcmp`` directly for a
+# native FLOAT compare (the int-cast+icmp path destroyed the ordering); this map is
+# the EXACT INVERSE of the lifter's opcode->fcmp table, so the FP compare survives
+# the IR round-trip back to the original ``jbe.fpu``/``ja.fpu`` microcode. x86
+# NaN-aware semantics: an ORDERED predicate (ogt/oge) uses the carry-clear jcc
+# (ja/jae), an UNORDERED one (ult/ule/ueq) the carry-set jcc (jb/jbe/jz); ``one``
+# (ordered not-equal) is the ZF=0 jump (jnz). Predicates the lifter never emits
+# (olt/ole/ugt/uge/oeq/une/ord/uno) are mapped for completeness/robustness using
+# the same NaN rules so a re-lifted body is still lowered correctly.
+_FCMP_JMP = {
+    "ogt": hx.m_ja, "oge": hx.m_jae, "olt": hx.m_jb, "ole": hx.m_jbe,
+    "ugt": hx.m_ja, "uge": hx.m_jae, "ult": hx.m_jb, "ule": hx.m_jbe,
+    "oeq": hx.m_jz, "ueq": hx.m_jz, "one": hx.m_jnz, "une": hx.m_jnz,
+}
+# Same predicate -> the FPU setcc (for an fcmp result consumed as a VALUE, e.g. a
+# ``select`` condition or short-circuit boolean arm).
+_FCMP_SET = {
+    "ogt": hx.m_seta, "oge": hx.m_setae, "olt": hx.m_setb, "ole": hx.m_setbe,
+    "ugt": hx.m_seta, "uge": hx.m_setae, "ult": hx.m_setb, "ule": hx.m_setbe,
+    "oeq": hx.m_setz, "ueq": hx.m_setz, "one": hx.m_setnz, "une": hx.m_setnz,
+}
+
 # An LLVM floating-point CONSTANT operand stringifies as ``<fpty> 0xHHHH...``
 # where the hex is the IEEE-754 DOUBLE bit-pattern of the value (LLVM stores ALL
 # fp literals as doubles in textual IR, even ``float``-typed ones). Capture the
@@ -697,6 +720,22 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             vmap[nm] = ("reg", kreg, 1)
             return ("reg", kreg, 1), mi
+        if nm and nm in self._fcmp_defs and nm not in vmap:
+            # An fcmp result consumed as a VALUE (select cond / short-circuit arm) ->
+            # the FPU setcc on the float operands (set_fpinsn), matching native's
+            # ``v = (a <pred> b)`` rather than a truncated integer compare.
+            fpred, fops = self._fcmp_defs[nm]
+            fsz = _type_size(fops[0].type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = _FCMP_SET.get(fpred, hx.m_setnz)
+            self._fill(mi.l, self._desc(fops[0], vmap, fsz))
+            self._fill(mi.r, self._desc(fops[1], vmap, fsz))
+            mi.set_fpinsn()
+            kreg = mba.alloc_kreg(1)
+            mi.d.make_reg(kreg, 1)
+            blk.insert_into_block(mi, anchor)
+            vmap[nm] = ("reg", kreg, 1)
+            return ("reg", kreg, 1), mi
         s = str(operand).strip()
         if s.split()[-1:] == ["true"]:
             return ("num", 1, 1), anchor
@@ -1089,8 +1128,10 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             vmap[ins.name] = ("reg", kreg, 8)
             return mi
-        if op == "icmp":
-            # Folded into the branch (see _build_multiblock); no value emitted.
+        if op in ("icmp", "fcmp"):
+            # Folded into the branch (see _build_multiblock); no value emitted. An
+            # fcmp consumed as a value (select/short-circuit) is materialised on
+            # demand by _emit_i1 (FPU setcc), not here.
             return anchor
         if op == "select":
             return self._emit_select(mba, blk, anchor, ea, ins, vmap)
@@ -1179,9 +1220,11 @@ class LLVMDropConverter:
                                          ("reg", nk, 1), bd, vmap, out_sz)
 
         # BOOLEAN MATERIALISE: select c, 1, 0  ==  zext c.
-        td = self._desc(tval, vmap, out_sz) if tval.name not in self._icmp_defs \
+        td = self._desc(tval, vmap, out_sz) \
+            if tval.name not in self._icmp_defs and tval.name not in self._fcmp_defs \
             else None
-        fd = self._desc(fval, vmap, out_sz) if fval.name not in self._icmp_defs \
+        fd = self._desc(fval, vmap, out_sz) \
+            if fval.name not in self._icmp_defs and fval.name not in self._fcmp_defs \
             else None
         if (td and td[0] == "num" and td[1] == 1
                 and fd and fd[0] == "num" and fd[1] == 0):
@@ -2628,12 +2671,22 @@ class LLVMDropConverter:
         # floats, the br-fold recovers the original FPU compare (jcc + set_fpinsn)
         # on the pre-conversion floats -- restoring native's `v5 > (float)(...)`.
         self._fp_cvt_src = {}
+        # fcmp defs (name -> (pred, operands)): the lifter emits a real ``fcmp`` for a
+        # native FLOAT compare; the br-fold lowers it straight to the FPU jcc
+        # (``jbe.fpu`` etc., set_fpinsn) on the float operands, and a select/short-
+        # circuit consumer materialises it via the FPU setcc. This is the direct
+        # successor of the legacy fptoui+icmp recovery (_fp_compare_operands).
+        self._fcmp_defs = {}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.opcode == "icmp":
                     pred = re.search(r"icmp\s+(\w+)\s", str(ins).strip())
                     self._icmp_defs[ins.name] = (
                         pred.group(1) if pred else "ne", list(ins.operands))
+                elif ins.opcode == "fcmp":
+                    pred = re.search(r"fcmp\s+(\w+)\s", str(ins).strip())
+                    self._fcmp_defs[ins.name] = (
+                        pred.group(1) if pred else "une", list(ins.operands))
                 elif ins.opcode in ("fptoui", "fptosi"):
                     fsrc = list(ins.operands)[0]
                     self._fp_cvt_src[ins.name] = (fsrc, _type_size(fsrc.type))
@@ -2987,7 +3040,18 @@ class LLVMDropConverter:
                 false_s = name_serial[ops[1].name]
                 true_s = name_serial[ops[2].name]
                 mi = hx.minsn_t(ea)
-                if cond.name in icmp_map:
+                if cond.name in self._fcmp_defs:
+                    # Native FLOAT compare lifted as a real ``fcmp`` -> the FPU jcc
+                    # (jbe.fpu/ja.fpu/...) on the float operands, set_fpinsn. The
+                    # fcmp predicate already encodes ordered/unordered, so it maps
+                    # straight to the carry/zero jcc family (_FCMP_JMP).
+                    fpred, fops = self._fcmp_defs[cond.name]
+                    fsz = _type_size(fops[0].type)
+                    mi.opcode = _FCMP_JMP.get(fpred, hx.m_jnz)
+                    self._fill(mi.l, self._desc(fops[0], vmap, fsz))
+                    self._fill(mi.r, self._desc(fops[1], vmap, fsz))
+                    mi.set_fpinsn()
+                elif cond.name in icmp_map:
                     pred, iops = icmp_map[cond.name]
                     fpcmp = self._fp_compare_operands(iops)
                     if fpcmp is not None:
