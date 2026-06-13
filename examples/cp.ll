@@ -3387,8 +3387,9 @@ define i8* @"xalloc_die"()
   %".8" = load i32, i32* @"exit_failure"
   %".9" = bitcast i8** @"aS_1" to i8*
   %".10" = load i8*, i8** %"v0"
-  %".11" = call i8* (i32, i32, i8*, ...) @"error"(i32 %".8", i32 0, i8* %".9")
-  %".12" = call i8* @"abort"()
+  %".11" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i8*, ...)*
+  %".12" = call i8* (i32, i32, i8*, i8*, ...) %".11"(i32 %".8", i32 0, i8* %".9", i8* %".10")
+  %".13" = call i8* @"abort"()
   br label %"@2"
 "@2":
   %".2" = load i8*, i8** %"funcresult"
@@ -23460,30 +23461,32 @@ define i1 @"overwrite_ok"(%"cp_options"* %".1", i8* %".2", %"stat"* %".3")
   %".88" = load i64, i64* %"v3"
   %".89" = getelementptr [12 x i8], [12 x i8]* %"perms", i32 0, i32 1
   %".90" = ptrtoint i8* %".89" to i64
-  %".91" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".82", i8* %".83")
+  %".91" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, ...)*
+  %".92" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, ...) %".91"(%"FILE"* %".82", i8* %".83", i64 %".85", i64 %".87", i64 %".88", i64 %".90")
   br label %"@9"
 "@8":
-  %".93" = load i8*, i8** %"dst_name"
-  %".94" = call i8* @"quotearg_style"(i32 4, i8* %".93")
-  store i8* %".94", i8** %"v7"
-  %".96" = load i8*, i8** @"program_name"
-  store i8* %".96", i8** %"v8"
-  %".98" = getelementptr [19 x i8], [19 x i8]* @"aSOverwriteS", i32 0, i32 0
-  %".99" = call i8* @"gettext"(i8* %".98")
-  store i8* %".99", i8** %"v9"
-  %".101" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
-  %".102" = load i8*, i8** %"v9"
-  %".103" = bitcast i8** %"v8" to i64*
-  %".104" = load i64, i64* %".103"
-  %".105" = bitcast i8** %"v7" to i64*
-  %".106" = load i64, i64* %".105"
-  %".107" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".101", i8* %".102")
+  %".94" = load i8*, i8** %"dst_name"
+  %".95" = call i8* @"quotearg_style"(i32 4, i8* %".94")
+  store i8* %".95", i8** %"v7"
+  %".97" = load i8*, i8** @"program_name"
+  store i8* %".97", i8** %"v8"
+  %".99" = getelementptr [19 x i8], [19 x i8]* @"aSOverwriteS", i32 0, i32 0
+  %".100" = call i8* @"gettext"(i8* %".99")
+  store i8* %".100", i8** %"v9"
+  %".102" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
+  %".103" = load i8*, i8** %"v9"
+  %".104" = bitcast i8** %"v8" to i64*
+  %".105" = load i64, i64* %".104"
+  %".106" = bitcast i8** %"v7" to i64*
+  %".107" = load i64, i64* %".106"
+  %".108" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, ...)*
+  %".109" = call i32 (%"FILE"*, i8*, i64, i64, ...) %".108"(%"FILE"* %".102", i8* %".103", i64 %".105", i64 %".107")
   br label %"@9"
 "@9":
-  %".109" = call i1 @"yesno"()
-  %".110" = zext i1 %".109" to i8
-  %".111" = bitcast i1* %"funcresult" to i8*
-  store i8 %".110", i8* %".111"
+  %".111" = call i1 @"yesno"()
+  %".112" = zext i1 %".111" to i8
+  %".113" = bitcast i1* %"funcresult" to i8*
+  store i8 %".112", i8* %".113"
   br label %"@10"
 "@10":
   %".9" = load i1, i1* %"funcresult"

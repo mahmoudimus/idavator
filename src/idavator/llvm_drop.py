@@ -359,6 +359,16 @@ class LLVMDropConverter:
         self._ret_kreg = None        # kreg of a promoted scalar return slot, or None
         self._ret_phi = None         # name of a phi whose result feeds `ret`, or None
         self._icmp_defs = {}         # icmp SSA name -> (pred, [operands]) for select
+        self._fnptr_bitcast = {}     # bitcast-result SSA name -> underlying fn name
+        # (a ``bitcast @fn to <wider variadic>`` callee -- the lifter wraps a
+        # variadic call that carries surplus varargs in a function-pointer bitcast;
+        # _emit_call sees through it so the call routes as a DIRECT variadic call.)
+        self._ptr_origin_vals = set()  # i64 SSA names that are really pointers
+        # (a pointer-typed alloca read as i64, or a ptrtoint address) -- typed as
+        # ``void *`` for a variadic arg so it renders clean, not a signed cast.
+        self._array_elt_addr = set()  # ptrtoint-of-GEP-into-array-alloca SSA names
+        # (``&perms[1]``) -- a variadic arg of this kind fragments the array buffer
+        # under the forced prototype, so _emit_call_vararg declines (native fallback).
         self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
@@ -1455,24 +1465,45 @@ class LLVMDropConverter:
         callee = ops[-1]
         call_args = ops[:-1]
         _argregs, eax, _ds = self._abi()
+        # See through a function-pointer bitcast callee: the lifter wraps a
+        # variadic call that carries surplus varargs as ``%c = bitcast @fn to
+        # <wider variadic>; call %c(...)``, so the callee operand is the SSA
+        # bitcast result. Resolve it back to the underlying NAMED function so the
+        # routing below treats it as a DIRECT call (else `callee.name in vmap` is
+        # false but get_name_ea(".11")==BADADDR and it mis-routes / drops the call
+        # -> INTERR 50406). The wider call type is irrelevant: arg count + the real
+        # @fn prototype drive the variadic dispatch.
+        #
+        # ONLY for a result-DISCARDED call (the error/fprintf surplus-vararg form
+        # _emit_call_vararg models). A CONSUMED-result variadic call (e.g.
+        # ``v = openat(dirfd, path, oflag, mode)`` where mode rides as a vararg)
+        # has no result-discarded recipe in _emit_call_vararg -- keep the old
+        # behaviour (the bitcast callee falls through to the indirect-call path,
+        # which builds) rather than route it to a decline that loses the build.
+        is_fnptr_cast = (callee.name in self._fnptr_bitcast
+                         and not self._value_used(ins))
+        callee_name = (self._fnptr_bitcast[callee.name]
+                       if is_fnptr_cast else callee.name)
         # More integer args than ABI registers: the 7th+ ride on the stack. A
         # direct (named) callee whose prototype is known lets us build an
         # explicit mcallinfo (set_type does the SysV reg/stack classification),
         # so the stack args travel IN the call -- no SP-modeled pushes. Indirect
         # / unresolved callees fall through to their existing handling below.
-        if (len(call_args) > len(argregs) and callee.name not in vmap
-                and ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        if (len(call_args) > len(argregs) and callee_name not in vmap
+                and ida_name.get_name_ea(ida_idaapi.BADADDR, callee_name)
                 != ida_idaapi.BADADDR):
-            return self._emit_call_stackargs(mba, blk, anchor, ea, ins, vmap)
+            return self._emit_call_stackargs(
+                mba, blk, anchor, ea, ins, vmap, callee_name=callee_name)
         if len(call_args) > len(argregs):
             raise NotImplementedError(
                 "stack-passed call argument (more args than ABI registers)")
         # Callee: a direct named function/global -> gvar. An indirect call through
         # an SSA value (a function pointer, e.g. a loaded struct field) is lowered
-        # to Hex-Rays' native m_icall form -- see _emit_call_indirect.
-        if callee.name in vmap:
+        # to Hex-Rays' native m_icall form -- see _emit_call_indirect. A
+        # function-pointer bitcast is NOT indirect (it has a resolved name).
+        if callee_name in vmap and not is_fnptr_cast:
             return self._emit_call_indirect(mba, blk, anchor, ea, ins, vmap)
-        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee_name)
         if callee_ea == ida_idaapi.BADADDR:
             if callee.name in _HELPER_INTRINSICS:
                 arg_descs = [self._desc(a, vmap, _type_size(a.type))
@@ -1581,11 +1612,20 @@ class LLVMDropConverter:
         # The result-discarded modeling below has no recipe for a CONSUMED vararg
         # result -- defer (native fallback) rather than silently corrupt. Checked
         # first so no partial microcode is emitted on the unsupported path.
-        if self._value_used(ins):
-            raise NotImplementedError(
-                f"vararg call result consumed for @{ins.operands[-1].name}")
         ops = list(ins.operands)
         call_args = ops[:-1]
+        if self._value_used(ins):
+            raise NotImplementedError(
+                f"vararg call result consumed for @{ops[-1].name}")
+        # A stack-array element address (&perms[1]) passed as a vararg fragments the
+        # array buffer under the forced prototype (disjoint scalar lvars + Hex-Rays
+        # call tail-duplication); the bytes stay ABI-correct but the render diverges
+        # from native. DECLINE for a clean native fallback rather than ship a
+        # divergent-reading body. (Scoped to the variadic path -- non-vararg
+        # array-address uses are unaffected.)
+        if any(a.name in self._array_elt_addr for a in call_args):
+            raise NotImplementedError(
+                f"vararg stack-array element address for @{ops[-1].name}")
         _argregs, eax, _ds = self._abi()
         arg_reg_names = self._arg_reg_names()
         nfixed = ctif.get_nargs()
@@ -1639,8 +1679,14 @@ class LLVMDropConverter:
             asz = _type_size(a.type)
             fsz = asz if asz in (1, 2, 4, 8) else 8
             # A pointer operand renders cleanly as a ``void *`` vararg (else the
-            # value shows as a ``(signed __int64)`` reinterpret cast).
-            if getattr(a.type, "is_pointer", False) or str(a.type) == "ptr":
+            # value shows as a ``(signed __int64)`` reinterpret cast). The lifter
+            # also reads a pointer-typed alloca as an i64 (and materialises an
+            # address via ptrtoint) -- ``_ptr_origin_vals`` flags those so an 8-byte
+            # pointer-origin value is typed as a pointer, not int (matching native).
+            is_ptr = (getattr(a.type, "is_pointer", False)
+                      or str(a.type) == "ptr"
+                      or (a.name in self._ptr_origin_vals and asz == 8))
+            if is_ptr:
                 pt = ida_typeinf.tinfo_t()
                 pt.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_VOID))
                 arg.type = pt
@@ -1773,12 +1819,16 @@ class LLVMDropConverter:
         blk.insert_into_block(mov, anchor)
         return mov
 
-    def _emit_call_stackargs(self, mba, blk, anchor, ea, ins, vmap):
+    def _emit_call_stackargs(self, mba, blk, anchor, ea, ins, vmap,
+                             callee_name=None):
         """Emit a direct call with MORE integer args than ABI registers (the
         7th+ travel on the stack). Build an explicit ``mcallinfo_t`` from the
         callee's known prototype: ``set_type`` does the SysV reg/stack
         classification (regs for 0..5, ALOC_STACK for 6+), so each stack arg
         rides IN the call -- no SP-modeled ``push`` sequence, no WARN_BAD_CALL_SP.
+
+        ``callee_name`` overrides the callee operand's name (a function-pointer
+        bitcast resolves to the underlying @fn -- see ``_emit_call``).
 
         The emitted shape mirrors Hex-Rays' own post-CALLS form:
         ``mov (call gvar<...> => mop_f(callinfo)) => rax``. We carry the
@@ -1790,23 +1840,25 @@ class LLVMDropConverter:
         callee = ops[-1]
         call_args = ops[:-1]
         _argregs, eax, _ds = self._abi()
-        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee.name)
+        if callee_name is None:
+            callee_name = callee.name
+        callee_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee_name)
         tif = ida_typeinf.tinfo_t()
         if not ida_nalt.get_tinfo(tif, callee_ea) or not tif.is_func():
             raise NotImplementedError(
-                f"stack-passed args: no prototype for @{callee.name}")
+                f"stack-passed args: no prototype for @{callee_name}")
         nargs = tif.get_nargs()
         if nargs != len(call_args):
             # The lift's arg count must match the prototype for set_type's
             # arglocs to line up; otherwise defer rather than mis-place args.
             raise NotImplementedError(
                 f"stack-passed args: prototype arity {nargs} != "
-                f"call arity {len(call_args)} for @{callee.name}")
+                f"call arity {len(call_args)} for @{callee_name}")
 
         fi = hx.mcallinfo_t(callee_ea, 0)
         if not fi.set_type(tif):
             raise NotImplementedError(
-                f"stack-passed args: set_type failed for @{callee.name}")
+                f"stack-passed args: set_type failed for @{callee_name}")
         # Return width comes from the PROTOTYPE, not the LLVM call type: the lift
         # may type the result narrower (e.g. `i1` for an `int`-returning fn), but
         # the call's retreg/return_type must match the real ABI return register
@@ -2904,6 +2956,13 @@ class LLVMDropConverter:
         # circuit consumer materialises it via the FPU setcc. This is the direct
         # successor of the legacy fptoui+icmp recovery (_fp_compare_operands).
         self._fcmp_defs = {}
+        # bitcast-of-function callees: the lifter carries a variadic call's surplus
+        # varargs by widening the callee TYPE -- ``%c = bitcast @fn to <wider
+        # variadic>; call %c(...)``. The call's callee operand is then the SSA
+        # bitcast result (an indirect-looking value), not @fn. Map each such
+        # bitcast result name -> the underlying named function so _emit_call can
+        # see through it and route the call as a DIRECT variadic call to @fn.
+        self._fnptr_bitcast = {}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.opcode == "icmp":
@@ -2917,6 +2976,92 @@ class LLVMDropConverter:
                 elif ins.opcode in ("fptoui", "fptosi"):
                     fsrc = list(ins.operands)[0]
                     self._fp_cvt_src[ins.name] = (fsrc, _type_size(fsrc.type))
+                elif ins.opcode == "bitcast" and ins.name:
+                    sops = list(ins.operands)
+                    if sops:
+                        src = sops[0]
+                        # A function source renders as `declare`/`define ... @name`
+                        # AND resolves to a real function ea. A struct/data bitcast
+                        # (load/gep/alloca source) is excluded.
+                        sstr = str(src).strip()
+                        if (src.name and (sstr.startswith("declare ")
+                                          or sstr.startswith("define "))
+                                and ida_name.get_name_ea(
+                                    ida_idaapi.BADADDR, src.name)
+                                != ida_idaapi.BADADDR):
+                            self._fnptr_bitcast[ins.name] = src.name
+
+        # Pointer-origin i64 values: the lifter reads a POINTER-typed alloca as an
+        # i64 via the ``%c = bitcast ptr %slot to ptr; %v = load i64, ptr %c``
+        # idiom (and materialises an address via ``ptrtoint``). Such a value feeding
+        # a variadic ``%s`` arg is a pointer, but its LLVM type is i64, so
+        # _emit_call_vararg would render it as a ``(signed __int64)`` reinterpret
+        # cast instead of a clean ``void *``. Track each so the vararg path types it
+        # as a pointer (matching native's clean pointer arg). Conservative: only the
+        # load-of-ptr-alloca and ptrtoint forms; everything else stays int.
+        self._ptr_origin_vals = set()
+        _alloca_is_ptr = {}
+        _bc_src = {}
+        # Opaque pointers make every alloca's TYPE just ``ptr``; the held element
+        # type is only in the instruction text (``%slot = alloca ptr, align 8``).
+        _alloca_ptr_re = re.compile(r"=\s*alloca\s+ptr\b")
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if not ins.name:
+                    continue
+                if ins.opcode == "alloca":
+                    _alloca_is_ptr[ins.name] = bool(
+                        _alloca_ptr_re.search(str(ins).strip()))
+                elif ins.opcode == "bitcast":
+                    sops = list(ins.operands)
+                    if sops:
+                        _bc_src[ins.name] = sops[0].name
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if not ins.name:
+                    continue
+                if ins.opcode == "ptrtoint":
+                    self._ptr_origin_vals.add(ins.name)
+                elif ins.opcode == "load":
+                    sops = list(ins.operands)
+                    if not sops:
+                        continue
+                    src = sops[0].name
+                    # peel a no-op bitcast off the load's pointer source.
+                    src = _bc_src.get(src, src)
+                    if _alloca_is_ptr.get(src):
+                        self._ptr_origin_vals.add(ins.name)
+
+        # Address of a STACK-ARRAY ELEMENT (``ptrtoint`` of a ``getelementptr`` into
+        # a ``[N x T]`` alloca, e.g. ``&perms[1]``). When such an address is passed
+        # as a VARIADIC arg, the drop's forced-prototype frame layout cannot keep
+        # the array buffer coherent -- it fragments ``[12 x i8] perms`` into
+        # disjoint scalar lvars (v10@+0x28, v11@+0x29, perms@+0x2c) and Hex-Rays
+        # tail-duplicates the call. The bytes stay ABI-correct but the render
+        # DIVERGES from native; _emit_call_vararg DECLINES (clean native fallback)
+        # rather than ship a divergent-reading body. Scoped to the vararg path so
+        # non-variadic array-address uses (already faithful) are untouched.
+        _arr_alloca = set()
+        _arr_re = re.compile(r"=\s*alloca\s+\[\d+ x ")
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.name and ins.opcode == "alloca" and _arr_re.search(
+                        str(ins).strip()):
+                    _arr_alloca.add(ins.name)
+        _gep_into_arr = set()
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.name and ins.opcode == "getelementptr":
+                    sops = list(ins.operands)
+                    if sops and sops[0].name in _arr_alloca:
+                        _gep_into_arr.add(ins.name)
+        self._array_elt_addr = set()
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.name and ins.opcode == "ptrtoint":
+                    sops = list(ins.operands)
+                    if sops and sops[0].name in _gep_into_arr:
+                        self._array_elt_addr.add(ins.name)
 
         self._allocas = self._scan_allocas(mba, fn)
         self._scan_ptr_deref_aliases(fn)
