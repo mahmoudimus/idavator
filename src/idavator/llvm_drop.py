@@ -1069,6 +1069,29 @@ class LLVMDropConverter:
         vmap[ins.name] = ("reg", wk, out_sz)
         return wi
 
+    def _formal_arg_sizes(self, callee_ea, nargs):
+        """``[size_0, ..., size_{nargs-1}]`` of a resolved DIRECT callee's formal
+        parameters from its IDB prototype, or ``None`` when no usable widening
+        applies -- an unresolved ea, a non-function/vararg type, or a prototype
+        whose arity differs from the call (defer rather than mis-pair widths).
+
+        Used by ``_emit_call`` to widen each in-register arg to its real ABI width
+        when the lifted IR operand type is narrower than the callee declares (the
+        ``memset``/``size_t`` case). A vararg callee is excluded: its surplus-arg
+        widths are carried by the explicit mcallinfo path, not here."""
+        if callee_ea == ida_idaapi.BADADDR:
+            return None
+        ctif = ida_typeinf.tinfo_t()
+        if not ida_nalt.get_tinfo(ctif, callee_ea) or not ctif.is_func():
+            return None
+        if ctif.is_vararg_cc() or ctif.get_nargs() != nargs:
+            return None
+        out = []
+        for i in range(nargs):
+            sz = ctif.get_nth_arg(i).get_size()
+            out.append(sz if sz not in (0, ida_idaapi.BADADDR) else 0)
+        return out
+
     def _emit_call(self, mba, blk, anchor, ea, ins, vmap, argregs):
         """Emit `mov`s into the ABI arg-regs then `m_call l=gvar(callee), d=rax`
         as the block TAIL. The call must terminate its block (it falls through to
@@ -1131,8 +1154,35 @@ class LLVMDropConverter:
         # value at call"). See memory idavator_sp_gate_call_ea_cracked.
         arg_descs = [self._desc(a, vmap, _type_size(a.type)) for a in call_args]
         passes_stkaddr = any(d[0] == "stkaddr" for d in arg_descs)
+        # Argument register WIDTH comes from the callee's REAL prototype, not the
+        # lifted IR operand type. ida2llvm may declare an extern narrower than its
+        # IDB prototype -- e.g. ``memset`` lifts as ``(i8*, i32, i32)`` so the size
+        # arg is an i32 (4 bytes), but IDA's real ``memset`` takes ``size_t n``
+        # (8 bytes). A 4-byte ``mov #4, edx`` feeding an 8-byte ``size_t`` use
+        # leaves the high dword of rdx undefined: Hex-Rays then can't fold the
+        # constant (renders ``LODWORD(v)=4; memset(&ctx,0,v)`` instead of
+        # ``memset(&ctx,0,sizeof(ctx))``) and the partial-def trips "local variable
+        # allocation has failed". Widen each in-register arg to its formal param
+        # size (zero-extend a narrower reg via m_xdu; a number just takes the wider
+        # size) -- exactly the formal-size widening _emit_call_stackargs already
+        # applies to the 7th+ args. Only for a resolved, non-vararg callee whose
+        # prototype arity matches the call (vararg widths ride in the mcallinfo).
+        formal_szs = self._formal_arg_sizes(callee_ea, len(call_args))
         for i, (a, d) in enumerate(zip(call_args, arg_descs)):
             asz = _type_size(a.type)
+            fsz = formal_szs[i] if formal_szs is not None else asz
+            if fsz > asz:
+                if d[0] == "num":
+                    d, asz = ("num", d[1], fsz), fsz
+                elif d[0] == "reg":
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_xdu
+                    self._fill(mi.l, (d[0], d[1], asz))
+                    kreg = mba.alloc_kreg(fsz)
+                    mi.d.make_reg(kreg, fsz)
+                    blk.insert_into_block(mi, anchor)
+                    anchor = mi
+                    d, asz = ("reg", kreg, fsz), fsz
             mv = hx.minsn_t(ea)
             mv.opcode = hx.m_mov
             self._fill(mv.l, d)
