@@ -300,6 +300,15 @@ class LLVMDropConverter:
         try:
             hx.mark_cfunc_dirty(host_ea)
             cf = hx.decompile(host_ea)
+            # Type the struct-pointer cursor slots and re-drop so the type
+            # propagation re-runs -- the only thing that beats the decompiler's own
+            # param-propagated pointer inference is a persistent user type at the
+            # cursor lvar's ACTUAL (post-decompile) location, applied between two
+            # full decompiles. Build failures leave cf untyped (unchanged).
+            if (cf is not None and box["err"] is None
+                    and self._save_struct_ptr_lvar_types(host_ea, fn, cf)):
+                hx.mark_cfunc_dirty(host_ea)
+                cf = hx.decompile(host_ea)
         finally:
             hook.unhook()
         return cf, box
@@ -1509,6 +1518,162 @@ class LLVMDropConverter:
         m = re.search(r"alloca\s+(?:inalloca\s+)?([^,\n]+)", str(ins).strip())
         ty = m.group(1).strip() if m else ""
         return ty == "ptr" or ty.endswith("*")
+
+    def _alloca_decl_types(self, fn) -> dict:
+        """``alloca-name -> declared slot type string`` parsed from the ORIGINAL IR
+        text for ``fn``.
+
+        ``llvm.parse_assembly`` normalizes to OPAQUE pointers, so ``str(ins)`` for
+        a pointer alloca is the type-erased ``alloca ptr`` -- the pointee struct
+        (``%"hash_entry"*``) survives only in the source text. The cursor-typing
+        pass needs the pointee, so it reads the declared types straight from
+        ``self._ir_text`` (``%"bucket" = alloca %"hash_entry"*``)."""
+        body = re.search(
+            r'(?ms)^define[^\n]*@"?' + re.escape(fn.name) + r'"?\(.*?\n\}',
+            self._ir_text)
+        if body is None:
+            return {}
+        out: dict = {}
+        for m in re.finditer(
+                r'%"?([\w.$]+)"?\s*=\s*alloca\s+(?:inalloca\s+)?([^,\n]+)',
+                body.group(0)):
+            out[m.group(1)] = m.group(2).strip()
+        return out
+
+    def _pointee_struct_of_type(self, ty: str):
+        """The known-struct name of a single-level pointer type string ``T*`` whose
+        pointee ``T`` has a computed layout (present in ``self._struct_size``), else
+        None. Only ``T*`` qualifies -- ``T**`` is a pointer-to-pointer, not a
+        struct cursor; a scalar/opaque pointee (``i8*``, ``ptr``) has no struct."""
+        ty = ty.strip()
+        if not ty.endswith("*") or ty.endswith("**"):
+            return None
+        key = ty[:-1].strip()
+        if not key.startswith("%"):
+            return None
+        key = key.replace('"', "")
+        if key not in self._struct_size:
+            key = re.sub(r"\.\d+$", "", key)
+        return key if key in self._struct_size else None
+
+    def _struct_ptr_alloca_slots(self, fn) -> dict:
+        """``name -> (stkoff, struct_name)`` for every ESCAPING single-level
+        struct-pointer alloca, using the SAME synthetic frame-offset packing as
+        ``_scan_allocas`` so the offsets match the ``make_stkvar(mba, off)`` the
+        drop emits -- i.e. the offset by which ``_save_struct_ptr_lvar_types``
+        locates the decompiled cursor stkvar.
+
+        The offset bookkeeping here is a faithful replica of ``_scan_allocas``'s
+        ``off`` accounting for gepd/escaped allocas; it needs no ``mba`` because
+        struct-pointer slots are never re-anchored to a host offset (only escaping
+        aggregate structs are) and scalar allocas (kreg) do not consume ``off``.
+        Mirrors the gepd/escaped classification exactly to avoid drift."""
+        names = {ins.name for bb in fn.blocks for ins in bb.instructions
+                 if ins.opcode == "alloca"}
+        if not names:
+            return {}
+        decl_types = self._alloca_decl_types(fn)
+        gepd: set = set()
+        escaped: set = set()
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                for idx, o in enumerate(ins.operands):
+                    if o.name not in names:
+                        continue
+                    if ins.opcode == "load" and idx == 0:
+                        continue
+                    if ins.opcode == "store" and idx == 1:
+                        continue
+                    if ins.opcode == "getelementptr" and idx == 0:
+                        gepd.add(o.name)
+                    else:
+                        escaped.add(o.name)
+        out: dict = {}
+        off = 0
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode != "alloca":
+                    continue
+                nm = ins.name
+                sz = self._alloca_elem_size(ins)
+                if nm in gepd:
+                    dims = self._array_dims(str(ins))
+                    if dims is None:
+                        # _scan_allocas will raise on this; nothing to type here.
+                        return out
+                    off += max(dims[0] * dims[2], 8)
+                elif nm in escaped:
+                    # Opaque-pointer normalization erases the pointee from
+                    # ``str(ins)``; resolve the struct from the source-text decl.
+                    struct = self._pointee_struct_of_type(decl_types.get(nm, ""))
+                    if struct is not None:
+                        out[nm] = (off, struct)
+                    off += max(sz, 8)
+                # scalar allocas (kreg) do not consume a frame offset
+        return out
+
+    @staticmethod
+    def _struct_ptr_tif(struct: str):
+        """A ``T*`` ``tinfo_t`` for the IR struct key ``struct`` (e.g.
+        ``%hash_entry``), resolved as the named IDB type ``hash_entry`` (present
+        from DWARF on a non-stripped target), or None if it cannot be resolved."""
+        type_name = struct.lstrip("%")
+        base = ida_typeinf.tinfo_t()
+        if not base.get_named_type(None, type_name):
+            return None
+        ptr = ida_typeinf.tinfo_t()
+        ptr.create_ptr(base)
+        return ptr if ptr.is_ptr() else None
+
+    def _save_struct_ptr_lvar_types(self, host_ea: int, fn, cf) -> bool:
+        """Type each escaping struct-pointer cursor slot as ``T*`` so the decompiler
+        renders the faithful cursor walk (``for(bucket=table->bucket;;++bucket){...
+        if (bucket->data) break;}``) instead of an untyped ``*(_QWORD*)`` blob walk.
+
+        A pre-decompile ``save_user_lvar_settings`` keyed by a synthetic
+        ``vdloc_t().set_stkoff(N)`` does NOT match the real lvar's richer location
+        encoding, so it is silently ignored. The mechanism that sticks (and beats
+        the decompiler's own ``Hash_table*``/param-propagated inference) is, GIVEN a
+        first ``cf``: locate the cursor stkvar by the frame offset the drop assigned
+        it, then persist a user type at that lvar's ACTUAL location via
+        ``modify_user_lvar_info(MLI_TYPE)``. The caller re-decompiles so the
+        structural/type analysis re-runs (a mere ``refresh_func_ctext`` keeps the
+        old shape).
+
+        Returns True if any type was applied (caller must re-decompile). The
+        pointee struct must resolve as a named IDB type; otherwise the slot is left
+        as-is -- identical to prior behaviour, a strict zero-regression
+        enhancement."""
+        if cf is None:
+            return False
+        slots = self._struct_ptr_alloca_slots(fn)
+        if not slots:
+            return False
+        # offset -> struct-tif (only resolvable structs)
+        want: dict = {}
+        for _nm, (stkoff, struct) in slots.items():
+            tif = self._struct_ptr_tif(struct)
+            if tif is not None:
+                want[stkoff] = tif
+        if not want:
+            return False
+        applied = False
+        for v in cf.get_lvars():
+            if not v.is_stk_var():
+                continue
+            tif = want.get(v.get_stkoff())
+            if tif is None:
+                continue
+            if v.type() is not None and v.type().dstr() == tif.dstr():
+                continue  # already this type (idempotent re-drop)
+            info = hx.lvar_saved_info_t()
+            info.ll.location = v.location
+            info.ll.defea = v.defea
+            info.type = tif
+            info.size = 8
+            if hx.modify_user_lvar_info(host_ea, hx.MLI_TYPE, info):
+                applied = True
+        return applied
 
     def _scan_ptr_deref_aliases(self, fn) -> None:
         """SSA names that are a no-op ``bitcast`` chain rooted DIRECTLY at a
