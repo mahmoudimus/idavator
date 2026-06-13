@@ -110,20 +110,30 @@ class TestHostOffsetCollision:
 
     def test_sparse_copy_total_n_read_not_swapped(
             self, examples_dir: Path) -> None:
-        """The per-chunk accumulator increments ``total_n_read``, not the
-        swapped ``last_write_made_hole`` slot.
+        """The per-chunk accumulator increments the ``total_n_read`` output
+        pointee, not the swapped ``last_write_made_hole`` slot.
 
         Fail-without-fix: synthetic ``total_n_read`` (+8) / ``last_write_made_hole``
         (+16) overlay the host's inverse pair, so ``*total_n_read += n_read``
         corrupts ``last_write_made_hole`` (the drop increments
-        ``last_write_made_hole`` instead)."""
+        ``last_write_made_hole`` instead).
+
+        The ``size_t* total_n_read`` is the 10th param (``a9``); after the
+        pointer-width deref-store fix the accumulator renders THROUGH the pointer
+        as ``*(_QWORD *)a9 += ...`` (== pristine ``*total_n_read += n_read``), not
+        as a bare local slot assignment ``total_n_read = ...``."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "sparse_copy")
 
-        # The read count must accumulate into total_n_read, never into the
-        # last_write_made_hole boolean slot.
+        # The read count must accumulate into the total_n_read pointee, never into
+        # the last_write_made_hole boolean slot.
         assert "last_write_made_hole +=" not in dropped, (
             f"read count accumulated into the wrong (swapped) slot:\n{dropped}")
-        assert "total_n_read" in dropped, (
-            f"total_n_read output pointer missing entirely:\n{dropped}")
+        # The accumulation reaches the output through the a9 pointer (a deref-store
+        # of the pointee), proving the slot is the total_n_read output and not the
+        # swapped last_write_made_hole slot.
+        import re as _re
+        assert _re.search(r"\*\(_[A-Z]+ \*\)a9\s*\+=", dropped), (
+            f"total_n_read output accumulation (`*(_QWORD *)a9 += ...`) missing:\n"
+            f"{dropped}")

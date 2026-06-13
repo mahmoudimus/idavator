@@ -677,15 +677,17 @@ class LLVMDropConverter:
                 vmap[ins.name] = ("reg", eax, out_sz)
                 return anchor
             if (ops[0].name in self._ptr_deref_alias
-                    and not _is_ptr_type(ins.type) and out_sz < 8):
+                    and not _is_ptr_type(ins.type)):
                 # *X (deref) of a pointer-alloca slot: the lifter reaches it via a
-                # no-op bitcast and a SUB-pointer load (e.g. `*name` as i8). Read
-                # the slot's POINTER value, then ldx through it -- native's
-                # `mov %X, r; ldx ds, r`. A pointer-width load (i64/ptr) is left
-                # as a slot read: the lifter type-puns BOTH a full pointer-value
-                # read AND `*X` as `load i64, bitcast %X`, and only the binary's
-                # own analysis (which idavator must match) disambiguates them --
-                # a sub-pointer width is the one unambiguous deref.
+                # no-op bitcast and a load of the POINTEE type (e.g. `*name` as i8,
+                # or a pointer-width `*total_n_read` where total_n_read is a
+                # `size_t*`). Read the slot's POINTER value, then ldx through it --
+                # native's `mov %X, r; ldx ds, r`. The distinguisher from a slot
+                # read is the result's TYPE, not its width: the lifter type-puns
+                # BOTH a full pointer-VALUE read (`load ptr, bitcast %X`, ins.type
+                # is a pointer -> stays a slot read below) AND `*X` as a non-pointer
+                # load (`load i64, bitcast %X` for `*p` where p is `i64*`). A
+                # non-pointer result of ANY width is the unambiguous deref.
                 poff = self._ptr_deref_off(ops[0], vmap)
                 pr = mba.alloc_kreg(8)
                 mv = hx.minsn_t(ea)
@@ -763,14 +765,17 @@ class LLVMDropConverter:
                 blk.insert_into_block(mi, anchor)
                 return mi
             if (ops[1].name in self._ptr_deref_alias
-                    and not _is_ptr_type(ops[0].type) and val_sz < 8):
-                # *X = v (deref write) of a pointer-alloca slot: a SUB-pointer
-                # store through the no-op bitcast writes a field of *X (e.g.
-                # `oa->style = 10`). Read the slot's POINTER value, then stx
-                # through it -- native's `mov %X, r; stx v, ds, r`. A full
-                # pointer-width store (val_sz == 8 / ptr valtype) instead DEFINES
-                # the pointer and falls through to the slot-write path below
-                # (e.g. `bucket = *table`, `oa = &default`).
+                    and not _is_ptr_type(ops[0].type)):
+                # *X = v (deref write) of a pointer-alloca slot: a store through
+                # the no-op bitcast writes the POINTEE *X (e.g. `oa->style = 10`,
+                # or a pointer-width `*total_n_read = 0` where total_n_read is a
+                # `size_t*`). Read the slot's POINTER value, then stx through it --
+                # native's `mov %X, r; stx v, ds, r`. The distinguisher from a
+                # slot DEFINE is the stored value's TYPE, not its width: a store of
+                # a POINTER value (`_is_ptr_type(ops[0].type)`) instead DEFINES the
+                # pointer and falls through to the slot-write path below (e.g.
+                # `bucket = *table`, `oa = &default`). A non-pointer value of ANY
+                # width (i8 field OR a full i64 `*p = 0`) is a deref.
                 poff = self._ptr_deref_off(ops[1], vmap)
                 pr = mba.alloc_kreg(8)
                 mv = hx.minsn_t(ea)
