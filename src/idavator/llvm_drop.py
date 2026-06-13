@@ -324,6 +324,7 @@ class LLVMDropConverter:
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
         self._ptr_allocas: dict = {}  # ptr-typed addr_taken alloca name -> stkoff
         self._ptr_deref_alias: set = set()  # bitcast aliases rooted at a ptr alloca
+        self._ptr_alloca_pointee: dict = {}  # ptr alloca name -> pointee byte width
         self._cur_mba = None         # current mba (make_stkvar needs it)
         self._call_spd_ea = None     # host resting-frame ea for stack-passing calls
         self._canary_kreg = None     # shared kreg for __readfsqword (canary fold)
@@ -895,17 +896,24 @@ class LLVMDropConverter:
                 vmap[ins.name] = ("reg", eax, out_sz)
                 return anchor
             if (ops[0].name in self._ptr_deref_alias
-                    and not _is_ptr_type(ins.type)):
+                    and not _is_ptr_type(ins.type)
+                    and not self._is_punned_ptr_value(ops[0], out_sz)):
                 # *X (deref) of a pointer-alloca slot: the lifter reaches it via a
                 # no-op bitcast and a load of the POINTEE type (e.g. `*name` as i8,
                 # or a pointer-width `*total_n_read` where total_n_read is a
                 # `size_t*`). Read the slot's POINTER value, then ldx through it --
                 # native's `mov %X, r; ldx ds, r`. The distinguisher from a slot
-                # read is the result's TYPE, not its width: the lifter type-puns
-                # BOTH a full pointer-VALUE read (`load ptr, bitcast %X`, ins.type
-                # is a pointer -> stays a slot read below) AND `*X` as a non-pointer
-                # load (`load i64, bitcast %X` for `*p` where p is `i64*`). A
-                # non-pointer result of ANY width is the unambiguous deref.
+                # read is the result's TYPE *and* width: the lifter type-puns BOTH
+                # a full pointer-VALUE read (`load ptr, bitcast %X`, ins.type is a
+                # pointer -> stays a slot read below; OR `load i64, bitcast %X`
+                # where the slot's pointee is SUB-pointer-width -- the
+                # ``_is_punned_ptr_value`` case: passing the pointer BY VALUE to a
+                # callback, e.g. ``safe_hasher``'s ``table->hasher(key, ...)``) AND
+                # ``*X`` as a non-pointer load (`load i64, bitcast %X` for `*p`
+                # where p is a pointer to an 8-byte value). A non-pointer result
+                # whose width MATCHES the pointee is the unambiguous deref; a
+                # pointer-width read of a sub-pointer pointee is a punned VALUE read
+                # and falls through to the slot read below.
                 poff = self._ptr_deref_off(ops[0], vmap)
                 pr = mba.alloc_kreg(8)
                 mv = hx.minsn_t(ea)
@@ -1930,6 +1938,27 @@ class LLVMDropConverter:
         ty = m.group(1).strip() if m else ""
         return ty == "ptr" or ty.endswith("*")
 
+    @staticmethod
+    def _pointee_size_of_decl(decl_ty) -> int:
+        """Byte width of the POINTEE of a pointer-typed alloca's DECLARED element
+        type string (from the original IR text, ``_alloca_decl_types``).
+        ``i8*`` -> 1 (pointee ``i8``); ``i64*`` -> 8; a pointer-to-pointer
+        (``i8**``) or an opaque / missing ``ptr`` -> 8 (the pointer width, the
+        conservative DEFAULT that keeps the legacy 8-byte deref behaviour). Used
+        to tell a pointer-VALUE read punned to a non-pointer integer (load width
+        == pointer width but pointee sub-pointer-width) from a real ``*slot``
+        deref (load width == pointee width)."""
+        ty = (decl_ty or "").strip()
+        if ty.endswith("*") and not ty.endswith("**"):
+            inner = ty[:-1].strip()
+            if inner == "ptr":
+                return 8
+            return _type_size(inner)
+        # pointer-to-pointer / opaque ``ptr`` / unknown -- pointee is itself
+        # pointer-width (or erased); default to 8 so the existing deref
+        # classification is unchanged.
+        return 8
+
     def _alloca_decl_types(self, fn) -> dict:
         """``alloca-name -> declared slot type string`` parsed from the ORIGINAL IR
         text for ``fn``.
@@ -2179,7 +2208,12 @@ class LLVMDropConverter:
         direct-bitcast aliases lets the load/store emit apply the deref-vs-slot
         rule by valtype (see ``_emit_value``); a deref of a pointer LOADED from
         the slot (``load ptr, %X; bitcast; gep``) already works via the generic
-        ldx/stx path and is intentionally NOT in this set."""
+        ldx/stx path and is intentionally NOT in this set.
+
+        Each alias inherits its ROOT alloca's pointee byte width (recorded in
+        ``self._ptr_alloca_pointee``) so the load/store emit can tell a punned
+        pointer-VALUE read (load width == pointer width on a sub-pointer pointee)
+        from a real ``*slot`` deref (load width == pointee width)."""
         self._ptr_deref_alias = set()
         if not self._ptr_allocas:
             return
@@ -2193,6 +2227,10 @@ class LLVMDropConverter:
                     src = list(ins.operands)[0].name
                     if src in self._ptr_allocas or src in self._ptr_deref_alias:
                         self._ptr_deref_alias.add(ins.name)
+                        # Inherit the root alloca's pointee width (default 8 = the
+                        # legacy behaviour for an opaque / pointer-pointee slot).
+                        self._ptr_alloca_pointee[ins.name] = \
+                            self._ptr_alloca_pointee.get(src, 8)
                         changed = True
 
     def _alloca_elem_size(self, ins) -> int:
@@ -2207,6 +2245,25 @@ class LLVMDropConverter:
         if key is not None:
             return self._struct_size[key][0]
         return _type_size(ty)
+
+    def _is_punned_ptr_value(self, operand, access_sz: int) -> bool:
+        """True if a ``_ptr_deref_alias`` access of ``access_sz`` bytes is a
+        POINTER-VALUE read punned to a non-pointer integer rather than a real
+        ``*slot`` deref.
+
+        The lifter type-puns a pointer-alloca slot two ways: a deref ``*slot``
+        loads exactly ``sizeof(pointee)`` bytes, while passing the pointer BY
+        VALUE through a non-pointer integer (``load i64, bitcast i8** %slot to
+        i64*`` -- ``safe_hasher``'s ``table->hasher(key, ...)``) loads the POINTER
+        width (8). When the access is pointer-width but the slot's pointee is
+        SUB-pointer-width, only the value read fits -- a real deref would have
+        loaded the (narrower) pointee. An 8-byte pointee is genuinely ambiguous
+        (both a value read and ``*p`` move 8 bytes) and stays a deref (the prior
+        behaviour, correct for ``*total_n_read`` etc.)."""
+        if access_sz != 8:
+            return False
+        pointee = self._ptr_alloca_pointee.get(operand.name, 8)
+        return pointee < 8
 
     def _ptr_deref_off(self, operand, vmap) -> int:
         """Frame offset of the pointer-alloca slot a ``_ptr_deref_alias`` operand
@@ -2318,6 +2375,7 @@ class LLVMDropConverter:
         # uses the true frame offsets; matching them by name de-collides the slot.
         host_off = self._host_frame_offsets(mba)
         self._ptr_allocas = {}
+        self._ptr_alloca_pointee = {}
         allocas = {}
         # A frame-slot alloca that the HOST FRAME ALSO NAMES must rest at its TRUE
         # host offset, not at a synthetic sequential offset. The old packing (0, 8,
@@ -2416,6 +2474,19 @@ class LLVMDropConverter:
                         # alias set + valtype rule, mirroring native's
                         # ``mov %slot, r; ldx ds, r``).
                         self._ptr_allocas[nm] = slot_off
+                        # Record the slot's POINTEE byte width (``i8*`` -> 1).
+                        # A pointer-VALUE read punned to a non-pointer integer
+                        # (``load i64, bitcast i8** %slot to i64*`` -- pass the
+                        # key BY VALUE to a callback) loads the POINTER width (8)
+                        # from a slot whose pointee is sub-pointer-width, whereas a
+                        # genuine ``*slot`` deref loads exactly ``sizeof(pointee)``.
+                        # The width lets the load/store emit tell the punned
+                        # pointer-value read from a real deref (see ``_emit_value``).
+                        # ``str(ins)`` is the OPAQUE ``alloca ptr`` (llvmlite erased
+                        # the pointee), so take the typed declaration from the
+                        # ORIGINAL IR text (``decl_types`` = ``i8*``).
+                        self._ptr_alloca_pointee[nm] = \
+                            self._pointee_size_of_decl(decl_types.get(nm))
                 else:
                     allocas[nm] = (mba.alloc_kreg(sz), sz)
         return allocas
