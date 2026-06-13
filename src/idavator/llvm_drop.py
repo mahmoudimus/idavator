@@ -122,6 +122,16 @@ def _type_size(type_str) -> int:
     s = str(type_str)
     if s == "ptr" or "*" in s:
         return 8
+    # An exact ``iN`` integer type -- size is ceil(N/8). This covers the WIDE
+    # integers the frontend uses to lower a whole-struct copy (``load i448`` /
+    # ``store i448`` == a 56-byte ``struct quoting_options`` memcpy). The old
+    # substring scan matched ``i8``/``i1`` etc. as substrings and otherwise fell
+    # through to the 4-byte default, so ``i448`` mis-sized to 4 and the struct
+    # copy SCALARIZED to its first field (quotearg_char_mem ``options.style =
+    # ...`` instead of ``options = default_quoting_options``).
+    m = re.fullmatch(r"i(\d+)", s)
+    if m:
+        return max(1, (int(m.group(1)) + 7) // 8)
     for tok, sz in (("i64", 8), ("i32", 4), ("i16", 2), ("i8", 1), ("i1", 1),
                     ("double", 8), ("float", 4)):
         if tok in s:
@@ -604,6 +614,35 @@ class LLVMDropConverter:
         d = self._desc(operand, vmap, 1)
         return (d[0], d[1], 1), anchor
 
+    def _direct_lvalue(self, operand, vmap, size):
+        """Resolve ``operand`` (a load source / store dest pointer) to a DIRECT
+        memory lvalue descriptor of ``size`` bytes -- ``("gvar", ea, size)`` for a
+        global or ``("stkvar", off, size)`` for an escaped-alloca frame slot --
+        or ``None`` when it is a runtime pointer that needs a deref. Used to lower
+        a WHOLE-STRUCT copy (``load i448`` -> ``store i448``, the
+        ``options = default_quoting_options`` 56-byte memcpy) as one mem-to-mem
+        ``m_mov`` lvalue->lvalue: the value never lives in a register, so it sizes
+        past the kreg cap (``alloc_kreg`` rejects >16) that scalarized it before.
+
+        The pointer typically arrives already resolved in ``vmap`` -- the lifter
+        prefixes the load/store with a no-op ``bitcast``/zero-offset ``getelementptr``
+        that aliases the base to an ADDRESS descriptor (``gvaraddr`` &global /
+        ``stkaddr`` &local). The LVALUE at that address is the same location read at
+        ``size`` bytes (``gvar``/``stkvar``)."""
+        d = vmap.get(operand.name)
+        if d is not None:
+            if d[0] in ("gvar", "gvaraddr"):
+                return ("gvar", d[1], size)
+            if d[0] in ("stkaddr", "stkvar"):
+                return ("stkvar", d[1], size)
+        stk = self._stkvar_slot(operand, vmap)
+        if stk is not None:
+            return ("stkvar", stk[0], size)
+        gea = self._global_ea(operand)
+        if gea is not None:
+            return ("gvar", gea, size)
+        return None
+
     def _emit_value(self, mba, blk, anchor, ea, ins, vmap, ds):
         """Emit one non-terminator LLVM instruction into ``blk`` before
         ``anchor``; record its SSA result in ``vmap``. Returns the new anchor."""
@@ -671,6 +710,20 @@ class LLVMDropConverter:
             return anchor
         if op == "load":
             out_sz = _type_size(ins.type)
+            if out_sz > 16:
+                # A WHOLE-STRUCT load (``load i448`` == read all 56 bytes of a
+                # ``struct quoting_options``). The value is too wide for a kreg
+                # (alloc_kreg rejects >16) and there is no register to hold it --
+                # it only ever feeds the paired ``store`` of a struct COPY. Defer:
+                # record the SOURCE lvalue and emit nothing; the store lowers the
+                # pair as one mem-to-mem ``m_mov`` (see ``store``/``_direct_lvalue``).
+                src_lv = self._direct_lvalue(ops[0], vmap, out_sz)
+                if src_lv is None:
+                    raise NotImplementedError(
+                        f"aggregate load %{ins.name} ({out_sz}B) from a non-direct "
+                        f"lvalue -- needs a memcpy through a runtime pointer")
+                vmap[ins.name] = ("memref", src_lv, out_sz)
+                return anchor
             if self._is_ret_slot(ops[0], vmap):
                 # promoted return slot: the loaded value IS the return register.
                 _ar, eax, _d = self._abi()
@@ -754,6 +807,33 @@ class LLVMDropConverter:
         if op == "store":
             val_sz = _type_size(ops[0].type)
             vd = self._desc(ops[0], vmap, val_sz)
+            if vd[0] == "memref":
+                # WHOLE-STRUCT copy: the stored value is a deferred aggregate load
+                # (see the ``load`` ``out_sz > 16`` branch). Lower the load/store
+                # pair as ONE mem-to-mem ``m_mov`` SRC_lvalue -> DST_lvalue, both
+                # sized to the struct (HexRays supports UDT-sized operands). This
+                # is native's ``options = default_quoting_options`` -- no register
+                # round-trip, so it sidesteps the kreg size cap that scalarized the
+                # copy to its first field.
+                src_lv = vd[1]
+                dst_lv = self._direct_lvalue(ops[1], vmap, val_sz)
+                if dst_lv is None:
+                    raise NotImplementedError(
+                        f"aggregate store ({val_sz}B) to a non-direct lvalue -- "
+                        f"needs a memcpy through a runtime pointer")
+                mi = hx.minsn_t(ea)
+                mi.opcode = hx.m_mov
+                self._fill(mi.l, src_lv)
+                self._fill(mi.d, dst_lv)
+                # An UNTYPED operand of a non-basic size (56B) trips the verifier's
+                # ``is_valid_size`` check (INTERR 50757, verify.cpp); the check is
+                # SKIPPED for a UDT (``is_udt()``). Flag both operands so the
+                # struct-sized mov is accepted -- this is the microcode model of a
+                # whole-struct assignment (UDT-to-UDT mov).
+                mi.l.set_udt()
+                mi.d.set_udt()
+                blk.insert_into_block(mi, anchor)
+                return mi
             if self._is_ret_slot(ops[1], vmap):
                 # promoted return slot: write the return register directly (each
                 # path writes rax, matching native -- no post-merge read block).
