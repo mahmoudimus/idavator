@@ -2379,6 +2379,9 @@ define i64 @"__readfsqword"(i32 %".1")
   ret i64 %".8"
 }
 
+@"__progname@GLIBC_2.2.5" = global i64 18446744073709551615
+@"__progname_full@GLIBC_2.2.5" = global i64 18446744073709551615
+@"aANullArgv0WasPassedThroughAnExecSystemCall" = private constant [56 x i8] c"A NULL argv[0] was passed through an exec system call.\0a\00"
 define i8* @"set_program_name"(i8* %".1")
 {
 "@0":
@@ -2398,7 +2401,7 @@ define i8* @"set_program_name"(i8* %".1")
   %".11" = icmp ne i64 %".10", 0
   br i1 %".11", label %"@3", label %"@2"
 "@2":
-  %".13" = getelementptr [56 x i8], [56 x i8]* @"aANullArgv0WasP", i32 0, i32 0
+  %".13" = getelementptr [56 x i8], [56 x i8]* @"aANullArgv0WasPassedThroughAnExecSystemCall", i32 0, i32 0
   %".14" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
   %".15" = call i64 @"fwrite"(i8* %".13", i64 1, i64 55, %"FILE"* %".14")
   %".16" = call i8* @"abort"()
@@ -2452,14 +2455,14 @@ define i8* @"set_program_name"(i8* %".1")
   store i8* %".56", i8** %"argv0a"
   %".58" = load i8*, i8** %"base"
   %".59" = getelementptr i8, i8* %".58", i64 3
-  %".60" = bitcast i64* @"program_invocation_short_name@GLIBC_2.2.5" to i8**
+  %".60" = bitcast i64* @"__progname@GLIBC_2.2.5" to i8**
   store i8* %".59", i8** %".60"
   br label %"@10"
 "@10":
   %".63" = load i8*, i8** %"argv0a"
   store i8* %".63", i8** @"program_name"
   %".65" = load i8*, i8** %"argv0a"
-  %".66" = bitcast i64* @"program_invocation_name@GLIBC_2.2.5" to i8**
+  %".66" = bitcast i64* @"__progname_full@GLIBC_2.2.5" to i8**
   store i8* %".65", i8** %".66"
   br label %"@11"
 "@11":
@@ -21977,152 +21980,153 @@ define i64 @"randint_genmax"(%"randint_source"* %".1", i64 %".2")
 "@1":
   %".9" = call i64 @"__readfsqword"(i32 40)
   store i64 %".9", i64* %"v12"
-  %".11" = bitcast %"randint_source"** %"s" to i64*
-  %".12" = load i64, i64* %".11"
-  %".13" = bitcast %"randread_source"** %"source" to i64*
-  store i64 %".12", i64* %".13"
-  %".15" = load %"randint_source"*, %"randint_source"** %"s"
-  %".16" = bitcast %"randint_source"* %".15" to i8*
-  %".17" = getelementptr i8, i8* %".16", i64 8
-  %".18" = bitcast i8* %".17" to %"randint_source"*
-  %".19" = bitcast %"randint_source"* %".18" to i64*
-  %".20" = load i64, i64* %".19"
-  store i64 %".20", i64* %"randnum"
-  %".22" = load %"randint_source"*, %"randint_source"** %"s"
-  %".23" = bitcast %"randint_source"* %".22" to i8*
-  %".24" = getelementptr i8, i8* %".23", i64 16
-  %".25" = bitcast i8* %".24" to %"randint_source"*
-  %".26" = bitcast %"randint_source"* %".25" to i64*
-  %".27" = load i64, i64* %".26"
-  store i64 %".27", i64* %"randmax"
-  %".29" = load i64, i64* %"genmax"
-  %".30" = add i64 %".29", 1
-  store i64 %".30", i64* %"choices"
+  %".11" = load %"randint_source"*, %"randint_source"** %"s"
+  %".12" = bitcast %"randint_source"* %".11" to i64*
+  %".13" = load i64, i64* %".12"
+  %".14" = bitcast %"randread_source"** %"source" to i64*
+  store i64 %".13", i64* %".14"
+  %".16" = load %"randint_source"*, %"randint_source"** %"s"
+  %".17" = bitcast %"randint_source"* %".16" to i8*
+  %".18" = getelementptr i8, i8* %".17", i64 8
+  %".19" = bitcast i8* %".18" to %"randint_source"*
+  %".20" = bitcast %"randint_source"* %".19" to i64*
+  %".21" = load i64, i64* %".20"
+  store i64 %".21", i64* %"randnum"
+  %".23" = load %"randint_source"*, %"randint_source"** %"s"
+  %".24" = bitcast %"randint_source"* %".23" to i8*
+  %".25" = getelementptr i8, i8* %".24", i64 16
+  %".26" = bitcast i8* %".25" to %"randint_source"*
+  %".27" = bitcast %"randint_source"* %".26" to i64*
+  %".28" = load i64, i64* %".27"
+  store i64 %".28", i64* %"randmax"
+  %".30" = load i64, i64* %"genmax"
+  %".31" = add i64 %".30", 1
+  store i64 %".31", i64* %"choices"
   br label %"@2"
 "@2":
-  %".33" = load i64, i64* %"randmax"
-  %".34" = load i64, i64* %"genmax"
-  %".35" = icmp uge i64 %".33", %".34"
-  br i1 %".35", label %"@7", label %"@3"
+  %".34" = load i64, i64* %"randmax"
+  %".35" = load i64, i64* %"genmax"
+  %".36" = icmp uge i64 %".34", %".35"
+  br i1 %".36", label %"@7", label %"@3"
 "@3":
   store i64 0, i64* %"i"
-  %".38" = load i64, i64* %"randmax"
-  store i64 %".38", i64* %"rmax"
+  %".39" = load i64, i64* %"randmax"
+  store i64 %".39", i64* %"rmax"
   br label %"@4"
 "@4":
-  %".41" = load i64, i64* %"rmax"
-  %".42" = call i64 @"shift_left"(i64 %".41")
-  %".43" = add i64 %".42", 255
-  store i64 %".43", i64* %"rmax"
-  %".45" = load i64, i64* %"i"
-  %".46" = add i64 %".45", 1
-  store i64 %".46", i64* %"i"
-  %".48" = load i64, i64* %"rmax"
-  %".49" = load i64, i64* %"genmax"
-  %".50" = icmp ult i64 %".48", %".49"
-  br i1 %".50", label %"@4", label %"@5"
+  %".42" = load i64, i64* %"rmax"
+  %".43" = call i64 @"shift_left"(i64 %".42")
+  %".44" = add i64 %".43", 255
+  store i64 %".44", i64* %"rmax"
+  %".46" = load i64, i64* %"i"
+  %".47" = add i64 %".46", 1
+  store i64 %".47", i64* %"i"
+  %".49" = load i64, i64* %"rmax"
+  %".50" = load i64, i64* %"genmax"
+  %".51" = icmp ult i64 %".49", %".50"
+  br i1 %".51", label %"@4", label %"@5"
 "@5":
-  %".52" = load %"randread_source"*, %"randread_source"** %"source"
-  %".53" = getelementptr [8 x i8], [8 x i8]* %"buf", i32 0, i32 0
-  %".54" = load i64, i64* %"i"
-  %".55" = call i8* @"randread"(%"randread_source"* %".52", i8* %".53", i64 %".54")
+  %".53" = load %"randread_source"*, %"randread_source"** %"source"
+  %".54" = getelementptr [8 x i8], [8 x i8]* %"buf", i32 0, i32 0
+  %".55" = load i64, i64* %"i"
+  %".56" = call i8* @"randread"(%"randread_source"* %".53", i8* %".54", i64 %".55")
   store i64 0, i64* %"ia"
   br label %"@6"
 "@6":
-  %".58" = load i64, i64* %"randnum"
-  %".59" = call i64 @"shift_left"(i64 %".58")
-  %".60" = getelementptr [8 x i8], [8 x i8]* %"buf", i32 0, i32 0
-  %".61" = load i64, i64* %"ia"
-  %".62" = getelementptr i8, i8* %".60", i64 %".61"
-  %".63" = load i8, i8* %".62"
-  %".64" = zext i8 %".63" to i64
-  %".65" = add i64 %".59", %".64"
-  store i64 %".65", i64* %"randnum"
-  %".67" = load i64, i64* %"randmax"
-  %".68" = call i64 @"shift_left"(i64 %".67")
-  %".69" = add i64 %".68", 255
-  store i64 %".69", i64* %"randmax"
-  %".71" = load i64, i64* %"ia"
-  %".72" = add i64 %".71", 1
-  store i64 %".72", i64* %"ia"
-  %".74" = load i64, i64* %"randmax"
-  %".75" = load i64, i64* %"genmax"
-  %".76" = icmp ult i64 %".74", %".75"
-  br i1 %".76", label %"@6", label %"@7"
+  %".59" = load i64, i64* %"randnum"
+  %".60" = call i64 @"shift_left"(i64 %".59")
+  %".61" = getelementptr [8 x i8], [8 x i8]* %"buf", i32 0, i32 0
+  %".62" = load i64, i64* %"ia"
+  %".63" = getelementptr i8, i8* %".61", i64 %".62"
+  %".64" = load i8, i8* %".63"
+  %".65" = zext i8 %".64" to i64
+  %".66" = add i64 %".60", %".65"
+  store i64 %".66", i64* %"randnum"
+  %".68" = load i64, i64* %"randmax"
+  %".69" = call i64 @"shift_left"(i64 %".68")
+  %".70" = add i64 %".69", 255
+  store i64 %".70", i64* %"randmax"
+  %".72" = load i64, i64* %"ia"
+  %".73" = add i64 %".72", 1
+  store i64 %".73", i64* %"ia"
+  %".75" = load i64, i64* %"randmax"
+  %".76" = load i64, i64* %"genmax"
+  %".77" = icmp ult i64 %".75", %".76"
+  br i1 %".77", label %"@6", label %"@7"
 "@7":
-  %".78" = load i64, i64* %"randmax"
-  %".79" = load i64, i64* %"genmax"
-  %".80" = icmp ne i64 %".78", %".79"
-  br i1 %".80", label %"@9", label %"@8"
+  %".79" = load i64, i64* %"randmax"
+  %".80" = load i64, i64* %"genmax"
+  %".81" = icmp ne i64 %".79", %".80"
+  br i1 %".81", label %"@9", label %"@8"
 "@8":
-  %".82" = load %"randint_source"*, %"randint_source"** %"s"
-  %".83" = bitcast %"randint_source"* %".82" to i8*
-  %".84" = getelementptr i8, i8* %".83", i64 16
-  %".85" = bitcast i8* %".84" to %"randint_source"*
-  %".86" = bitcast %"randint_source"* %".85" to i64*
-  store i64 0, i64* %".86"
-  %".88" = load %"randint_source"*, %"randint_source"** %"s"
-  %".89" = bitcast %"randint_source"* %".88" to i8*
-  %".90" = getelementptr i8, i8* %".89", i64 16
-  %".91" = bitcast i8* %".90" to %"randint_source"*
-  %".92" = bitcast %"randint_source"* %".91" to i64*
-  %".93" = load i64, i64* %".92"
-  %".94" = load %"randint_source"*, %"randint_source"** %"s"
-  %".95" = bitcast %"randint_source"* %".94" to i8*
-  %".96" = getelementptr i8, i8* %".95", i64 8
-  %".97" = bitcast i8* %".96" to %"randint_source"*
-  %".98" = bitcast %"randint_source"* %".97" to i64*
-  store i64 %".93", i64* %".98"
-  %".100" = load i64, i64* %"randnum"
-  store i64 %".100", i64* %"funcresult"
+  %".83" = load %"randint_source"*, %"randint_source"** %"s"
+  %".84" = bitcast %"randint_source"* %".83" to i8*
+  %".85" = getelementptr i8, i8* %".84", i64 16
+  %".86" = bitcast i8* %".85" to %"randint_source"*
+  %".87" = bitcast %"randint_source"* %".86" to i64*
+  store i64 0, i64* %".87"
+  %".89" = load %"randint_source"*, %"randint_source"** %"s"
+  %".90" = bitcast %"randint_source"* %".89" to i8*
+  %".91" = getelementptr i8, i8* %".90", i64 16
+  %".92" = bitcast i8* %".91" to %"randint_source"*
+  %".93" = bitcast %"randint_source"* %".92" to i64*
+  %".94" = load i64, i64* %".93"
+  %".95" = load %"randint_source"*, %"randint_source"** %"s"
+  %".96" = bitcast %"randint_source"* %".95" to i8*
+  %".97" = getelementptr i8, i8* %".96", i64 8
+  %".98" = bitcast i8* %".97" to %"randint_source"*
+  %".99" = bitcast %"randint_source"* %".98" to i64*
+  store i64 %".94", i64* %".99"
+  %".101" = load i64, i64* %"randnum"
+  store i64 %".101", i64* %"funcresult"
   br label %"@12"
 "@9":
-  %".103" = load i64, i64* %"randmax"
-  %".104" = load i64, i64* %"genmax"
-  %".105" = sub i64 %".103", %".104"
-  %".106" = load i64, i64* %"choices"
-  %".107" = urem i64 %".105", %".106"
-  store i64 %".107", i64* %"unusable_choices"
-  %".109" = load i64, i64* %"randnum"
-  %".110" = load i64, i64* %"randmax"
-  %".111" = load i64, i64* %"unusable_choices"
-  %".112" = sub i64 %".110", %".111"
-  %".113" = icmp ugt i64 %".109", %".112"
-  br i1 %".113", label %"@11", label %"@10"
+  %".104" = load i64, i64* %"randmax"
+  %".105" = load i64, i64* %"genmax"
+  %".106" = sub i64 %".104", %".105"
+  %".107" = load i64, i64* %"choices"
+  %".108" = urem i64 %".106", %".107"
+  store i64 %".108", i64* %"unusable_choices"
+  %".110" = load i64, i64* %"randnum"
+  %".111" = load i64, i64* %"randmax"
+  %".112" = load i64, i64* %"unusable_choices"
+  %".113" = sub i64 %".111", %".112"
+  %".114" = icmp ugt i64 %".110", %".113"
+  br i1 %".114", label %"@11", label %"@10"
 "@10":
-  %".115" = load i64, i64* %"randnum"
-  %".116" = load i64, i64* %"choices"
-  %".117" = udiv i64 %".115", %".116"
-  %".118" = load %"randint_source"*, %"randint_source"** %"s"
-  %".119" = bitcast %"randint_source"* %".118" to i8*
-  %".120" = getelementptr i8, i8* %".119", i64 8
-  %".121" = bitcast i8* %".120" to %"randint_source"*
-  %".122" = bitcast %"randint_source"* %".121" to i64*
-  store i64 %".117", i64* %".122"
-  %".124" = load i64, i64* %"randmax"
-  %".125" = load i64, i64* %"genmax"
-  %".126" = sub i64 %".124", %".125"
-  %".127" = load i64, i64* %"choices"
-  %".128" = udiv i64 %".126", %".127"
-  %".129" = load %"randint_source"*, %"randint_source"** %"s"
-  %".130" = bitcast %"randint_source"* %".129" to i8*
-  %".131" = getelementptr i8, i8* %".130", i64 16
-  %".132" = bitcast i8* %".131" to %"randint_source"*
-  %".133" = bitcast %"randint_source"* %".132" to i64*
-  store i64 %".128", i64* %".133"
-  %".135" = load i64, i64* %"randnum"
-  %".136" = load i64, i64* %"choices"
-  %".137" = urem i64 %".135", %".136"
-  store i64 %".137", i64* %"funcresult"
+  %".116" = load i64, i64* %"randnum"
+  %".117" = load i64, i64* %"choices"
+  %".118" = udiv i64 %".116", %".117"
+  %".119" = load %"randint_source"*, %"randint_source"** %"s"
+  %".120" = bitcast %"randint_source"* %".119" to i8*
+  %".121" = getelementptr i8, i8* %".120", i64 8
+  %".122" = bitcast i8* %".121" to %"randint_source"*
+  %".123" = bitcast %"randint_source"* %".122" to i64*
+  store i64 %".118", i64* %".123"
+  %".125" = load i64, i64* %"randmax"
+  %".126" = load i64, i64* %"genmax"
+  %".127" = sub i64 %".125", %".126"
+  %".128" = load i64, i64* %"choices"
+  %".129" = udiv i64 %".127", %".128"
+  %".130" = load %"randint_source"*, %"randint_source"** %"s"
+  %".131" = bitcast %"randint_source"* %".130" to i8*
+  %".132" = getelementptr i8, i8* %".131", i64 16
+  %".133" = bitcast i8* %".132" to %"randint_source"*
+  %".134" = bitcast %"randint_source"* %".133" to i64*
+  store i64 %".129", i64* %".134"
+  %".136" = load i64, i64* %"randnum"
+  %".137" = load i64, i64* %"choices"
+  %".138" = urem i64 %".136", %".137"
+  store i64 %".138", i64* %"funcresult"
   br label %"@12"
 "@11":
-  %".140" = load i64, i64* %"randnum"
-  %".141" = load i64, i64* %"choices"
-  %".142" = urem i64 %".140", %".141"
-  store i64 %".142", i64* %"randnum"
-  %".144" = load i64, i64* %"unusable_choices"
-  %".145" = sub i64 %".144", 1
-  store i64 %".145", i64* %"randmax"
+  %".141" = load i64, i64* %"randnum"
+  %".142" = load i64, i64* %"choices"
+  %".143" = urem i64 %".141", %".142"
+  store i64 %".143", i64* %"randnum"
+  %".145" = load i64, i64* %"unusable_choices"
+  %".146" = sub i64 %".145", 1
+  store i64 %".146", i64* %"randmax"
   br label %"@2"
 "@12":
   %".6" = load i64, i64* %"funcresult"
