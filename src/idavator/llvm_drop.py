@@ -349,6 +349,37 @@ def _parse_struct_layouts(ir_text: str) -> dict:
     return structs
 
 
+def _parse_struct_field_offsets(ir_text: str, sizes: dict) -> dict:
+    """``name -> [byte offset of each top-level field]`` for every ``%name = type
+    {..}`` whose layout is computable, using the SAME natural-C alignment walk as
+    ``_parse_struct_layouts`` (each member rounded up to its own alignment; packed
+    structs -- ``<{..}>`` -- get no padding). ``sizes`` is the already-computed
+    ``name -> (size, align)`` map so a nested ``%struct`` field is sized by its
+    cached layout.
+
+    The offsets HONOR ABI padding: ``%timeval = type {i64, i32}`` yields
+    ``[0, 8]`` (the ``i32`` lands at 8, not 4, because the i64 occupies 0..7 and
+    the i32's own 4-byte alignment leaves it at 8 in a 16-byte struct). A struct
+    whose body references an un-laid-out type is simply absent (the GEP path then
+    declines -> native fallback), mirroring ``_parse_struct_layouts``."""
+    out: dict = {}
+    for m in re.finditer(r'(%[\w".:$]+)\s*=\s*type\s*(<?)\s*\{(.*)\}', ir_text):
+        name = m.group(1).strip().replace('"', "")
+        packed = m.group(2) == "<"
+        try:
+            off, offsets = 0, []
+            for f in _split_fields(m.group(3)):
+                sz, al = _type_sa(f, sizes)
+                if not packed:
+                    off = _round_up(off, al)
+                offsets.append(off)
+                off += sz
+            out[name] = offsets
+        except Exception:  # noqa: BLE001 -- un-laid-out member; skip (native fallback)
+            continue
+    return out
+
+
 class LLVMDropConverter:
     """Drop a (straight-line) LLVM function into a host's decompiled output."""
 
@@ -360,6 +391,10 @@ class LLVMDropConverter:
         # ``drop`` flips it so ``_capture_call_result`` ALSO kills the ABI return
         # register after kreg-copying a call's result. See ``_capture_call_result``.
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
+        # name -> [byte offset of each field] (same natural-C/packed walk as the
+        # size pass); feeds the struct-field GEP-on-stack resolution.
+        self._struct_field_off = _parse_struct_field_offsets(
+            ir_text, self._struct_size)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
         self._arg_spill_kill: set = set()  # arg regs to KILL after the entry spill
@@ -2333,11 +2368,19 @@ class LLVMDropConverter:
                 nm = ins.name
                 sz = self._alloca_elem_size(ins)
                 if nm in gepd:
+                    # Mirror _scan_allocas' gepd sizing EXACTLY so the synthetic
+                    # ``off`` accounting (used to locate cursor stkvars) stays in
+                    # lockstep: an ``[N x T]`` array uses _array_dims; a bare laid-out
+                    # ``%struct`` uses the whole-struct size; a scalar byte-pun /
+                    # va_list / anonymous gepd alloca is where _scan_allocas raises ->
+                    # nothing to type, bail.
                     dims = self._array_dims(str(ins))
-                    if dims is None:
-                        # _scan_allocas will raise on this; nothing to type here.
+                    if dims is not None:
+                        off += max(dims[0] * dims[2], 8)
+                    elif nm and self._alloca_struct_key(ins) is not None:
+                        off += max(sz, 8)
+                    else:
                         return out
-                    off += max(dims[0] * dims[2], 8)
                 elif nm in escaped or nm in cursors:
                     # Opaque-pointer normalization erases the pointee from
                     # ``str(ins)``; resolve the struct from the source-text decl.
@@ -2527,12 +2570,103 @@ class LLVMDropConverter:
             return (n, elem, self._struct_size[key][0])
         return None
 
+    def _struct_key(self, tok: str):
+        """Canonical ``self._struct_size``/``self._struct_field_off`` key for a
+        ``%name`` type token (quotes stripped, llvmlite ``.NN`` suffix tolerated),
+        or None if it is not a laid-out struct."""
+        tok = tok.strip()
+        if not tok.startswith("%"):
+            return None
+        key = tok.replace('"', "")
+        if key not in self._struct_size:
+            key = re.sub(r"\.\d+$", "", key)
+        return key if key in self._struct_size else None
+
+    def _type_byte_size(self, tok: str) -> int:
+        """Byte size of an LLVM type token honouring struct layout (``_type_size``
+        has no struct case and returns 4 for an opaque ``%name``)."""
+        tok = tok.strip()
+        m = re.match(r"\[\s*(\d+)\s+x\s+(.+)\]$", tok)
+        if m:
+            return int(m.group(1)) * self._type_byte_size(m.group(2))
+        key = self._struct_key(tok)
+        if key is not None:
+            return self._struct_size[key][0]
+        return _type_size(tok)
+
+    def _gep_walk_offset(self, lead_ty: str, ops, vmap) -> int:
+        """Constant byte offset of a ``getelementptr LEAD_TY, ptr %base, I0, I1..``
+        walking the index list through the leading aggregate type. Supports a
+        SCALAR lead (single pointer-arithmetic index ``i32 0`` on ``i32 %mode``),
+        an ``[N x T]`` array (first index strides whole-elements, the rest descend
+        into T), a ``%struct`` (an index SELECTS field F -> its real byte offset),
+        and nested array-of-struct / struct-in-struct. Raises NotImplementedError
+        on a non-constant index or an un-laid-out element (clean native fallback).
+
+        The FIRST index is C pointer arithmetic over ``LEAD_TY`` (``ptr[i]``); each
+        subsequent index descends one aggregate level. This mirrors LLVM GEP
+        semantics and de-generalises to the scalar identity GEP the lifter emits
+        for a reload (``getelementptr i32, ptr %mode, i32 0`` -> 0)."""
+        cur = lead_ty.strip()
+        total = 0
+        for k, o in enumerate(ops[1:]):
+            d = self._desc(o, vmap, 8)
+            if d[0] != "num":
+                raise NotImplementedError("GEP-on-stack: non-constant index")
+            idx = d[1]
+            if k == 0:
+                # pointer arithmetic over the whole leading type, then descend it.
+                total += idx * self._type_byte_size(cur)
+                continue
+            m = re.match(r"\[\s*(\d+)\s+x\s+(.+)\]$", cur)
+            if m:
+                cur = m.group(2).strip()
+                total += idx * self._type_byte_size(cur)
+                continue
+            key = self._struct_key(cur)
+            if key is not None and key in self._struct_field_off:
+                offsets = self._struct_field_off[key]
+                if not 0 <= idx < len(offsets):
+                    raise NotImplementedError("GEP-on-stack: field index OOB")
+                total += offsets[idx]
+                # descend into the selected field's type for any deeper index.
+                raw = re.search(
+                    r'%"?' + re.escape(key) + r'"?\s*=\s*type\s*<?\s*\{(.*)\}',
+                    self._ir_text)
+                if raw is not None:
+                    fields = _split_fields(raw.group(1))
+                    if idx < len(fields):
+                        cur = fields[idx].strip()
+                continue
+            raise NotImplementedError(
+                f"GEP-on-stack: un-laid-out element {cur!r}")
+        return total
+
+    def _gep_lead_type(self, ins) -> str:
+        """The leading source element type of a ``getelementptr`` from its IR text
+        (``getelementptr inbounds [2 x %timeval], ptr %a, ..`` -> ``[2 x %timeval]``;
+        ``getelementptr i32, ptr %mode, ..`` -> ``i32``)."""
+        s = str(ins).strip()
+        m = re.search(
+            r"getelementptr\s+(?:inbounds\s+)?(?:nuw\s+)?(.+?)\s*,\s*ptr\b", s)
+        if m:
+            return m.group(1).strip()
+        # legacy typed-pointer form: ``getelementptr i32, i32* %p`` -- take the
+        # token before the first comma.
+        m = re.search(
+            r"getelementptr\s+(?:inbounds\s+)?(?:nuw\s+)?([^,]+),", s)
+        return m.group(1).strip() if m else "i8"
+
     def _gep_field_offset(self, ins, ops, vmap) -> int:
         """Constant byte offset of ``getelementptr [N x T], ptr %alloca, I0, I1``
-        into a frame-slot alloca: ``I0*sizeof([N x T]) + I1*sizeof(T)``."""
+        into a frame-slot alloca: ``I0*sizeof([N x T]) + I1*sizeof(T)``.
+
+        The scalar-array fast path stays for the (overwhelmingly common) ``[N x T]``
+        scalar-element form; a struct / array-of-struct / scalar-identity GEP
+        (``_array_dims`` None) routes through the general type-walking resolver."""
         dims = self._array_dims(str(ins))
         if dims is None:
-            raise NotImplementedError("GEP-on-stack: struct/va_list element")
+            return self._gep_walk_offset(self._gep_lead_type(ins), ops, vmap)
         n, _elem, esz = dims
         strides = (n * esz, esz)  # [i0 over whole array, i1 over element]
         total = 0
@@ -2685,15 +2819,44 @@ class LLVMDropConverter:
                 sz = self._alloca_elem_size(ins)
                 named = _anchorable(nm)
                 if nm in gepd:
-                    # GEP'd alloca -> a frame slot sized to the WHOLE array; each GEP
-                    # resolves to &stkvar(slot + field). A host-named array rests at
-                    # its real offset; an anonymous one keeps a low synthetic slot.
+                    # GEP'd alloca -> a frame slot sized to the WHOLE aggregate; each
+                    # GEP resolves to &stkvar(slot + field). A host-named slot rests
+                    # at its real offset; an anonymous one keeps a low synthetic slot.
+                    #   * ``[N x T]`` array (scalar OR struct element) -> ``_array_dims``
+                    #     gives the whole-array size and ``_gep_field_offset`` strides
+                    #     it (the long-standing scalar-array path; AoS already worked);
+                    #   * a bare ``%struct`` alloca GEP'd at its real FIELD offsets
+                    #     (``getelementptr %struct, ptr %a, 0, i32 F``) -> ``_array_dims``
+                    #     is None but ``_alloca_struct_key`` resolves a laid-out struct;
+                    #     size the slot to the whole struct and let
+                    #     ``_gep_field_offset``'s field-offset walker resolve each GEP.
+                    #     This is the ADDITIVE struct-layout case (previously RAISED).
+                    #
+                    # DECLINE (keep raising -> clean native fallback, EXACTLY as
+                    # ebe211f) for:
+                    #   * a SCALAR / pointer / va_list alloca GEP'd at a constant
+                    #     offset -- this is the lifter's byte-pun reload
+                    #     (``getelementptr i16, ptr %v7, i32 0`` + ``bitcast .. to
+                    #     i8*`` + masked sub-byte store). Routing the scalar through a
+                    #     frame slot drops the sub-register store, AND the relifted
+                    #     byte offsets diverge from native's ``BYTE1``/``HIBYTE`` form
+                    #     (rpl_mknod/fdutimens/set_owner): not faithfully droppable, so
+                    #     it MUST fall back rather than ship a divergent body;
+                    #   * an ANONYMOUS (numeric-IR) gepd alloca -- llvmlite reports
+                    #     ``name == ''`` for ALL numeric SSA values, collapsing the
+                    #     whole-function name map onto one '' bucket (the OLLVM
+                    #     obfuscated IR); not faithfully droppable through the
+                    #     name-keyed path.
                     dims = self._array_dims(str(ins))
-                    if dims is None:
+                    if dims is not None:
+                        arr_sz = dims[0] * dims[2]
+                    elif nm and self._alloca_struct_key(ins) is not None:
+                        arr_sz = sz  # whole-struct size (via _struct_size)
+                    else:
                         raise NotImplementedError(
-                            f"GEP-on-stack alloca %{nm} (struct/va_list element "
-                            f"needs real layout -- not the scalar-array slice)")
-                    arr_sz = dims[0] * dims[2]
+                            f"GEP-on-stack alloca %{nm} (scalar byte-pun / va_list / "
+                            f"anonymous numeric IR -- not a laid-out struct field; "
+                            f"native fallback)")
                     if named:
                         slot_off = host_off[nm][0]
                     else:
