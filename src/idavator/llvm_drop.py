@@ -396,14 +396,18 @@ class LLVMDropConverter:
         ida_typeinf.apply_tinfo(host_ea, tif, ida_typeinf.TINFO_DEFINITE)
 
     @staticmethod
-    def _abi():
+    def _arg_reg_names():
         # Integer arg registers depend on the target ABI: a PE (Windows) target
         # uses the Microsoft x64 convention (rcx/rdx/r8/r9); everything else
-        # (ELF/Mach-O) uses System V (rdi/rsi/rdx/rcx/r8/r9). Return reg = rax.
+        # (ELF/Mach-O) uses System V (rdi/rsi/rdx/rcx/r8/r9).
         if ida_ida.inf_get_filetype() == ida_ida.f_PE:
-            names = ("rcx", "rdx", "r8", "r9")
-        else:
-            names = ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+            return ("rcx", "rdx", "r8", "r9")
+        return ("rdi", "rsi", "rdx", "rcx", "r8", "r9")
+
+    @staticmethod
+    def _abi():
+        # Return reg = rax (rdi/... for args -- see _arg_reg_names).
+        names = LLVMDropConverter._arg_reg_names()
         argregs = [hx.reg2mreg(ida_idp.str2reg(r)) for r in names]
         return (argregs, hx.reg2mreg(ida_idp.str2reg("rax")),
                 hx.reg2mreg(ida_idp.str2reg("ds")))
@@ -1085,6 +1089,18 @@ class LLVMDropConverter:
                 return self._emit_helper_call(
                     mba, blk, anchor, ea, ins, callee.name, arg_descs, eax)
             raise ValueError(f"unresolved callee @{callee.name}")
+        # Variadic callee (e.g. printf/error) carrying trailing varargs: a bare
+        # `m_call gvar` with no mcallinfo leaves Hex-Rays to re-discover the
+        # vararg count from its own analysis, and it drops them (rendering only a
+        # mis-resolved fmt). Build an EXPLICIT mcallinfo declaring every passed
+        # arg (fixed prefix + varargs) so the call carries them deterministically.
+        # Only when surplus args are actually present beyond the fixed prototype.
+        ctif = ida_typeinf.tinfo_t()
+        if (ida_nalt.get_tinfo(ctif, callee_ea) and ctif.is_func()
+                and ctif.is_vararg_cc()
+                and len(call_args) > ctif.get_nargs()):
+            return self._emit_call_vararg(
+                mba, blk, anchor, ea, ins, vmap, callee_ea, ctif)
         # Resolve args once; a call that materializes a frame address (&local)
         # must carry the host resting-frame ea so Hex-Rays computes a
         # frame-consistent mcallinfo.call_spd -- else WARN_BAD_CALL_SP ("bad sp
@@ -1106,6 +1122,129 @@ class LLVMDropConverter:
         mc.l.make_gvar(callee_ea)
         rsz = _type_size(ins.type) if str(ins.type) != "void" else 8
         mc.d.make_reg(eax, rsz)  # call defines rax (the continuation captures it)
+        blk.insert_into_block(mc, anchor)
+        return mc
+
+    def _emit_call_vararg(self, mba, blk, anchor, ea, ins, vmap, callee_ea, ctif):
+        """Emit a DIRECT call to a VARIADIC callee (printf/error/...) carrying
+        trailing varargs, with an EXPLICIT variadic ``mcallinfo_t`` so Hex-Rays
+        renders every argument (the fixed prefix AND the varargs).
+
+        A bare ``m_call gvar`` with no callinfo leaves the vararg count to
+        Hex-Rays' own analysis, which drops the trailing args (it renders only a
+        mis-resolved fmt). We MIRROR Hex-Rays' own post-CALLS variadic form
+        (native ``mov call $".printf"<...:"const char *format" &fmt, _QWORD v1,
+        _QWORD v2> => int .4, eax.4``):
+
+        * ``set_type`` with the callee's REAL variadic tinfo -- this KEEPS the
+          ellipsis cc (``is_vararg()`` stays true) and creates the FIXED args with
+          their SysV arglocs (fmt in rdi, ...). Do NOT rebuild a concrete
+          fastcall prototype: that normalizes ellipsis away and the final
+          decompile then drops the call (INTERR 50406/50743).
+        * APPEND each surplus vararg to ``fi.args`` with the next SysV integer
+          register argloc (rsi, rdx, rcx, r8, r9), exactly as the variadic tail
+          appears natively. ``solid_args`` stays the fixed count; the varargs ride
+          beyond it.
+
+        The result is DISCARDED (every cp variadic call site discards it), so the
+        call is emitted as a bare result-discarded ``m_call`` (``d.size`` 0, no
+        retregs) -- a pre-built return register conflicts with Hex-Rays' own
+        callinfo re-derivation at MMAT_CALLS (INTERR 50743/50406)."""
+        # The result-discarded modeling below has no recipe for a CONSUMED vararg
+        # result -- defer (native fallback) rather than silently corrupt. Checked
+        # first so no partial microcode is emitted on the unsupported path.
+        if self._value_used(ins):
+            raise NotImplementedError(
+                f"vararg call result consumed for @{ins.operands[-1].name}")
+        ops = list(ins.operands)
+        call_args = ops[:-1]
+        _argregs, eax, _ds = self._abi()
+        arg_reg_names = self._arg_reg_names()
+        nfixed = ctif.get_nargs()
+        # Return width from the callee PROTOTYPE, not the LLVM call type (the lift
+        # may type the result narrower than the ABI return reg); void -> 8.
+        crettype = ctif.get_rettype()
+        rsz = crettype.get_size()
+        if rsz in (0, ida_idaapi.BADADDR) or crettype.is_void():
+            rsz = 8
+        # set_type with the REAL variadic prototype keeps cc=ellipsis + fixed
+        # arglocs (is_vararg() stays true).
+        fi = hx.mcallinfo_t(callee_ea, 0)
+        if not fi.set_type(ctif):
+            raise NotImplementedError(
+                f"vararg call: set_type failed for @{ins.operands[-1].name}")
+
+        def _fill_arg(arg, a):
+            """Fill one mcallarg's mop VALUE from LLVM operand ``a``, widening a
+            narrower value into the formal slot (verifier wants mop.size == slot)."""
+            nonlocal anchor
+            fsz = arg.type.get_size()
+            if fsz in (0, ida_idaapi.BADADDR):
+                fsz = _type_size(a.type)
+            asz = _type_size(a.type)
+            d = self._desc(a, vmap, asz)
+            if asz < fsz and d[0] in ("reg", "num"):
+                if d[0] == "num":
+                    d = ("num", d[1], fsz)
+                else:
+                    mi = hx.minsn_t(ea)
+                    mi.opcode = hx.m_xdu
+                    self._fill(mi.l, (d[0], d[1], asz))
+                    kreg = mba.alloc_kreg(fsz)
+                    mi.d.make_reg(kreg, fsz)
+                    blk.insert_into_block(mi, anchor)
+                    anchor = mi
+                    d = ("reg", kreg, fsz)
+            tmp = hx.mop_t()
+            self._fill(tmp, (d[0], d[1], fsz))
+            arg.copy_mop(tmp)
+            arg.size = fsz
+
+        # Fixed args: set_type already created their slots + arglocs; fill values.
+        for i in range(min(nfixed, fi.args.size())):
+            _fill_arg(fi.args[i], call_args[i])
+        # Variadic tail: APPEND each surplus arg with the next SysV integer
+        # register argloc, mirroring the native variadic tail.
+        for i in range(nfixed, len(call_args)):
+            a = call_args[i]
+            arg = hx.mcallarg_t()
+            asz = _type_size(a.type)
+            fsz = asz if asz in (1, 2, 4, 8) else 8
+            # A pointer operand renders cleanly as a ``void *`` vararg (else the
+            # value shows as a ``(signed __int64)`` reinterpret cast).
+            if getattr(a.type, "is_pointer", False) or str(a.type) == "ptr":
+                pt = ida_typeinf.tinfo_t()
+                pt.create_ptr(ida_typeinf.tinfo_t(ida_typeinf.BTF_VOID))
+                arg.type = pt
+                fsz = 8
+            else:
+                arg.type = self._int_tinfo(fsz)
+            arg.size = fsz
+            if i < len(arg_reg_names):
+                arg.argloc._set_reg1(ida_idp.str2reg(arg_reg_names[i]))
+            _fill_arg(arg, a)
+            fi.args.push_back(arg)
+        # Result scaffolding. The variadic callees we recover (printf/error/...)
+        # DISCARD their result in every cp call site; model the call as a
+        # result-discarded one: d.size = 0, NO retregs/return_regs. A pre-built
+        # mcallinfo that DECLARES a return register conflicts with Hex-Rays' own
+        # re-derivation of the callinfo at MMAT_CALLS (used_retvals vs retval size
+        # -> INTERR 50743); a result-discarded call sidesteps that and lets
+        # Hex-Rays' printf-format machinery recover the varargs. spoiled keeps rax
+        # clobbered (an ABI call destroys it).
+        fi.spoiled.add(eax, rsz)
+        fi.return_type = self._int_tinfo(rsz)
+        fi.flags |= hx.FCI_HASFMT
+        call_ea = (self._call_spd_ea
+                   if self._call_spd_ea is not None else ea)
+        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
+                                        call_ea) if ida_funcs.get_func(
+                                            mba.entry_ea) else 0
+        mc = hx.minsn_t(call_ea)
+        mc.opcode = hx.m_call
+        mc.l.make_gvar(callee_ea)
+        mc.d._make_callinfo(fi)
+        mc.d.size = 0  # result discarded
         blk.insert_into_block(mc, anchor)
         return mc
 
@@ -1904,6 +2043,21 @@ class LLVMDropConverter:
             "__readfsqword", "__readgsqword", "__stack_chk_fail")
 
     @staticmethod
+    def _value_used(ins) -> bool:
+        """True if the SSA result of ``ins`` is referenced as an operand by any
+        instruction in its function (llvmlite ValueRef exposes no use list, so we
+        scan). A void/unnamed result is never used."""
+        name = getattr(ins, "name", "")
+        if not name:
+            return False
+        for blk in ins.function.blocks:
+            for other in blk.instructions:
+                for op in other.operands:
+                    if op.name == name:
+                        return True
+        return False
+
+    @staticmethod
     def _callee_is_noreturn(ins) -> bool:
         """True if the call's DIRECT callee is __noreturn (xalloc_die/abort/...).
         Such a call ends its block with NO successor (BLT_0WAY) and everything
@@ -2068,7 +2222,12 @@ class LLVMDropConverter:
         for e in plan:
             blk = mba.get_mblock(e["code"])
             anchor = None
-            if e["prev_call"] is not None and str(e["prev_call"].type) != "void":
+            if (e["prev_call"] is not None
+                    and str(e["prev_call"].type) != "void"
+                    and self._value_used(e["prev_call"])):
+                # Skip capturing a result no instruction consumes: the kreg copy
+                # would be dead, and for a result-discarded call (e.g. a variadic
+                # printf modeled with d.size 0) it would read an undefined rax.
                 anchor = self._capture_call_result(
                     mba, blk, anchor, ea, e["prev_call"], eax, vmap)
             for ins in e["values"]:

@@ -2014,9 +2014,11 @@ def lift_insn(
                 if args[i].type != llvm_type:
                     args[i] = typecast(args[i], llvm_type, builder)
 
-            args = args[: len(l_pointee.args)]
-
             if l_pointee.var_arg:  # Function signature is variadic
+                # Keep the surplus trailing arguments (the varargs) UNCHANGED and
+                # widen the function type so the emitted `call` carries them; only
+                # the fixed prefix above is typecast. Truncating here would drop
+                # every vararg (the bug fixed by ida-23as).
                 ltype = l_pointee
                 new_args = list(ltype.args)
                 for i in range(len(new_args), len(args)):
@@ -2025,6 +2027,10 @@ def lift_insn(
                     ltype.return_type, new_args, var_arg=True
                 ).as_pointer()
                 l = typecast(l, new_func_type, builder)
+            else:
+                # Non-variadic callee: drop any surplus operands beyond the fixed
+                # signature (preserves prior behavior for fixed-arity calls).
+                args = args[: len(l_pointee.args)]
             ret = builder.call(l, args)
             for dst in rets:
                 _store_as(ret, dst, blk, builder)

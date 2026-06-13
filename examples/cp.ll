@@ -5584,7 +5584,7 @@ define i8* @"close_stdout"()
   %".32" = getelementptr [7 x i8], [7 x i8]* @"aSS_2", i32 0, i32 0
   %".33" = load i8*, i8** %"v0"
   %".34" = load i8*, i8** %"write_error"
-  %".35" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".31", i8* %".32")
+  %".35" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".31", i8* %".32", i8* %".33", i8* %".34")
   br label %"@7"
 "@6":
   %".37" = call i32* @"__errno_location"()
@@ -5593,7 +5593,7 @@ define i8* @"close_stdout"()
   %".40" = load i32, i32* %".39"
   %".41" = bitcast i8** @"aS_0" to i8*
   %".42" = load i8*, i8** %"write_error"
-  %".43" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".40", i8* %".41")
+  %".43" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".40", i8* %".41", i8* %".42")
   br label %"@7"
 "@7":
   %".45" = load i32, i32* @"exit_failure"
@@ -6753,7 +6753,7 @@ define i8* @"usage"(i32 %".1")
   %".16" = load i8*, i8** %"v2"
   %".17" = bitcast i8** %"v1" to i64*
   %".18" = load i64, i64* %".17"
-  %".19" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".15", i8* %".16")
+  %".19" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".15", i8* %".16", i64 %".18")
   br label %"@4"
 "@3":
   %".21" = load i8*, i8** @"program_name"
@@ -6772,7 +6772,7 @@ define i8* @"usage"(i32 %".1")
   %".34" = load i64, i64* %".33"
   %".35" = bitcast i8** %"v3" to i64*
   %".36" = load i64, i64* %".35"
-  %".37" = call i32 (i8*, ...) @"printf"(i8* %".30")
+  %".37" = call i32 (i8*, ...) @"printf"(i8* %".30", i64 %".32", i64 %".34", i64 %".36")
   %".38" = load %"FILE"*, %"FILE"** @"stdout@GLIBC_2.2.5"
   %".39" = bitcast %"FILE"* %".38" to i8*
   %".40" = bitcast %"FILE"** %"v7" to i8*
@@ -25089,7 +25089,7 @@ define i8* @"emit_verbose"(i8* %".1", i8* %".2", i8* %".3")
   %".18" = getelementptr [9 x i8], [9 x i8]* @"format", i32 0, i32 0
   %".19" = load i8*, i8** %"v4"
   %".20" = load i8*, i8** %"v3"
-  %".21" = call i32 (i8*, ...) @"printf"(i8* %".18")
+  %".21" = call i32 (i8*, ...) @"printf"(i8* %".18", i8* %".19", i8* %".20")
   %".22" = load i8*, i8** %"backup_dst_name"
   %".23" = ptrtoint i8* %".22" to i64
   %".24" = icmp eq i64 %".23", 0
@@ -25104,7 +25104,7 @@ define i8* @"emit_verbose"(i8* %".1", i8* %".2", i8* %".3")
   %".32" = load i8*, i8** %"v6"
   %".33" = bitcast i8** %"v5" to i64*
   %".34" = load i64, i64* %".33"
-  %".35" = call i32 (i8*, ...) @"printf"(i8* %".32")
+  %".35" = call i32 (i8*, ...) @"printf"(i8* %".32", i64 %".34")
   br label %"@3"
 "@3":
   %".37" = call i32 @"putchar_unlocked"(i32 10)
@@ -29782,7 +29782,7 @@ define i1 @"create_hole"(i32 %".1", i8* %".2", i1 %".3", i64 %".4")
   %".32" = load i8*, i8** %"v5"
   %".33" = bitcast i8** %"v4" to i64*
   %".34" = load i64, i64* %".33"
-  %".35" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".31", i8* %".32")
+  %".35" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".31", i8* %".32", i64 %".34")
   %".36" = bitcast i1* %"funcresult" to i8*
   store i8 0, i8* %".36"
   br label %"@7"
@@ -29814,7 +29814,7 @@ define i1 @"create_hole"(i32 %".1", i8* %".2", i1 %".3", i64 %".4")
   %".61" = load i8*, i8** %"v9"
   %".62" = bitcast i8** %"v8" to i64*
   %".63" = load i64, i64* %".62"
-  %".64" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".60", i8* %".61")
+  %".64" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".60", i8* %".61", i64 %".63")
   %".65" = bitcast i1* %"funcresult" to i8*
   store i8 0, i8* %".65"
   br label %"@7"
