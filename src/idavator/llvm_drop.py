@@ -333,6 +333,9 @@ class LLVMDropConverter:
         self._ir_text = ir_text
         self.module = llvm.parse_assembly(ir_text)
         self._sroa_module = None     # lazily-built SROA-optimized copy (fallback)
+        self._kreg_call_results = False  # off by default; the scoped 50342 retry in
+        # ``drop`` flips it so ``_capture_call_result`` ALSO kills the ABI return
+        # register after kreg-copying a call's result. See ``_capture_call_result``.
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
@@ -374,6 +377,26 @@ class LLVMDropConverter:
         cf, box = self._drop_from_module(self.module, host_ea, llvm_fn_name)
         is_late_failure = (cf is None and box["err"] is None
                            and box["interr"] is None)
+        # FAITHFUL 50342 retry (scoped, zero-regression): a late failure where a
+        # call result carried in the ABI return register is reused as a body
+        # INTERMEDIATE while rax is independently redefined as the return value --
+        # the two versions collide at the body-less BLT_STOP (INTERR 50342). Retry
+        # the SAME (plain) module with ``_kreg_call_results`` so each captured call
+        # result is kicked OUT of rax into its kreg (rax killed), mirroring native's
+        # ``%bucket`` stkvar. This stays FAITHFUL (same IR, no SROA reshaping) and
+        # runs BEFORE the SROA fallback, so a fix here beats SROA's coarser body.
+        # Because it only runs when the plain drop already FAILED, every
+        # currently-passing function is untouched.
+        if is_late_failure:
+            self._kreg_call_results = True
+            try:
+                cfk, boxk = self._drop_from_module(
+                    self.module, host_ea, llvm_fn_name)
+            finally:
+                self._kreg_call_results = False
+            if cfk is not None:
+                cf, box = cfk, boxk
+                is_late_failure = False
         if is_late_failure:
             opt = self._get_sroa_module()
             if opt is not None and any(
@@ -1962,7 +1985,21 @@ class LLVMDropConverter:
     def _capture_call_result(self, mba, blk, anchor, ea, call_ins, eax, vmap):
         """At a continuation block's START, copy the call's rax result into a
         scratch kreg so it survives a later call that clobbers rax. Registers
-        the kreg in vmap as the call's SSA value."""
+        the kreg in vmap as the call's SSA value.
+
+        When ``self._kreg_call_results`` is set (the scoped 50342 retry in
+        ``drop``), ALSO kill the ABI return register (``mov #0, rax``) right after
+        the kreg copy. The plain copy alone is INERT when nothing clobbers rax
+        between here and a later rax-redefinition: Hex-Rays proves ``kreg == rax``
+        and copy-propagates the kreg back into rax, so the call result (used as a
+        loop/body INTERMEDIATE) ends up sharing the physical return register with
+        the function's RETURN value. Both versions then converge at the body-less
+        ``BLT_STOP`` as one register holding two distinct SSA values -> an
+        un-numberable phi (INTERR 50342 at MMAT_GLBOPT2). Killing rax severs the
+        copy chain so the intermediate must live in the kreg (Hex-Rays parks it in
+        a stack slot, exactly as native carries it in ``%bucket``), leaving rax
+        solely for the return phi-sink. Mirrors the ``_arg_spill_kill`` discipline
+        for clobbered arg registers."""
         rsz = _type_size(call_ins.type)
         kreg = mba.alloc_kreg(rsz)
         mv = hx.minsn_t(ea)
@@ -1971,7 +2008,15 @@ class LLVMDropConverter:
         mv.d.make_reg(kreg, rsz)
         blk.insert_into_block(mv, anchor)
         vmap[call_ins.name] = ("reg", kreg, rsz)
-        return mv
+        anchor = mv
+        if self._kreg_call_results:
+            kill = hx.minsn_t(ea)
+            kill.opcode = hx.m_mov
+            kill.l.make_number(0, rsz)
+            kill.d.make_reg(eax, rsz)
+            blk.insert_into_block(kill, anchor)
+            anchor = kill
+        return anchor
 
     def _emit_ret_value(self, blk, anchor, ea, term, eax, vmap):
         """Emit `mov <retval>, eax` for an LLVM ret (no terminator). A promoted
