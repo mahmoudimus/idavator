@@ -1617,6 +1617,32 @@ def lift_insn(
         ),
     )
 
+    # m_stx (`stx l, {r=sel, d=off}`) stores THROUGH a pointer: `d` is the memory
+    # ADDRESS to write, a pointer VALUE, NOT a destination slot. When that address is
+    # a bare LOCAL/STACK pointer slot at offset 0 (`%new_bucket`, a mop_l/mop_S),
+    # lift_mop(dest=True) returned the SLOT ADDRESS (&slot), so the store wrote the
+    # slot itself (`new_bucket = data`, a pointer-slot DEFINE) instead of
+    # dereferencing (`new_bucket->data = data`, a store THROUGH the pointer). The two
+    # are byte-identical in the IR (`bitcast %slot; store`) -- neither the lifter nor
+    # the drop renderer can tell them apart -- but the microcode does (an m_stx
+    # *address* operand vs an m_ldx/m_mov *destination*). This is the exact STORE-side
+    # mirror of the m_ldx `r`-as-VALUE fix (57e7c90).
+    #
+    # The fix LOADS the slot to recover the pointer value and stores through THAT
+    # (`store l, load(slot)`), making the deref distinct from a slot define. It is
+    # done here (not via lift_mop dest=False) because the generic `_store_as` path
+    # `dedereference()`s its destination -- which would strip a bare `load(slot)` and
+    # collapse back to a slot define (e.g. `*total_n_read = 0` -> `total_n_read =
+    # NULL`). Scope is deliberately NARROW: only a bare mop_l/mop_S address operand at
+    # offset 0 is re-pointed at its loaded value; offset>0 operands are a mop_d
+    # (already a GEP value, deref-correct) and registers keep their lowering.
+    stx_slot_addr = None
+    if ida_insn.opcode == ida_hexrays.m_stx and ida_insn.d.t in (
+        ida_hexrays.mop_l,
+        ida_hexrays.mop_S,
+    ):
+        stx_slot_addr = d
+
     # Declare helper functions dynamically when referenced
     if ida_insn.l.t == ida_hexrays.mop_h and l is None:
         l = create_intrinsic_function(
@@ -1640,6 +1666,20 @@ def lift_insn(
         case ida_hexrays.m_stx:  # 0x01, stx l, {r=sel, d=off} store value to memory
             if not need(l, "l") or not need(d, "d"):
                 return None
+            if stx_slot_addr is not None:
+                # Deref-store through a bare local/stack pointer slot: load the slot
+                # to recover the pointer VALUE, then store `l` THROUGH it. This keeps
+                # `new_bucket->data = data` (a store through the pointer) distinct in
+                # the IR from a `new_bucket = data` slot define -- and, unlike routing
+                # a loaded value back through `_store_as`, it is not undone by
+                # `dedereference()` (which would strip the load and collapse to a slot
+                # define, e.g. `*total_n_read = 0` -> `total_n_read = NULL`). See the
+                # operand-lift note above.
+                ptr_val = builder.load(stx_slot_addr)
+                ptr_val = typecast(ptr_val, l.type.as_pointer(), builder)
+                return typing.cast(
+                    ir.Instruction, builder.store(l, ptr_val)
+                )
             d = storecast(l, d, builder)
             return typing.cast(ir.Instruction, _store_as(l, d, blk, builder))
         case ida_hexrays.m_ldx:  # 0x02, ldx {l=sel, r=off}, d load value from memory
