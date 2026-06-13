@@ -2131,17 +2131,31 @@ def lift_insn(
         case ida_hexrays.m_ext:  # 0x3E, ext (external instruction, not microcode)
             return
         case ida_hexrays.m_f2i:  # 0x3F, f2i (convert float to signed integer)
-            return typecast(l, ir.IntType(ida_insn.d.size * 8), builder, signed=True)
+            # fp->signed int. Like the integer casts (m_xds/m_low) and m_f2f, the
+            # conversion RESULT must be stored to the destination `d` when this is a
+            # top-level insn (line ~636 discards lift_insn's return -> an unstored
+            # result is lost, e.g. an `f2i v, STKVAR` to a merge slot vanishes). The
+            # nested-operand case (mop_d, line ~1158) passes `d=None`; _store_as then
+            # returns the value unchanged, preserving the chained-value behaviour.
+            res = typecast(l, ir.IntType(ida_insn.d.size * 8), builder, signed=True)
+            return typing.cast(ir.Instruction, _store_as(res, d, blk, builder))
         case ida_hexrays.m_f2u:  # 0x40, f2u (convert float to unsigned integer)
-            return typecast(l, ir.IntType(ida_insn.d.size * 8), builder, signed=False)
+            res = typecast(l, ir.IntType(ida_insn.d.size * 8), builder, signed=False)
+            return typing.cast(
+                ir.Instruction, _store_as(res, d, blk, builder, signed=False)
+            )
         case ida_hexrays.m_i2f:  # 0x41, i2f (convert integer to float)
             l = typecast(l, ir.IntType(ida_insn.l.size * 8), builder)
             typ = float_type(ida_insn.d.size)
-            return builder.sitofp(l, typ)
+            res = builder.sitofp(l, typ)
+            return typing.cast(ir.Instruction, _store_as(res, d, blk, builder))
         case ida_hexrays.m_u2f:  # 0x42, u2f (convert unsigned integer to float)
             l = typecast(l, ir.IntType(ida_insn.l.size * 8), builder)
             typ = float_type(ida_insn.d.size)
-            return builder.uitofp(l, typ)
+            res = builder.uitofp(l, typ)
+            return typing.cast(
+                ir.Instruction, _store_as(res, d, blk, builder, signed=False)
+            )
         case ida_hexrays.m_f2f:  # 0x43, f2f (change float precision)
             target_type = float_type(ida_insn.d.size)
             l = typecast(l, target_type, builder)

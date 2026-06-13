@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import re
+import struct
 from contextlib import suppress
 
 import ida_bytes
@@ -50,6 +51,47 @@ _BINOP = {
 _CAST = {"zext": hx.m_xdu, "sext": hx.m_xds, "trunc": hx.m_low}
 # bit-identical reinterpretations -> no microcode, just alias the operand.
 _NOOP_CAST = frozenset({"bitcast", "ptrtoint", "inttoptr"})
+
+# IEEE floating-point arithmetic -> Hex-Rays FPU microcode (the +F opcodes,
+# m_f2i..m_fdiv). Two-operand ops; both operands and the result are the SAME
+# fp width (float=4 / double=8). The insn carries IPROP_FPINSN (set_fpinsn).
+_FP_BINOP = {
+    "fadd": hx.m_fadd, "fsub": hx.m_fsub, "fmul": hx.m_fmul, "fdiv": hx.m_fdiv,
+}
+# fp<->int conversions. m_i2f/m_u2f take an integer source -> fp dest;
+# m_f2i/m_f2u take an fp source -> integer dest. Source/dest WIDTHS are the
+# operand/result type sizes (a `sitofp i32 -> float` is 4->4; `fptoui float ->
+# i32` is 4->4). Like _CAST, these alloc a dest kreg of the result width.
+_FP_CAST = {
+    "sitofp": hx.m_i2f, "uitofp": hx.m_u2f,
+    "fptosi": hx.m_f2i, "fptoui": hx.m_f2u,
+}
+# fp precision change (float<->double): m_f2f. Source/dest are the two fp widths.
+_FP_RESIZE = {"fpext": hx.m_f2f, "fptrunc": hx.m_f2f}
+
+# An icmp PREDICATE on two fptoui/fptosi-of-float operands -> the FPU jump that
+# native uses for the float compare it lifted from. HexRays renders an ORDERED
+# float compare with the UNSIGNED jcc family + the FPU flag (`jbe.fpu` etc., as
+# seen in the GLBOPT2 microcode), so the unsigned LLVM predicates map straight
+# through; the signed predicates (a < b) use the same unsigned-fpu jcc.
+_FPU_JMP = {
+    "ugt": hx.m_ja, "uge": hx.m_jae, "ult": hx.m_jb, "ule": hx.m_jbe,
+    "sgt": hx.m_ja, "sge": hx.m_jae, "slt": hx.m_jb, "sle": hx.m_jbe,
+    "eq": hx.m_jz, "ne": hx.m_jnz,
+}
+# Same predicate -> the FPU setcc (for an icmp result consumed as a VALUE).
+_FPU_SET = {
+    "ugt": hx.m_seta, "uge": hx.m_setae, "ult": hx.m_setb, "ule": hx.m_setbe,
+    "sgt": hx.m_seta, "sge": hx.m_setae, "slt": hx.m_setb, "sle": hx.m_setbe,
+    "eq": hx.m_setz, "ne": hx.m_setnz,
+}
+
+# An LLVM floating-point CONSTANT operand stringifies as ``<fpty> 0xHHHH...``
+# where the hex is the IEEE-754 DOUBLE bit-pattern of the value (LLVM stores ALL
+# fp literals as doubles in textual IR, even ``float``-typed ones). Capture the
+# fp type and the 64-bit hex so _desc can re-materialise it at the operand's
+# real width via mop_t.make_fpnum.
+_FPCONST_RE = re.compile(r"^(float|double)\s+(0x[0-9A-Fa-f]+|[-+]?[0-9.eE+-]+)$")
 
 # icmp predicate -> a 2-way conditional jump that branches to ``d`` when the
 # predicate holds (the fall-through, serial+1, takes the FALSE arm).
@@ -111,6 +153,30 @@ def _decode_llvm_cstr(body: str) -> bytes:
         out.append(ord(ch) & 0xFF)
         i += 1
     return bytes(out)
+
+
+def _fpconst_bytes(operand_str: str):
+    """Decode an LLVM floating-point constant operand (``float 0x43F0...`` or
+    ``double 1.5``) to (ieee_bytes, size). LLVM stores EVERY fp literal as a
+    64-bit IEEE-754 DOUBLE bit-pattern in the textual ``0x...`` form, regardless
+    of the operand's declared type -- so ``float 0x43F0000000000000`` is the
+    double encoding of the value the 4-byte float represents (1.8446744e19). We
+    decode that double, then re-pack at the OPERAND'S width (single for a
+    ``float`` operand, double for a ``double``) so ``make_fpnum`` builds the
+    right-sized mop_fn -- matching native's ``(float)1.8446744e19``. Returns
+    ``None`` if the string is not an fp constant."""
+    m = _FPCONST_RE.match(operand_str.strip())
+    if m is None:
+        return None
+    fpty, lit = m.group(1), m.group(2)
+    if lit.lower().startswith("0x"):
+        # 64-bit IEEE-754 double bit pattern (LLVM's canonical fp-literal form).
+        value = struct.unpack("<d", struct.pack("<Q", int(lit, 16) & 0xFFFFFFFFFFFFFFFF))[0]
+    else:
+        value = float(lit)
+    if fpty == "float":
+        return struct.pack("<f", value), 4
+    return struct.pack("<d", value), 8
 
 
 def _type_size(type_str) -> int:
@@ -436,6 +502,12 @@ class LLVMDropConverter:
         kind, val, size = d
         if kind == "reg":
             mop.make_reg(val, size)
+        elif kind == "fpnum":
+            # IEEE floating-point constant (mop_fn). ``val`` is the packed
+            # IEEE-754 bytes; make_fpnum infers the size from len(bytes) and
+            # builds an fnumber_t of the operand's fp width.
+            if not mop.make_fpnum(val):
+                raise ValueError(f"make_fpnum failed for {size}-byte fp constant")
         elif kind == "gvar":
             mop.make_gvar(val)
             mop.size = size
@@ -524,6 +596,13 @@ class LLVMDropConverter:
             # is pruned). Resolve it to zero of the operand's width -- any concrete
             # value is correct, and 0 keeps the value-numbering trivial.
             return ("num", 0, _type_size(s) or default_size)
+        fpc = _fpconst_bytes(s)
+        if fpc is not None:
+            # IEEE fp literal (``float 0x43F0...``) -> mop_fn. Must precede the
+            # integer-tail regex below, which would otherwise capture the hex
+            # bit-pattern's trailing digits as a bogus integer.
+            ieee, sz = fpc
+            return ("fpnum", ieee, sz)
         num = re.search(r"(-?\d+)\s*$", s)
         if num:
             return ("num", int(num.group(1)), _type_size(s) or default_size)
@@ -544,6 +623,18 @@ class LLVMDropConverter:
                 return ea
             return self._strconst_ea(s)
         return None
+
+    def _fp_compare_operands(self, iops):
+        """If both operands of an icmp are fptoui/fptosi conversions of float
+        SSA values (the lifter's lowering of a native float compare), return the
+        two ORIGINAL float operand descriptors and their width as
+        ``(l_op, r_op, fp_size)``; else ``None``. Both sides must convert from the
+        SAME fp width (an asymmetric pair is not a single float compare)."""
+        a = self._fp_cvt_src.get(iops[0].name)
+        b = self._fp_cvt_src.get(iops[1].name)
+        if a is None or b is None or a[1] != b[1]:
+            return None
+        return a[0], b[0], a[1]
 
     @staticmethod
     def _wire(blk, succs) -> None:
@@ -662,6 +753,41 @@ class LLVMDropConverter:
             mi.d.make_reg(kreg, size)
             blk.insert_into_block(mi, anchor)
             vmap[ins.name] = ("reg", kreg, size)
+            return mi
+        if op in _FP_BINOP:
+            # IEEE fp arithmetic: l <op> r -> d, all the SAME fp width (the result
+            # type, == both operand types for a well-typed fadd/fmul/...). Mirrors
+            # the integer _BINOP path but emits an FPU microinsn (set_fpinsn) so
+            # the verifier/optimizer treats l/r/d as floats, not raw bit-patterns.
+            # An fp CONSTANT operand resolves to a mop_fn via _desc (`fpnum`).
+            size = _type_size(ins.type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = _FP_BINOP[op]
+            self._fill(mi.l, self._desc(ops[0], vmap, size))
+            self._fill(mi.r, self._desc(ops[1], vmap, size))
+            kreg = mba.alloc_kreg(size)
+            mi.d.make_reg(kreg, size)
+            mi.set_fpinsn()
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, size)
+            return mi
+        if op in _FP_CAST or op in _FP_RESIZE:
+            # fp<->int conversion (m_i2f/m_u2f/m_f2i/m_f2u) or fp precision change
+            # (m_f2f). The source width is the OPERAND type's size, the dest width
+            # the RESULT type's size -- a `sitofp i32 -> float` reads a 4-byte int
+            # and writes a 4-byte float; a `fptoui float -> i32` the reverse. Like
+            # _CAST these alloc a dest kreg of the result width. set_fpinsn marks
+            # it an FPU op (the source OR dest is fp).
+            in_sz = _type_size(ops[0].type)
+            out_sz = _type_size(ins.type)
+            mi = hx.minsn_t(ea)
+            mi.opcode = (_FP_CAST.get(op) or _FP_RESIZE.get(op))
+            self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            mi.set_fpinsn()
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
             return mi
         if op in _NOOP_CAST:
             # ptrtoint/inttoptr/bitcast are usually bit-identical reinterpretations
@@ -2492,12 +2618,25 @@ class LLVMDropConverter:
         # as a value materialises it via setcc (icmp itself is otherwise folded into
         # branches and emits nothing). _build_multiblock reuses this for the br fold.
         self._icmp_defs = {}
+        # fp->int conversion results (fptoui/fptosi name -> the FP SOURCE operand).
+        # The ida2llvm lifter has NO fcmp: it lowers a native FLOAT comparison
+        # (`jbe.fpu xmm0, xmm1`) into `fptoui/fptosi float %x to i32` on BOTH sides
+        # followed by an integer `icmp` on the converted ints. That integer compare
+        # is NOT equivalent to the float compare it replaced (truncation loses the
+        # fraction), and renders the spurious `(unsigned int)` casts native never
+        # shows. When an icmp's BOTH operands are such conversions of same-typed
+        # floats, the br-fold recovers the original FPU compare (jcc + set_fpinsn)
+        # on the pre-conversion floats -- restoring native's `v5 > (float)(...)`.
+        self._fp_cvt_src = {}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.opcode == "icmp":
                     pred = re.search(r"icmp\s+(\w+)\s", str(ins).strip())
                     self._icmp_defs[ins.name] = (
                         pred.group(1) if pred else "ne", list(ins.operands))
+                elif ins.opcode in ("fptoui", "fptosi"):
+                    fsrc = list(ins.operands)[0]
+                    self._fp_cvt_src[ins.name] = (fsrc, _type_size(fsrc.type))
 
         self._allocas = self._scan_allocas(mba, fn)
         self._scan_ptr_deref_aliases(fn)
@@ -2850,10 +2989,24 @@ class LLVMDropConverter:
                 mi = hx.minsn_t(ea)
                 if cond.name in icmp_map:
                     pred, iops = icmp_map[cond.name]
-                    sz = _type_size(iops[0].type)
-                    mi.opcode = _ICMP_JMP.get(pred, hx.m_jnz)
-                    self._fill(mi.l, self._desc(iops[0], vmap, sz))
-                    self._fill(mi.r, self._desc(iops[1], vmap, sz))
+                    fpcmp = self._fp_compare_operands(iops)
+                    if fpcmp is not None:
+                        # Recovered FLOAT compare: the icmp's fptoui/fptosi operands
+                        # were the lifter's lowering of a native float comparison.
+                        # Emit the FPU jump (jbe.fpu/...) on the ORIGINAL floats so
+                        # the decompiler renders `v5 > (float)(...)`, not the lossy
+                        # `(unsigned int)v5 > (unsigned int)(...)` the int compare
+                        # produces. set_fpinsn makes it the ``.fpu`` jcc native uses.
+                        l_op, r_op, fsz = fpcmp
+                        mi.opcode = _FPU_JMP.get(pred, hx.m_jnz)
+                        self._fill(mi.l, self._desc(l_op, vmap, fsz))
+                        self._fill(mi.r, self._desc(r_op, vmap, fsz))
+                        mi.set_fpinsn()
+                    else:
+                        sz = _type_size(iops[0].type)
+                        mi.opcode = _ICMP_JMP.get(pred, hx.m_jnz)
+                        self._fill(mi.l, self._desc(iops[0], vmap, sz))
+                        self._fill(mi.r, self._desc(iops[1], vmap, sz))
                 else:
                     sz = _type_size(cond.type)
                     mi.opcode = hx.m_jnz  # jump to TRUE when cond != 0
