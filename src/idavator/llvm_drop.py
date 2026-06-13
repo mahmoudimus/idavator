@@ -424,9 +424,17 @@ class LLVMDropConverter:
         self._ptr_origin_vals = set()  # i64 SSA names that are really pointers
         # (a pointer-typed alloca read as i64, or a ptrtoint address) -- typed as
         # ``void *`` for a variadic arg so it renders clean, not a signed cast.
-        self._array_elt_addr = set()  # ptrtoint-of-GEP-into-array-alloca SSA names
-        # (``&perms[1]``) -- a variadic arg of this kind fragments the array buffer
-        # under the forced prototype, so _emit_call_vararg declines (native fallback).
+        self._array_elt_addr = {}  # ptrtoint-of-GEP-into-array-alloca SSA name ->
+        # its EFFECTIVE byte offset for the variadic-arg decline gate. The value is 0
+        # ONLY for a faithful whole-buffer pointer: a ZERO-offset address (``&buf[0]``,
+        # e.g. ``scanf("%s", &buf)``) into a buffer that is NEVER GEP'd at any other
+        # offset (so the forced prototype keeps it coherent and it renders like
+        # native). A NONZERO offset (``&perms[1]``), a non-constant index, OR a
+        # zero-offset address into a multi-purpose buffer touched at other offsets
+        # (which Hex-Rays fragments into scalar lvars -> divergent render) all carry a
+        # non-zero effective offset (None for the sentinel), so _emit_call_vararg
+        # declines them for a clean native fallback rather than ship a divergent body.
+        # Populated in drop() where the offsets + per-buffer fragmentation are known.
         self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
@@ -1696,13 +1704,23 @@ class LLVMDropConverter:
         if self._value_used(ins):
             raise NotImplementedError(
                 f"vararg call result consumed for @{ops[-1].name}")
-        # A stack-array element address (&perms[1]) passed as a vararg fragments the
-        # array buffer under the forced prototype (disjoint scalar lvars + Hex-Rays
-        # call tail-duplication); the bytes stay ABI-correct but the render diverges
-        # from native. DECLINE for a clean native fallback rather than ship a
-        # divergent-reading body. (Scoped to the variadic path -- non-vararg
-        # array-address uses are unaffected.)
-        if any(a.name in self._array_elt_addr for a in call_args):
+        # Decline a vararg that is a non-faithful stack-array element address (see
+        # the population site for the full taxonomy + the B5 proof). The EFFECTIVE
+        # offset in ``_array_elt_addr`` already folds in buffer-fragmentation: it is 0
+        # ONLY for a zero-offset whole-buffer pointer into a buffer that is never
+        # GEP'd elsewhere (a clean ``scanf("%s", &buf)`` target that stays coherent
+        # and renders faithfully). A nonzero offset (``&perms[1]``), a non-constant
+        # index, OR a zero offset into a fragmenting multi-purpose buffer (OLLVM's
+        # ``v56``) all carry a non-zero effective offset and DECLINE for a clean
+        # native fallback -- never a building-but-divergent body. (Scoped to the
+        # variadic path -- non-vararg array-address uses are unaffected.)
+        def _is_mid_array_addr(name):
+            # True iff NAME is an array-element address that is NOT a faithful
+            # whole-buffer pointer (effective offset != 0 -> decline).
+            if name not in self._array_elt_addr:
+                return False
+            return self._array_elt_addr[name] != 0
+        if any(_is_mid_array_addr(a.name) for a in call_args):
             raise NotImplementedError(
                 f"vararg stack-array element address for @{ops[-1].name}")
         _argregs, eax, _ds = self._abi()
@@ -3240,14 +3258,30 @@ class LLVMDropConverter:
                         self._ptr_origin_vals.add(ins.name)
 
         # Address of a STACK-ARRAY ELEMENT (``ptrtoint`` of a ``getelementptr`` into
-        # a ``[N x T]`` alloca, e.g. ``&perms[1]``). When such an address is passed
-        # as a VARIADIC arg, the drop's forced-prototype frame layout cannot keep
-        # the array buffer coherent -- it fragments ``[12 x i8] perms`` into
-        # disjoint scalar lvars (v10@+0x28, v11@+0x29, perms@+0x2c) and Hex-Rays
-        # tail-duplicates the call. The bytes stay ABI-correct but the render
-        # DIVERGES from native; _emit_call_vararg DECLINES (clean native fallback)
-        # rather than ship a divergent-reading body. Scoped to the vararg path so
-        # non-variadic array-address uses (already faithful) are untouched.
+        # a ``[N x T]`` alloca). When such an address is passed as a VARIADIC arg, the
+        # drop's forced-prototype frame layout may not keep the array buffer coherent.
+        # Two distinct failure shapes both render DIVERGENT (bytes stay ABI-correct,
+        # but the pseudocode reads unlike native), so _emit_call_vararg DECLINES them
+        # for a clean native fallback (NEVER a building-but-divergent body):
+        #
+        #   1. MID-array element (``&perms[1]`` -- a NONZERO GEP offset): the forced
+        #      prototype fragments ``[12 x i8] perms`` into disjoint scalar lvars and
+        #      Hex-Rays tail-duplicates the call.
+        #   2. WHOLE-buffer pointer (``&buf[0]``, offset 0) into a buffer that is ALSO
+        #      accessed at OTHER offsets -- a multi-purpose scratch region (OLLVM's
+        #      ``[104 x i8] v56``, touched at 25+ offsets). Even though the address is
+        #      offset 0, Hex-Rays re-derives the addr-taken slot into scalar lvars, so
+        #      ``scanf("%s", &buf)`` renders ``scanf("%s", (signed __int64)&v57)`` over
+        #      a 4-byte fragment instead of native's coherent ``scanf("%s", v56)``.
+        #
+        # The ONLY faithful shape is a ZERO-offset address into a WHOLE-BUFFER-ONLY
+        # array -- one that is never GEP'd at a nonzero offset (a pure ``scanf``/
+        # ``fgets`` target). That stays coherent, so it rides the variadic path.
+        # ``self._array_elt_addr`` therefore maps each array-element ptrtoint name to
+        # its EFFECTIVE offset for the gate: the GEP's constant byte offset if the
+        # source buffer is whole-buffer-only, else a sentinel non-zero offset (None)
+        # that forces the decline. Scoped to the vararg path so non-variadic
+        # array-address uses (already faithful) are untouched.
         _arr_alloca = set()
         _arr_re = re.compile(r"=\s*alloca\s+\[\d+ x ")
         for bb in fn.blocks:
@@ -3255,20 +3289,43 @@ class LLVMDropConverter:
                 if ins.name and ins.opcode == "alloca" and _arr_re.search(
                         str(ins).strip()):
                     _arr_alloca.add(ins.name)
-        _gep_into_arr = set()
+        # For each GEP-into-array result: (source alloca name, CONSTANT byte offset).
+        # offset is None for a non-constant index. Also accumulate, per source array,
+        # whether it is EVER reached at a nonzero/non-constant offset (-> fragments).
+        _gep_into_arr: dict[str, tuple[str, int | None]] = {}
+        _arr_fragments: dict[str, bool] = {n: False for n in _arr_alloca}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.name and ins.opcode == "getelementptr":
                     sops = list(ins.operands)
                     if sops and sops[0].name in _arr_alloca:
-                        _gep_into_arr.add(ins.name)
-        self._array_elt_addr = set()
+                        base = sops[0].name
+                        try:
+                            # vmap is not built yet, but a CONSTANT-index GEP needs
+                            # none (operands resolve to ("num", k) directly). ANY
+                            # failure (non-constant index -> NotImplementedError, an
+                            # exotic operand -> ValueError, an un-laid-out element)
+                            # means the offset is unknown: record None so the address
+                            # is treated as fragmenting/non-zero and DECLINES. Never
+                            # let offset analysis crash an otherwise-working drop.
+                            off = self._gep_field_offset(ins, sops, {})
+                        except Exception:  # noqa: BLE001 - conservative: unknown -> decline
+                            off = None
+                        _gep_into_arr[ins.name] = (base, off)
+                        if off != 0:  # nonzero OR None -> the buffer is multi-purpose
+                            _arr_fragments[base] = True
+        self._array_elt_addr = {}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.name and ins.opcode == "ptrtoint":
                     sops = list(ins.operands)
                     if sops and sops[0].name in _gep_into_arr:
-                        self._array_elt_addr.add(ins.name)
+                        base, off = _gep_into_arr[sops[0].name]
+                        # A zero-offset address into a FRAGMENTING buffer is not a
+                        # faithful whole-buffer pointer -> sentinel None forces decline.
+                        if off == 0 and _arr_fragments.get(base):
+                            off = None
+                        self._array_elt_addr[ins.name] = off
 
         self._allocas = self._scan_allocas(mba, fn)
         self._scan_ptr_deref_aliases(fn)
