@@ -24074,8 +24074,9 @@ define i1 @"source_is_dst_backup"(i8* %".1", %"stat"* %".2", i8* %".3")
   %".86" = icmp ne i64 %".82", %".85x"
   br i1 %".86", label %"@9", label %"@7"
 "@7":
-  %".88" = bitcast %"stat"** %"src_st" to i64*
-  %".89" = load i64, i64* %".88"
+  %".88" = load %"stat"*, %"stat"** %"src_st"
+  %".88a" = bitcast %"stat"* %".88" to i64*
+  %".89" = load i64, i64* %".88a"
   %".90" = bitcast %"stat"* %"dst_back_sb" to i8*
   %".91" = bitcast i8* %".90" to i64*
   %".92" = load i64, i64* %".91"
@@ -30205,255 +30206,258 @@ define i1 @"sparse_copy"(i32 %".1", i32 %".2", i8* %".3", i64 %".4", i64 %".5", 
   store i1* %".11", i1** %"last_write_made_hole"
   br label %"@1"
 "@1":
-  %".31" = bitcast i1** %"last_write_made_hole" to i8*
-  store i8 0, i8* %".31"
-  %".33" = bitcast i64** %"total_n_read" to i64*
-  store i64 0, i64* %".33"
+  %".31" = load i1*, i1** %"last_write_made_hole"
+  %".32" = bitcast i1* %".31" to i8*
+  store i8 0, i8* %".32"
+  %".34" = load i64*, i64** %"total_n_read"
+  store i64 0, i64* %".34"
   store i8 0, i8* %"make_hole"
   store i64 0, i64* %"psize"
   br label %"@46"
 "@2":
-  %".38" = load i64, i64* %"buf_size"
-  store i64 %".38", i64* %"v11"
-  %".40" = load i64, i64* %"buf_size"
-  %".41" = load i64, i64* %"max_n_read"
-  %".42" = icmp ule i64 %".40", %".41"
-  br i1 %".42", label %"@4", label %"@3"
+  %".39" = load i64, i64* %"buf_size"
+  store i64 %".39", i64* %"v11"
+  %".41" = load i64, i64* %"buf_size"
+  %".42" = load i64, i64* %"max_n_read"
+  %".43" = icmp ule i64 %".41", %".42"
+  br i1 %".43", label %"@4", label %"@3"
 "@3":
-  %".44" = load i64, i64* %"max_n_read"
-  store i64 %".44", i64* %"v11"
+  %".45" = load i64, i64* %"max_n_read"
+  store i64 %".45", i64* %"v11"
   br label %"@4"
 "@4":
-  %".47" = load i32, i32* %"src_fd"
-  %".48" = load i8*, i8** %"buf"
-  %".49" = load i64, i64* %"v11"
-  %".50" = call i64 @"read"(i32 %".47", i8* %".48", i64 %".49")
-  store i64 %".50", i64* %"n_read"
-  %".52" = load i64, i64* %"n_read"
-  %".53" = icmp sge i64 %".52", 0
-  br i1 %".53", label %"@7", label %"@5"
+  %".48" = load i32, i32* %"src_fd"
+  %".49" = load i8*, i8** %"buf"
+  %".50" = load i64, i64* %"v11"
+  %".51" = call i64 @"read"(i32 %".48", i8* %".49", i64 %".50")
+  store i64 %".51", i64* %"n_read"
+  %".53" = load i64, i64* %"n_read"
+  %".54" = icmp sge i64 %".53", 0
+  br i1 %".54", label %"@7", label %"@5"
 "@5":
-  %".55" = call i32* @"__errno_location"()
-  %".56" = load i32, i32* %".55"
-  %".57" = icmp eq i32 %".56", 4
-  br i1 %".57", label %"@46", label %"@6"
+  %".56" = call i32* @"__errno_location"()
+  %".57" = load i32, i32* %".56"
+  %".58" = icmp eq i32 %".57", 4
+  br i1 %".58", label %"@46", label %"@6"
 "@6":
-  %".59" = load i8*, i8** %"src_name"
-  %".60" = call i8* @"quotearg_style"(i32 4, i8* %".59")
-  store i8* %".60", i8** %"v12"
-  %".62" = getelementptr [17 x i8], [17 x i8]* @"aErrorReadingS", i32 0, i32 0
-  %".63" = call i8* @"gettext"(i8* %".62")
-  store i8* %".63", i8** %"v13"
-  %".65" = call i32* @"__errno_location"()
-  store i32* %".65", i32** %"v14"
-  %".67" = bitcast i32** %"v14" to i32*
-  %".68" = load i32, i32* %".67"
-  %".69" = load i8*, i8** %"v13"
-  %".70" = bitcast i8** %"v12" to i64*
-  %".71" = load i64, i64* %".70"
-  %".72" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".68", i8* %".69")
-  %".73" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".73"
+  %".60" = load i8*, i8** %"src_name"
+  %".61" = call i8* @"quotearg_style"(i32 4, i8* %".60")
+  store i8* %".61", i8** %"v12"
+  %".63" = getelementptr [17 x i8], [17 x i8]* @"aErrorReadingS", i32 0, i32 0
+  %".64" = call i8* @"gettext"(i8* %".63")
+  store i8* %".64", i8** %"v13"
+  %".66" = call i32* @"__errno_location"()
+  store i32* %".66", i32** %"v14"
+  %".68" = load i32*, i32** %"v14"
+  %".69" = load i32, i32* %".68"
+  %".70" = load i8*, i8** %"v13"
+  %".71" = bitcast i8** %"v12" to i64*
+  %".72" = load i64, i64* %".71"
+  %".73" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".74" = call i8* (i32, i32, i8*, i64, ...) %".73"(i32 0, i32 %".69", i8* %".70", i64 %".72")
+  %".75" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".75"
   br label %"@51"
 "@7":
-  %".76" = load i64, i64* %"n_read"
-  %".77" = icmp eq i64 %".76", 0
-  br i1 %".77", label %"@47", label %"@8"
+  %".78" = load i64, i64* %"n_read"
+  %".79" = icmp eq i64 %".78", 0
+  br i1 %".79", label %"@47", label %"@8"
 "@8":
-  %".79" = load i64, i64* %"max_n_read"
-  %".80" = load i64, i64* %"n_read"
-  %".81" = sub i64 %".79", %".80"
-  store i64 %".81", i64* %"max_n_read"
-  %".83" = load i64, i64* %"n_read"
-  %".84" = bitcast i64** %"total_n_read" to i64*
-  %".85" = load i64, i64* %".84"
-  %".86" = add i64 %".83", %".85"
-  %".87" = bitcast i64** %"total_n_read" to i64*
-  store i64 %".86", i64* %".87"
-  %".89" = load i64, i64* %"hole_size"
-  %".90" = icmp eq i64 %".89", 0
-  br i1 %".90", label %"@10", label %"@9"
+  %".81" = load i64, i64* %"max_n_read"
+  %".82" = load i64, i64* %"n_read"
+  %".83" = sub i64 %".81", %".82"
+  store i64 %".83", i64* %"max_n_read"
+  %".85" = load i64, i64* %"n_read"
+  %".86" = load i64*, i64** %"total_n_read"
+  %".87" = load i64, i64* %".86"
+  %".88" = add i64 %".85", %".87"
+  %".89" = load i64*, i64** %"total_n_read"
+  store i64 %".88", i64* %".89"
+  %".91" = load i64, i64* %"hole_size"
+  %".92" = icmp eq i64 %".91", 0
+  br i1 %".92", label %"@10", label %"@9"
 "@9":
-  %".92" = load i64, i64* %"hole_size"
-  store i64 %".92", i64* %"v16"
+  %".94" = load i64, i64* %"hole_size"
+  store i64 %".94", i64* %"v16"
   br label %"@11"
 "@10":
-  %".95" = load i64, i64* %"buf_size"
-  store i64 %".95", i64* %"v16"
+  %".97" = load i64, i64* %"buf_size"
+  store i64 %".97", i64* %"v16"
   br label %"@11"
 "@11":
-  %".98" = load i64, i64* %"v16"
-  store i64 %".98", i64* %"csize"
-  %".100" = load i8*, i8** %"buf"
-  store i8* %".100", i8** %"cbuf"
+  %".100" = load i64, i64* %"v16"
+  store i64 %".100", i64* %"csize"
   %".102" = load i8*, i8** %"buf"
-  store i8* %".102", i8** %"pbuf"
+  store i8* %".102", i8** %"cbuf"
+  %".104" = load i8*, i8** %"buf"
+  store i8* %".104", i8** %"pbuf"
   br label %"@44"
 "@12":
-  %".105" = load i8, i8* %"make_hole"
-  store i8 %".105", i8* %"prev_hole"
-  %".107" = load i64, i64* %"n_read"
-  store i64 %".107", i64* %"v17"
-  %".109" = load i64, i64* %"csize"
-  %".110" = load i64, i64* %"n_read"
-  %".111" = icmp ugt i64 %".109", %".110"
-  br i1 %".111", label %"@14", label %"@13"
+  %".107" = load i8, i8* %"make_hole"
+  store i8 %".107", i8* %"prev_hole"
+  %".109" = load i64, i64* %"n_read"
+  store i64 %".109", i64* %"v17"
+  %".111" = load i64, i64* %"csize"
+  %".112" = load i64, i64* %"n_read"
+  %".113" = icmp ugt i64 %".111", %".112"
+  br i1 %".113", label %"@14", label %"@13"
 "@13":
-  %".113" = load i64, i64* %"csize"
-  store i64 %".113", i64* %"v17"
+  %".115" = load i64, i64* %"csize"
+  store i64 %".115", i64* %"v17"
   br label %"@14"
 "@14":
-  %".116" = load i64, i64* %"v17"
-  store i64 %".116", i64* %"csize"
-  %".118" = load i64, i64* %"hole_size"
-  %".119" = icmp eq i64 %".118", 0
-  br i1 %".119", label %"@17", label %"@15"
+  %".118" = load i64, i64* %"v17"
+  store i64 %".118", i64* %"csize"
+  %".120" = load i64, i64* %"hole_size"
+  %".121" = icmp eq i64 %".120", 0
+  br i1 %".121", label %"@17", label %"@15"
 "@15":
-  %".121" = load i64, i64* %"v17"
-  %".122" = icmp eq i64 %".121", 0
-  br i1 %".122", label %"@17", label %"@16"
+  %".123" = load i64, i64* %"v17"
+  %".124" = icmp eq i64 %".123", 0
+  br i1 %".124", label %"@17", label %"@16"
 "@16":
-  %".124" = load i8*, i8** %"cbuf"
-  %".125" = load i64, i64* %"v17"
-  %".126" = call i1 @"is_nul"(i8* %".124", i64 %".125")
-  %".127" = zext i1 %".126" to i8
-  store i8 %".127", i8* %"make_hole"
+  %".126" = load i8*, i8** %"cbuf"
+  %".127" = load i64, i64* %"v17"
+  %".128" = call i1 @"is_nul"(i8* %".126", i64 %".127")
+  %".129" = zext i1 %".128" to i8
+  store i8 %".129", i8* %"make_hole"
   br label %"@17"
 "@17":
-  %".130" = load i8, i8* %"make_hole"
-  %".131" = load i8, i8* %"prev_hole"
-  %".132" = icmp eq i8 %".130", %".131"
-  br i1 %".132", label %"@20", label %"@18"
+  %".132" = load i8, i8* %"make_hole"
+  %".133" = load i8, i8* %"prev_hole"
+  %".134" = icmp eq i8 %".132", %".133"
+  br i1 %".134", label %"@20", label %"@18"
 "@18":
-  %".134" = load i64, i64* %"psize"
-  %".135" = icmp eq i64 %".134", 0
-  br i1 %".135", label %"@20", label %"@19"
+  %".136" = load i64, i64* %"psize"
+  %".137" = icmp eq i64 %".136", 0
+  br i1 %".137", label %"@20", label %"@19"
 "@19":
-  %".137" = bitcast i1* %"v18" to i8*
-  store i8 1, i8* %".137"
+  %".139" = bitcast i1* %"v18" to i8*
+  store i8 1, i8* %".139"
   br label %"@21"
 "@20":
-  %".140" = bitcast i1* %"v18" to i8*
-  store i8 0, i8* %".140"
+  %".142" = bitcast i1* %"v18" to i8*
+  store i8 0, i8* %".142"
   br label %"@21"
 "@21":
-  %".143" = bitcast i1* %"v18" to i8*
-  %".144" = load i8, i8* %".143"
-  %".145" = bitcast i1* %"transition" to i8*
-  store i8 %".144", i8* %".145"
-  %".147" = load i64, i64* %"n_read"
-  %".148" = load i64, i64* %"csize"
-  %".149" = icmp ne i64 %".147", %".148"
-  br i1 %".149", label %"@23", label %"@22"
+  %".145" = bitcast i1* %"v18" to i8*
+  %".146" = load i8, i8* %".145"
+  %".147" = bitcast i1* %"transition" to i8*
+  store i8 %".146", i8* %".147"
+  %".149" = load i64, i64* %"n_read"
+  %".150" = load i64, i64* %"csize"
+  %".151" = icmp ne i64 %".149", %".150"
+  br i1 %".151", label %"@23", label %"@22"
 "@22":
-  %".151" = load i8, i8* %"make_hole"
-  %".152" = xor i8 %".151", 1
-  %".153" = icmp ne i8 %".152", 0
-  br i1 %".153", label %"@24", label %"@23"
+  %".153" = load i8, i8* %"make_hole"
+  %".154" = xor i8 %".153", 1
+  %".155" = icmp ne i8 %".154", 0
+  br i1 %".155", label %"@24", label %"@23"
 "@23":
-  %".155" = load i64, i64* %"csize"
-  %".156" = icmp ne i64 %".155", 0
-  br i1 %".156", label %"@25", label %"@24"
+  %".157" = load i64, i64* %"csize"
+  %".158" = icmp ne i64 %".157", 0
+  br i1 %".158", label %"@25", label %"@24"
 "@24":
-  %".158" = bitcast i1* %"v19" to i8*
-  store i8 1, i8* %".158"
+  %".160" = bitcast i1* %"v19" to i8*
+  store i8 1, i8* %".160"
   br label %"@26"
 "@25":
-  %".161" = bitcast i1* %"v19" to i8*
-  store i8 0, i8* %".161"
+  %".163" = bitcast i1* %"v19" to i8*
+  store i8 0, i8* %".163"
   br label %"@26"
 "@26":
-  %".164" = bitcast i1* %"v19" to i8*
-  %".165" = load i8, i8* %".164"
-  %".166" = bitcast i1* %"last_chunk" to i8*
-  store i8 %".165", i8* %".166"
-  %".168" = bitcast i1* %"transition" to i8*
-  %".169" = load i8, i8* %".168"
-  %".170" = icmp ne i8 %".169", 0
-  br i1 %".170", label %"@28", label %"@27"
+  %".166" = bitcast i1* %"v19" to i8*
+  %".167" = load i8, i8* %".166"
+  %".168" = bitcast i1* %"last_chunk" to i8*
+  store i8 %".167", i8* %".168"
+  %".170" = bitcast i1* %"transition" to i8*
+  %".171" = load i8, i8* %".170"
+  %".172" = icmp ne i8 %".171", 0
+  br i1 %".172", label %"@28", label %"@27"
 "@27":
-  %".172" = bitcast i1* %"v19" to i8*
-  %".173" = load i8, i8* %".172"
-  %".174" = icmp eq i8 %".173", 0
-  br i1 %".174", label %"@41", label %"@28"
+  %".174" = bitcast i1* %"v19" to i8*
+  %".175" = load i8, i8* %".174"
+  %".176" = icmp eq i8 %".175", 0
+  br i1 %".176", label %"@41", label %"@28"
 "@28":
-  %".176" = bitcast i1* %"transition" to i8*
-  %".177" = load i8, i8* %".176"
-  %".178" = xor i8 %".177", 1
-  %".179" = icmp eq i8 %".178", 0
-  br i1 %".179", label %"@30", label %"@29"
+  %".178" = bitcast i1* %"transition" to i8*
+  %".179" = load i8, i8* %".178"
+  %".180" = xor i8 %".179", 1
+  %".181" = icmp eq i8 %".180", 0
+  br i1 %".181", label %"@30", label %"@29"
 "@29":
-  %".181" = load i64, i64* %"psize"
-  %".182" = load i64, i64* %"csize"
-  %".183" = add i64 %".181", %".182"
-  store i64 %".183", i64* %"psize"
+  %".183" = load i64, i64* %"psize"
+  %".184" = load i64, i64* %"csize"
+  %".185" = add i64 %".183", %".184"
+  store i64 %".185", i64* %"psize"
   br label %"@30"
 "@30":
-  %".186" = load i8, i8* %"prev_hole"
-  %".187" = xor i8 %".186", 1
-  %".188" = icmp eq i8 %".187", 0
-  br i1 %".188", label %"@33", label %"@31"
+  %".188" = load i8, i8* %"prev_hole"
+  %".189" = xor i8 %".188", 1
+  %".190" = icmp eq i8 %".189", 0
+  br i1 %".190", label %"@33", label %"@31"
 "@31":
-  %".190" = load i32, i32* %"dest_fd"
-  %".191" = load i8*, i8** %"pbuf"
-  %".192" = load i64, i64* %"psize"
-  %".193" = call i64 @"full_write"(i32 %".190", i8* %".191", i64 %".192")
+  %".192" = load i32, i32* %"dest_fd"
+  %".193" = load i8*, i8** %"pbuf"
   %".194" = load i64, i64* %"psize"
-  %".195" = icmp eq i64 %".193", %".194"
-  br i1 %".195", label %"@35", label %"@32"
+  %".195" = call i64 @"full_write"(i32 %".192", i8* %".193", i64 %".194")
+  %".196" = load i64, i64* %"psize"
+  %".197" = icmp eq i64 %".195", %".196"
+  br i1 %".197", label %"@35", label %"@32"
 "@32":
-  %".197" = load i8*, i8** %"dst_name"
-  %".198" = call i8* @"quotearg_style"(i32 4, i8* %".197")
-  store i8* %".198", i8** %"v20"
-  %".200" = getelementptr [17 x i8], [17 x i8]* @"aErrorWritingS", i32 0, i32 0
-  %".201" = call i8* @"gettext"(i8* %".200")
-  store i8* %".201", i8** %"v21"
-  %".203" = call i32* @"__errno_location"()
-  store i32* %".203", i32** %"v22"
-  %".205" = bitcast i32** %"v22" to i32*
-  %".206" = load i32, i32* %".205"
-  %".207" = load i8*, i8** %"v21"
-  %".208" = bitcast i8** %"v20" to i64*
-  %".209" = load i64, i64* %".208"
-  %".210" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".206", i8* %".207")
-  %".211" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".211"
+  %".199" = load i8*, i8** %"dst_name"
+  %".200" = call i8* @"quotearg_style"(i32 4, i8* %".199")
+  store i8* %".200", i8** %"v20"
+  %".202" = getelementptr [17 x i8], [17 x i8]* @"aErrorWritingS", i32 0, i32 0
+  %".203" = call i8* @"gettext"(i8* %".202")
+  store i8* %".203", i8** %"v21"
+  %".205" = call i32* @"__errno_location"()
+  store i32* %".205", i32** %"v22"
+  %".207" = load i32*, i32** %"v22"
+  %".208" = load i32, i32* %".207"
+  %".209" = load i8*, i8** %"v21"
+  %".210" = bitcast i8** %"v20" to i64*
+  %".211" = load i64, i64* %".210"
+  %".212" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".213" = call i8* (i32, i32, i8*, i64, ...) %".212"(i32 0, i32 %".208", i8* %".209", i64 %".211")
+  %".214" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".214"
   br label %"@51"
 "@33":
-  %".214" = load i32, i32* %"dest_fd"
-  %".215" = load i8*, i8** %"dst_name"
-  %".216" = load i1, i1* %"punch_holes"
-  %".217" = load i64, i64* %"psize"
-  %".218" = call i1 @"create_hole"(i32 %".214", i8* %".215", i1 %".216", i64 %".217")
-  %".219" = zext i1 %".218" to i8
-  %".220" = xor i8 %".219", 1
-  %".221" = icmp eq i8 %".220", 0
-  br i1 %".221", label %"@35", label %"@34"
+  %".217" = load i32, i32* %"dest_fd"
+  %".218" = load i8*, i8** %"dst_name"
+  %".219" = load i1, i1* %"punch_holes"
+  %".220" = load i64, i64* %"psize"
+  %".221" = call i1 @"create_hole"(i32 %".217", i8* %".218", i1 %".219", i64 %".220")
+  %".222" = zext i1 %".221" to i8
+  %".223" = xor i8 %".222", 1
+  %".224" = icmp eq i8 %".223", 0
+  br i1 %".224", label %"@35", label %"@34"
 "@34":
-  %".223" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".223"
+  %".226" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".226"
   br label %"@51"
 "@35":
-  %".226" = load i8*, i8** %"cbuf"
-  store i8* %".226", i8** %"pbuf"
-  %".228" = load i64, i64* %"csize"
-  store i64 %".228", i64* %"psize"
-  %".230" = bitcast i1* %"last_chunk" to i8*
-  %".231" = load i8, i8* %".230"
-  %".232" = icmp eq i8 %".231", 0
-  br i1 %".232", label %"@43", label %"@36"
+  %".229" = load i8*, i8** %"cbuf"
+  store i8* %".229", i8** %"pbuf"
+  %".231" = load i64, i64* %"csize"
+  store i64 %".231", i64* %"psize"
+  %".233" = bitcast i1* %"last_chunk" to i8*
+  %".234" = load i8, i8* %".233"
+  %".235" = icmp eq i8 %".234", 0
+  br i1 %".235", label %"@43", label %"@36"
 "@36":
-  %".234" = load i64, i64* %"csize"
-  %".235" = icmp ne i64 %".234", 0
-  br i1 %".235", label %"@38", label %"@37"
+  %".237" = load i64, i64* %"csize"
+  %".238" = icmp ne i64 %".237", 0
+  br i1 %".238", label %"@38", label %"@37"
 "@37":
   store i64 0, i64* %"n_read"
   br label %"@38"
 "@38":
-  %".239" = bitcast i1* %"transition" to i8*
-  %".240" = load i8, i8* %".239"
-  %".241" = icmp eq i8 %".240", 0
-  br i1 %".241", label %"@40", label %"@39"
+  %".242" = bitcast i1* %"transition" to i8*
+  %".243" = load i8, i8* %".242"
+  %".244" = icmp eq i8 %".243", 0
+  br i1 %".244", label %"@40", label %"@39"
 "@39":
   store i64 0, i64* %"csize"
   br label %"@43"
@@ -30461,84 +30465,86 @@ define i1 @"sparse_copy"(i32 %".1", i32 %".2", i8* %".3", i64 %".4", i64 %".5", 
   store i64 0, i64* %"psize"
   br label %"@43"
 "@41":
-  %".247" = load i64, i64* %"psize"
-  %".248" = load i64, i64* %"csize"
-  %".249" = add i64 %".247", %".248"
-  %".250" = add i64 %".249", 9223372036854775808
+  %".250" = load i64, i64* %"psize"
   %".251" = load i64, i64* %"csize"
-  %".252" = bitcast i1* %"v23" to i8*
-  %".253" = icmp ult i64 %".250", %".251"
-  %".254" = select  i1 %".253", i8 1, i8 0
-  store i8 %".254", i8* %".252"
-  %".256" = load i64, i64* %"psize"
-  %".257" = load i64, i64* %"csize"
-  %".258" = add i64 %".256", %".257"
-  store i64 %".258", i64* %"psize"
-  %".260" = bitcast i1* %"v23" to i8*
-  %".261" = load i8, i8* %".260"
-  %".262" = and i8 %".261", 1
-  %".263" = icmp eq i8 %".262", 0
-  br i1 %".263", label %"@43", label %"@42"
+  %".252" = add i64 %".250", %".251"
+  %".253" = add i64 %".252", 9223372036854775808
+  %".254" = load i64, i64* %"csize"
+  %".255" = bitcast i1* %"v23" to i8*
+  %".256" = icmp ult i64 %".253", %".254"
+  %".257" = select  i1 %".256", i8 1, i8 0
+  store i8 %".257", i8* %".255"
+  %".259" = load i64, i64* %"psize"
+  %".260" = load i64, i64* %"csize"
+  %".261" = add i64 %".259", %".260"
+  store i64 %".261", i64* %"psize"
+  %".263" = bitcast i1* %"v23" to i8*
+  %".264" = load i8, i8* %".263"
+  %".265" = and i8 %".264", 1
+  %".266" = icmp eq i8 %".265", 0
+  br i1 %".266", label %"@43", label %"@42"
 "@42":
-  %".265" = load i8*, i8** %"src_name"
-  %".266" = call i8* @"quotearg_style"(i32 4, i8* %".265")
-  store i8* %".266", i8** %"v24"
-  %".268" = getelementptr [20 x i8], [20 x i8]* @"aOverflowReadin", i32 0, i32 0
-  %".269" = call i8* @"gettext"(i8* %".268")
-  store i8* %".269", i8** %"v25"
-  %".271" = load i8*, i8** %"v25"
-  %".272" = bitcast i8** %"v24" to i64*
-  %".273" = load i64, i64* %".272"
-  %".274" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 0, i8* %".271")
-  %".275" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".275"
+  %".268" = load i8*, i8** %"src_name"
+  %".269" = call i8* @"quotearg_style"(i32 4, i8* %".268")
+  store i8* %".269", i8** %"v24"
+  %".271" = getelementptr [20 x i8], [20 x i8]* @"aOverflowReadin", i32 0, i32 0
+  %".272" = call i8* @"gettext"(i8* %".271")
+  store i8* %".272", i8** %"v25"
+  %".274" = load i8*, i8** %"v25"
+  %".275" = bitcast i8** %"v24" to i64*
+  %".276" = load i64, i64* %".275"
+  %".277" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".278" = call i8* (i32, i32, i8*, i64, ...) %".277"(i32 0, i32 0, i8* %".274", i64 %".276")
+  %".279" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".279"
   br label %"@51"
 "@43":
-  %".278" = load i64, i64* %"n_read"
-  %".279" = load i64, i64* %"csize"
-  %".280" = sub i64 %".278", %".279"
-  store i64 %".280", i64* %"n_read"
-  %".282" = load i64, i64* %"csize"
-  %".283" = load i8*, i8** %"cbuf"
-  %".284" = getelementptr i8, i8* %".283", i64 %".282"
-  %".285" = bitcast i8** %"cbuf" to i64*
-  %".286" = ptrtoint i8* %".284" to i64
-  store i64 %".286", i64* %".285"
+  %".282" = load i64, i64* %"n_read"
+  %".283" = load i64, i64* %"csize"
+  %".284" = sub i64 %".282", %".283"
+  store i64 %".284", i64* %"n_read"
+  %".286" = load i64, i64* %"csize"
+  %".287" = load i8*, i8** %"cbuf"
+  %".288" = getelementptr i8, i8* %".287", i64 %".286"
+  %".289" = bitcast i8** %"cbuf" to i64*
+  %".290" = ptrtoint i8* %".288" to i64
+  store i64 %".290", i64* %".289"
   br label %"@44"
 "@44":
-  %".289" = load i64, i64* %"n_read"
-  %".290" = icmp ne i64 %".289", 0
-  br i1 %".290", label %"@12", label %"@45"
+  %".293" = load i64, i64* %"n_read"
+  %".294" = icmp ne i64 %".293", 0
+  br i1 %".294", label %"@12", label %"@45"
 "@45":
-  %".292" = load i8, i8* %"make_hole"
-  %".293" = bitcast i1** %"last_write_made_hole" to i8*
-  store i8 %".292", i8* %".293"
+  %".296" = load i8, i8* %"make_hole"
+  %".297" = load i1*, i1** %"last_write_made_hole"
+  %".298" = bitcast i1* %".297" to i8*
+  store i8 %".296", i8* %".298"
   br label %"@46"
 "@46":
-  %".296" = load i64, i64* %"max_n_read"
-  %".297" = icmp ne i64 %".296", 0
-  br i1 %".297", label %"@2", label %"@47"
+  %".301" = load i64, i64* %"max_n_read"
+  %".302" = icmp ne i64 %".301", 0
+  br i1 %".302", label %"@2", label %"@47"
 "@47":
-  %".299" = load i8, i8* %"make_hole"
-  %".300" = icmp eq i8 %".299", 0
-  br i1 %".300", label %"@50", label %"@48"
+  %".304" = load i8, i8* %"make_hole"
+  %".305" = icmp eq i8 %".304", 0
+  br i1 %".305", label %"@50", label %"@48"
 "@48":
-  %".302" = load i32, i32* %"dest_fd"
-  %".303" = load i8*, i8** %"dst_name"
-  %".304" = load i1, i1* %"punch_holes"
-  %".305" = load i64, i64* %"psize"
-  %".306" = call i1 @"create_hole"(i32 %".302", i8* %".303", i1 %".304", i64 %".305")
-  %".307" = zext i1 %".306" to i8
-  %".308" = xor i8 %".307", 1
-  %".309" = icmp eq i8 %".308", 0
-  br i1 %".309", label %"@50", label %"@49"
+  %".307" = load i32, i32* %"dest_fd"
+  %".308" = load i8*, i8** %"dst_name"
+  %".309" = load i1, i1* %"punch_holes"
+  %".310" = load i64, i64* %"psize"
+  %".311" = call i1 @"create_hole"(i32 %".307", i8* %".308", i1 %".309", i64 %".310")
+  %".312" = zext i1 %".311" to i8
+  %".313" = xor i8 %".312", 1
+  %".314" = icmp eq i8 %".313", 0
+  br i1 %".314", label %"@50", label %"@49"
 "@49":
-  %".311" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".311"
+  %".316" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".316"
   br label %"@51"
 "@50":
-  %".314" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".314"
+  %".319" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".319"
   br label %"@51"
 "@51":
   %".28" = load i1, i1* %"funcresult"

@@ -144,6 +144,17 @@ _HELPER_INTRINSICS = frozenset({
     "__ROR1__", "__ROR2__", "__ROR4__", "__ROR8__",
 })
 
+# Memory-clobbering libc calls that write THROUGH their destination pointer arg.
+# A result-DISCARDED call to one of these, emitted as a bare ``m_call gvar`` with
+# no mcallinfo, is dead-code-eliminated by Hex-Rays' glbopt when a later store in
+# the same block covers the written bytes (the pointer write is invisible without
+# a callinfo). Routed through the explicit-mcallinfo fixed-arg path so HR models
+# the clobber and keeps the call (e.g. qset_acl's ``memset(&ctx,0,sizeof)``).
+_MEMCLOBBER_FNS = frozenset({
+    "memset", "memcpy", "memmove", "bzero",
+    "__memset_chk", "__memcpy_chk", "__memmove_chk",
+})
+
 # Variadic-prologue intrinsics the *body* emits over the real ``__va_list_tag``
 # storage (the SysV va_list machine HexRays renders as the ``va_start(ap, last)``
 # / ``va_arg(ap, T)`` / ``va_end(ap)`` macros -- helper-call form, exactly like
@@ -1533,6 +1544,26 @@ class LLVMDropConverter:
         if is_vararg and len(call_args) <= ctif.get_nargs():
             return self._emit_call_vararg_fixed(
                 mba, blk, anchor, ea, ins, vmap, callee_ea, ctif)
+        # A RESULT-DISCARDED memory-clobbering libc call (memset/memcpy/...) writes
+        # THROUGH its destination pointer arg. A bare ``m_call gvar`` carries no
+        # mcallinfo, so Hex-Rays' glbopt cannot see the memory write: when a later
+        # store in the same block covers the written bytes (e.g. qset_acl's
+        # ``memset(&ctx,0,4); ctx.mode = mode`` -- the mode store overwrites all 4
+        # bytes of the {i32} struct) the WHOLE call is dead-code-eliminated and the
+        # zero-init is silently dropped. The NATIVE decompile keeps it because its
+        # call carries a typed mcallinfo (``<fast:"void *s" &ctx,...>``) that models
+        # the pointer write. Emit such a call with an EXPLICIT mcallinfo (set_type +
+        # FCI_FINAL, via the fixed-arg path) so HR models the clobber and preserves
+        # the call. Scoped to resolved, non-vararg, DISCARDED-result memclobber
+        # callees (the only ones HR can wrongly fold); every other call is unchanged.
+        if (not is_vararg and not self._value_used(ins)
+                and callee_name in _MEMCLOBBER_FNS):
+            mctif = ida_typeinf.tinfo_t()
+            if (ida_nalt.get_tinfo(mctif, callee_ea) and mctif.is_func()
+                    and not mctif.is_vararg_cc()
+                    and mctif.get_nargs() == len(call_args)):
+                return self._emit_call_vararg_fixed(
+                    mba, blk, anchor, ea, ins, vmap, callee_ea, mctif)
         # Resolve args once; a call that materializes a frame address (&local)
         # must carry the host resting-frame ea so Hex-Rays computes a
         # frame-consistent mcallinfo.call_spd -- else WARN_BAD_CALL_SP ("bad sp

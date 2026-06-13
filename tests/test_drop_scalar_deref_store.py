@@ -135,11 +135,18 @@ class TestScalarDerefStoreThroughPointer:
             "running-counter deref-store lost -- expected `*(_QWORD *)a9 += ...;` "
             f"(i.e. `*total_n_read += n_read`):\n{dropped}")
 
-        # The bug clobbers the LOCAL pointer instead: a bare slot assignment to a
-        # name rooted at the pointer (``total_n_read = nullptr`` /
-        # ``total_n_read = (off_t *)(...)``). A correct drop NEVER assigns such a
-        # slot for these two statements -- it always derefs.
-        assert not re.search(r"^\s*total_n_read\s*=", body, re.MULTILINE), (
+        # The bug clobbers the LOCAL pointer instead: a bare slot assignment whose
+        # RHS is the collapsed pointee write -- ``total_n_read = nullptr`` (from
+        # ``*total_n_read = 0``) or ``total_n_read = (off_t *)(...)`` (from the
+        # ``+= n_read``). A correct drop NEVER slot-assigns such a value -- it
+        # derefs. Match the bug's RHS SHAPE (null / off_t* pointer-arith), not a
+        # bare ``total_n_read =``: Hex-Rays may incidentally NAME an unrelated
+        # ``char *`` temp ``total_n_read`` (e.g. ``total_n_read = quotearg_style
+        # (...)`` in an error path) -- that is not a slot-clobber of the counter.
+        assert not re.search(
+            r"^\s*total_n_read\s*=\s*(nullptr|0)\s*;"
+            r"|^\s*total_n_read\s*=\s*\(off_t \*\)",
+            body, re.MULTILINE), (
             "slot clobbered -- the pointer-width store wrote the local pointer "
             f"`total_n_read = ...` instead of the pointee:\n{dropped}")
         assert "= nullptr;" not in body or "*(_" in dropped, (
