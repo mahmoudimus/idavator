@@ -24886,16 +24886,17 @@ define i32 @"openat_safer"(i32 %".1", i8* %".2", i32 %".3", ...)
   %".45" = load i32, i32* %"mode"
   %".46" = zext i32 %".45" to i64
   %".47" = zext i8 %".44" to i32
-  %".48" = call i32 (i32, i8*, i32, ...) @"openat"(i32 %".41", i8* %".42", i32 %".47")
-  store i32 %".48", i32* %"v4"
-  %".50" = load i32, i32* %"v4"
-  %".51" = call i32 @"fd_safer"(i32 %".50")
-  store i32 %".51", i32* %"funcresult"
+  %".48" = bitcast i32 (i32, i8*, i32, ...)* @"openat" to i32 (i32, i8*, i32, i64, ...)*
+  %".49" = call i32 (i32, i8*, i32, i64, ...) %".48"(i32 %".41", i8* %".42", i32 %".47", i64 %".46")
+  store i32 %".49", i32* %"v4"
+  %".51" = load i32, i32* %"v4"
+  %".52" = call i32 @"fd_safer"(i32 %".51")
+  store i32 %".52", i32* %"funcresult"
   br label %"@4"
 "@4":
   %".10" = load i32, i32* %"funcresult"
-  %".54" = load i8*, i8** %"ArgList"
-  call void @"llvm.va_end"(i8* %".54")
+  %".55" = load i8*, i8** %"ArgList"
+  call void @"llvm.va_end"(i8* %".55")
   ret i32 %".10"
 }
 
@@ -28198,16 +28199,17 @@ define i32 @"open_safer"(i8* %".1", i32 %".2", ...)
   %".42" = load i32, i32* %"mode"
   %".43" = zext i32 %".42" to i64
   %".44" = zext i8 %".41" to i32
-  %".45" = call i32 (i8*, i32, ...) @"open"(i8* %".39", i32 %".44")
-  store i32 %".45", i32* %"v3"
-  %".47" = load i32, i32* %"v3"
-  %".48" = call i32 @"fd_safer"(i32 %".47")
-  store i32 %".48", i32* %"funcresult"
+  %".45" = bitcast i32 (i8*, i32, ...)* @"open" to i32 (i8*, i32, i64, ...)*
+  %".46" = call i32 (i8*, i32, i64, ...) %".45"(i8* %".39", i32 %".44", i64 %".43")
+  store i32 %".46", i32* %"v3"
+  %".48" = load i32, i32* %"v3"
+  %".49" = call i32 @"fd_safer"(i32 %".48")
+  store i32 %".49", i32* %"funcresult"
   br label %"@4"
 "@4":
   %".8" = load i32, i32* %"funcresult"
-  %".51" = load i8*, i8** %"ArgList"
-  call void @"llvm.va_end"(i8* %".51")
+  %".52" = load i8*, i8** %"ArgList"
+  call void @"llvm.va_end"(i8* %".52")
   ret i32 %".8"
 }
 

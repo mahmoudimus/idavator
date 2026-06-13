@@ -144,6 +144,20 @@ _HELPER_INTRINSICS = frozenset({
     "__ROR1__", "__ROR2__", "__ROR4__", "__ROR8__",
 })
 
+# Variadic-prologue intrinsics the *body* emits over the real ``__va_list_tag``
+# storage (the SysV va_list machine HexRays renders as the ``va_start(ap, last)``
+# / ``va_arg(ap, T)`` / ``va_end(ap)`` macros -- helper-call form, exactly like
+# ``__ROR8__``, NOT the ``!va_start`` IR intrinsic). The lifter (ida2llvm) ALSO
+# bolts a redundant synth scaffold ON TOP -- ``%ArgList = alloca i8*`` (uninit) +
+# ``call @llvm.va_start`` / ``@llvm.va_end`` -- which has NO native counterpart
+# (the real machine is the body's ``@va_start``/``@va_arg`` over ``authors``). The
+# scaffold (``llvm.va_start``/``llvm.va_end``) is DEAD -> no-op; the body
+# (``va_start``/``va_arg``/``va_end``) lowers to a Hex-Rays helper call. Both are
+# kept IN-segment (like the canary) so they render INLINE, not block-terminal.
+_VA_HELPER = frozenset({"va_start", "va_arg", "va_end"})
+_VA_SCAFFOLD = frozenset({"llvm.va_start.p0", "llvm.va_end.p0"})
+_VARARG_INTRINSICS = _VA_HELPER | _VA_SCAFFOLD
+
 # A private string-constant global used as a VALUE (e.g. an error message handed
 # to a call/printf, decayed via getelementptr) stringifies in llvmlite as its
 # full definition: ``@name = private [unnamed_addr ]constant [N x i8] c"..."``.
@@ -839,6 +853,13 @@ class LLVMDropConverter:
             blk.insert_into_block(mi, anchor)
             vmap[ins.name] = ("reg", kreg, out_sz)
             return mi
+        if op == "bitcast" and ops and ops[0].name == "IDA_QWORD":
+            # ``bitcast i8* ()* @IDA_QWORD to i8*`` is the lifter's TYPE MARKER for
+            # the ``_QWORD`` argument of ``va_arg(ap, _QWORD)`` (ida2llvm models the
+            # type as a declared marker fn). It is DEAD -- the ``@va_arg`` call takes
+            # only the va_list ptr; this bitcast feeds nothing. ``@IDA_QWORD`` is a
+            # function declare, not a value, so ``_desc`` cannot resolve it. No-op.
+            return anchor
         if op in _NOOP_CAST:
             # ptrtoint/inttoptr/bitcast are usually bit-identical reinterpretations
             # (ptr<->int, ptr<->ptr) of the SAME width -- alias the operand, no insn.
@@ -1179,6 +1200,37 @@ class LLVMDropConverter:
                 return anchor
             if callee == "__stack_chk_fail":
                 return anchor  # canary fail path -> elided (branch is dead)
+            if callee in _VA_SCAFFOLD:
+                # The lifter's redundant synth prologue -- ``call @llvm.va_start``
+                # / ``@llvm.va_end`` on an uninit ``%ArgList`` -- is DEAD (the real
+                # va_list machine is the body's ``@va_start``/``@va_arg`` over the
+                # ``__va_list_tag`` storage). Native has NO counterpart; drop it.
+                return anchor
+            if callee in _VA_HELPER:
+                # The body's va_list machine: ``va_start(ap, last)`` /
+                # ``va_arg(ap, T)`` / ``va_end(ap)``. HexRays renders these as
+                # helper-call MACROS over ``__va_list_tag`` (like ``__ROR8__``),
+                # NOT the ``!va_start`` IR intrinsic -- so a helper call matches
+                # the native rendering. ``va_arg`` yields the next argument; copy
+                # rax into a stable kreg and record it so the consuming store
+                # (``store i64 %va_arg_result, i64* %vN``) reads a live value
+                # across any later rax-clobbering call.
+                _ar, eax, _ds = self._abi()
+                arg_descs = [self._desc(a, vmap, _type_size(a.type))
+                             for a in list(ins.operands)[:-1]]
+                anchor = self._emit_helper_call(
+                    mba, blk, anchor, ea, ins, callee, arg_descs, eax)
+                if str(ins.type) != "void":
+                    rsz = _type_size(ins.type)
+                    kreg = mba.alloc_kreg(rsz)
+                    mv = hx.minsn_t(ea)
+                    mv.opcode = hx.m_mov
+                    mv.l.make_reg(eax, rsz)
+                    mv.d.make_reg(kreg, rsz)
+                    blk.insert_into_block(mv, anchor)
+                    anchor = mv
+                    vmap[ins.name] = ("reg", kreg, rsz)
+                return anchor
             raise RuntimeError("call must be split into its own block "
                                "(handled by the segment splitter, not _emit_value)")
         logger.warning("unhandled LLVM opcode: %s", op)
@@ -2933,6 +2985,18 @@ class LLVMDropConverter:
             "__readfsqword", "__readgsqword", "__stack_chk_fail")
 
     @staticmethod
+    def _is_vararg_intrinsic_call(ins) -> bool:
+        """A va_list-machine call -- the body's ``va_start``/``va_arg``/``va_end``
+        (HexRays helper macros over ``__va_list_tag``) or the lifter's redundant
+        ``llvm.va_start``/``llvm.va_end`` synth scaffold (dead, on an uninit
+        ``%ArgList``). Kept IN-segment (NOT split into its own block) -- native
+        renders them inline; ``_emit_value`` no-ops the scaffold and lowers the
+        body macros via a helper call. See ``_VARARG_INTRINSICS``."""
+        if ins.opcode != "call":
+            return False
+        return list(ins.operands)[-1].name in _VARARG_INTRINSICS
+
+    @staticmethod
     def _value_used(ins) -> bool:
         """True if the SSA result of ``ins`` is referenced as an operand by any
         instruction in its function (llvmlite ValueRef exposes no use list, so we
@@ -3094,7 +3158,9 @@ class LLVMDropConverter:
                 break
             if ins.opcode == "phi":
                 continue
-            if ins.opcode == "call" and not LLVMDropConverter._is_canary_call(ins):
+            if (ins.opcode == "call"
+                    and not LLVMDropConverter._is_canary_call(ins)
+                    and not LLVMDropConverter._is_vararg_intrinsic_call(ins)):
                 cur["call"] = ins
                 if LLVMDropConverter._callee_is_noreturn(ins):
                     cur["noreturn"] = True
@@ -3104,7 +3170,8 @@ class LLVMDropConverter:
                 cur = {"values": [], "call": None, "term": None,
                        "prev_call": ins}
             else:
-                # canary calls stay in-segment -> _emit_value elides them.
+                # canary + va_list-machine calls stay in-segment -> _emit_value
+                # elides the canary/scaffold and lowers va_start/va_arg inline.
                 cur["values"].append(ins)
         cur["term"] = term
         segs.append(cur)
