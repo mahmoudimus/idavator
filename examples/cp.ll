@@ -20841,24 +20841,26 @@ define i32 @"rpl_fcntl"(i32 %".1", i32 %".2", ...)
   %".102" = bitcast i64* %"v5" to i32*
   %".103" = load i32, i32* %".102"
   %".104" = zext i32 %".103" to i64
-  %".105" = call i32 (i32, i32, ...) @"fcntl"(i32 %".100", i32 %".101")
-  store i32 %".105", i32* %".4"
+  %".105" = bitcast i32 (i32, i32, ...)* @"fcntl" to i32 (i32, i32, i64, ...)*
+  %".106" = call i32 (i32, i32, i64, ...) %".105"(i32 %".100", i32 %".101", i64 %".104")
+  store i32 %".106", i32* %".4"
   br label %"@21"
 "@20":
-  %".108" = load i32, i32* %"fd"
-  %".109" = load i32, i32* %"action"
-  %".110" = load i64, i64* %"v5"
-  %".111" = call i32 (i32, i32, ...) @"fcntl"(i32 %".108", i32 %".109")
-  store i32 %".111", i32* %".4"
+  %".109" = load i32, i32* %"fd"
+  %".110" = load i32, i32* %"action"
+  %".111" = load i64, i64* %"v5"
+  %".112" = bitcast i32 (i32, i32, ...)* @"fcntl" to i32 (i32, i32, i64, ...)*
+  %".113" = call i32 (i32, i32, i64, ...) %".112"(i32 %".109", i32 %".110", i64 %".111")
+  store i32 %".113", i32* %".4"
   br label %"@21"
 "@21":
-  %".114" = load i32, i32* %".4"
-  store i32 %".114", i32* %"funcresult"
+  %".116" = load i32, i32* %".4"
+  store i32 %".116", i32* %"funcresult"
   br label %"@22"
 "@22":
   %".9" = load i32, i32* %"funcresult"
-  %".117" = load i8*, i8** %"ArgList"
-  call void @"llvm.va_end"(i8* %".117")
+  %".119" = load i8*, i8** %"ArgList"
+  call void @"llvm.va_end"(i8* %".119")
   ret i32 %".9"
 }
 

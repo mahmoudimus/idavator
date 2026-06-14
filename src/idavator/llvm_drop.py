@@ -265,6 +265,36 @@ def _type_size(type_str) -> int:
     return 4
 
 
+_LEGAL_KREG_SIZES = (1, 2, 4, 8, 16)
+
+
+def _legal_kreg_size(nbytes: int) -> int:
+    """Round a byte width up to a size ``mba.alloc_kreg(check_size=True)`` will
+    accept (a basic-type size: ``{1, 2, 4, 8, 16}``).
+
+    SROA byte-splits a wide scalar into NON-power-of-2 slices -- e.g. it splits
+    an ``i32`` into a low byte plus an ``i24`` high slice, or an ``i64`` arg into
+    ``i48``/``i56`` tails. ``_type_size`` reports those as 3/6/7 bytes, and
+    ``alloc_kreg`` REJECTS 3/5/6/7 (only basic-type sizes are valid), raising
+    ``RuntimeError: Unknown exception``. Round the slice up to the next legal
+    kreg width so it lives in a real register; the PRODUCING ``trunc`` masks the
+    value to the slice's LOGICAL bit-width (``_int_bits``) so the paired widen
+    (``zext``/``sext``) re-extends it faithfully -- the high padding bits of the
+    rounded kreg carry no meaning."""
+    for s in _LEGAL_KREG_SIZES:
+        if nbytes <= s:
+            return s
+    return _LEGAL_KREG_SIZES[-1]
+
+
+def _int_bits(type_str):
+    """Logical bit count of an ``iN`` integer type, else ``None`` (pointer / fp /
+    aggregate). Used to mask an illegal-width slice down to its true bit-width
+    after rounding its kreg up to a legal size."""
+    m = re.fullmatch(r"i(\d+)", str(type_str).strip())
+    return int(m.group(1)) if m else None
+
+
 def _is_ptr_type(type_str) -> bool:
     """True if an LLVM type is a pointer (opaque ``ptr`` or a legacy ``T*``).
     Used to tell a full-pointer slot access from a sub-pointer deref on a
@@ -908,6 +938,48 @@ class LLVMDropConverter:
             return ("gvar", gea, size)
         return None
 
+    def _emit_narrow(self, mba, blk, anchor, ea, ins, vmap, src_op,
+                     in_sz, out_sz, out_bits, out_raw):
+        """Lower a NARROWING cast (``trunc``, or a width-shrinking ptrtoint /
+        inttoptr) into a legal-width kreg, recording the result in ``vmap``.
+
+        ``in_sz``/``out_sz`` are the LEGAL (rounded) kreg widths; ``out_bits`` is
+        the logical bit count of the result type (``None`` for a non-integer
+        result, e.g. a pointer); ``out_raw`` is its raw ``ceil(N/8)`` byte size.
+
+        When the result type is a non-power-of-2 slice (``out_raw`` not a basic
+        size, e.g. ``i24`` -> 3B rounded to 4B) the value must be MASKED to its
+        ``out_bits`` logical bits -- a single ``m_and`` both truncates the high
+        source bytes AND clears the rounded kreg's padding bits, so the paired
+        ``zext`` re-extends it faithfully (zero high bits == zero-extension). A
+        truncation to a LEGAL width keeps the plain ``m_low``."""
+        illegal = (out_bits is not None
+                   and (out_bits % 8 != 0 or out_raw not in _LEGAL_KREG_SIZES))
+        if illegal and out_bits < out_sz * 8:
+            # Mask to the logical bit-width directly from the (legal-width)
+            # source; m_and l/r/d all share out_sz. This subsumes the narrow.
+            mi = hx.minsn_t(ea)
+            mi.opcode = hx.m_and
+            self._fill(mi.l, self._desc(src_op, vmap, out_sz))
+            mi.r.make_number((1 << out_bits) - 1, out_sz)
+            kreg = mba.alloc_kreg(out_sz)
+            mi.d.make_reg(kreg, out_sz)
+            blk.insert_into_block(mi, anchor)
+            vmap[ins.name] = ("reg", kreg, out_sz)
+            return mi
+        if in_sz == out_sz:
+            # Rounded to the same legal width and no masking needed -- alias.
+            vmap[ins.name] = self._desc(src_op, vmap, in_sz)
+            return anchor
+        mi = hx.minsn_t(ea)
+        mi.opcode = hx.m_low
+        self._fill(mi.l, self._desc(src_op, vmap, in_sz))
+        kreg = mba.alloc_kreg(out_sz)
+        mi.d.make_reg(kreg, out_sz)
+        blk.insert_into_block(mi, anchor)
+        vmap[ins.name] = ("reg", kreg, out_sz)
+        return mi
+
     def _emit_value(self, mba, blk, anchor, ea, ins, vmap, ds):
         """Emit one non-terminator LLVM instruction into ``blk`` before
         ``anchor``; record its SSA result in ``vmap``. Returns the new anchor."""
@@ -981,13 +1053,26 @@ class LLVMDropConverter:
             # whose size mismatches its comparand (`m_jz l=kr.8 r=#0.1`) and the
             # verifier rejects it (INTERR 50831, verify.cpp conditional-branch
             # operand-size check requires l.size == r.size).
-            in_sz = _type_size(ops[0].type)
-            out_sz = _type_size(ins.type)
-            if in_sz == out_sz or out_sz == 0 or in_sz == 0:
+            in_raw = _type_size(ops[0].type)
+            out_raw = _type_size(ins.type)
+            if in_raw == out_raw or out_raw == 0 or in_raw == 0:
                 vmap[ins.name] = self._desc(ops[0], vmap, 8)
                 return anchor
+            # SROA can emit a width-changing ptrtoint/inttoptr through a
+            # non-power-of-2 slice; round both ends to a legal kreg width
+            # (alloc_kreg rejects 3/5/6/7) and mask a narrowing result to its
+            # logical bits so a later widen re-extends it faithfully.
+            in_sz = _legal_kreg_size(in_raw)
+            out_sz = _legal_kreg_size(out_raw)
+            if out_raw < in_raw:
+                return self._emit_narrow(
+                    mba, blk, anchor, ea, ins, vmap, ops[0],
+                    in_sz, out_sz, _int_bits(ins.type), out_raw)
+            if in_sz == out_sz:
+                vmap[ins.name] = self._desc(ops[0], vmap, in_sz)
+                return anchor
             mi = hx.minsn_t(ea)
-            mi.opcode = hx.m_low if out_sz < in_sz else hx.m_xdu
+            mi.opcode = hx.m_xdu
             self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
             kreg = mba.alloc_kreg(out_sz)
             mi.d.make_reg(kreg, out_sz)
@@ -995,14 +1080,66 @@ class LLVMDropConverter:
             vmap[ins.name] = ("reg", kreg, out_sz)
             return mi
         if op in _CAST:
-            in_sz = _type_size(ops[0].type)
-            out_sz = _type_size(ins.type)
-            if in_sz == out_sz:
-                # Same BYTE width (e.g. `zext i1 to i8` -- both 1 byte): a no-op
-                # reinterpretation, not a real widen/narrow. m_xdu/m_xds/m_low all
-                # INTERR on equal l/d sizes (50837/50838), so alias the operand.
-                vmap[ins.name] = self._desc(ops[0], vmap, out_sz)
+            in_raw = _type_size(ops[0].type)
+            out_raw = _type_size(ins.type)
+            # SROA byte-splits a wide scalar into NON-power-of-2 slices (i24/i48/
+            # i56 -> 3/6/7B); alloc_kreg(check_size) REJECTS those. Round each end
+            # to a legal kreg width and, for a NARROWING trunc to such a slice,
+            # MASK the value to its logical bits so the paired widen re-extends it
+            # faithfully (the rounded kreg's high padding bits carry no meaning).
+            in_sz = _legal_kreg_size(in_raw)
+            out_sz = _legal_kreg_size(out_raw)
+            if op == "trunc":
+                return self._emit_narrow(
+                    mba, blk, anchor, ea, ins, vmap, ops[0],
+                    in_sz, out_sz, _int_bits(ins.type), out_raw)
+            # zext / sext (a WIDEN): the source already holds a value masked /
+            # sign-correct in its logical bits within ``in_sz`` bytes.
+            in_bits = _int_bits(ops[0].type)
+            src_illegal = in_bits is not None and (in_bits % 8 != 0
+                                                   or in_raw not in _LEGAL_KREG_SIZES)
+            if in_sz == out_sz and not (op == "sext" and src_illegal):
+                # Same legal BYTE width (e.g. `zext i1 to i8`, or `zext i24 to i32`
+                # where both round to 4): a no-op reinterpretation. m_xdu/m_xds/
+                # m_low INTERR on equal l/d sizes (50837/50838) -> alias. For zext
+                # this is exact (high bits already zero from the producer's mask);
+                # sext from an ILLEGAL slice still needs sign-replication, handled
+                # below.
+                vmap[ins.name] = self._desc(ops[0], vmap, in_sz)
                 return anchor
+            if op == "sext" and src_illegal:
+                # Sign-extend from logical bit ``in_bits-1`` of a value that lives
+                # masked in a wider kreg: arithmetic ``(x << k) >>s k`` with
+                # k = in_sz*8 - in_bits replicates the sign bit, then widen to
+                # out_sz. (No such site in cp.ll today; kept for faithfulness.)
+                k = in_sz * 8 - in_bits
+                shl = hx.minsn_t(ea)
+                shl.opcode = hx.m_shl
+                self._fill(shl.l, self._desc(ops[0], vmap, in_sz))
+                shl.r.make_number(k, 1)
+                sk = mba.alloc_kreg(in_sz)
+                shl.d.make_reg(sk, in_sz)
+                blk.insert_into_block(shl, anchor)
+                anchor = shl
+                sar = hx.minsn_t(ea)
+                sar.opcode = hx.m_sar
+                sar.l.make_reg(sk, in_sz)
+                sar.r.make_number(k, 1)
+                rk = mba.alloc_kreg(in_sz)
+                sar.d.make_reg(rk, in_sz)
+                blk.insert_into_block(sar, anchor)
+                anchor = sar
+                if in_sz == out_sz:
+                    vmap[ins.name] = ("reg", rk, out_sz)
+                    return sar
+                wi = hx.minsn_t(ea)
+                wi.opcode = hx.m_xds
+                wi.l.make_reg(rk, in_sz)
+                wk = mba.alloc_kreg(out_sz)
+                wi.d.make_reg(wk, out_sz)
+                blk.insert_into_block(wi, anchor)
+                vmap[ins.name] = ("reg", wk, out_sz)
+                return wi
             mi = hx.minsn_t(ea)
             mi.opcode = _CAST[op]
             self._fill(mi.l, self._desc(ops[0], vmap, in_sz))
