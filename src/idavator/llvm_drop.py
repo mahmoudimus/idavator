@@ -397,6 +397,13 @@ class LLVMDropConverter:
             ir_text, self._struct_size)
         self._allocas: dict = {}  # set per-drop in _build (scalar-slot kregs)
         self._addr_taken: dict = {}  # name -> (stkoff, size) for &local allocas
+        self._array_alloca_elt: dict = {}  # GEP'd ``[N x T]`` alloca name ->
+        # (elem_str, elem_byte_size, count). Drives the post-decompile ARRAY-LVAR
+        # retype pass (_save_array_lvar_types): a frame slot that the drop laid out
+        # as ONE whole-aggregate region but resolves GEP-by-GEP to bare sp+const
+        # scalar refs would otherwise be shattered by Hex-Rays into ~N disjoint
+        # scalar stkvars; typing the slot lvar as ``T[N]`` makes it cohere into a
+        # single array lvar (native's ``char buf[104]``). Populated in _build.
         self._arg_spill_kill: set = set()  # arg regs to KILL after the entry spill
         # (an arg whose spill slot is read across a clobbering call -- create_hole's
         # ``size``; see _arg_spill_slots_across_call).
@@ -426,15 +433,15 @@ class LLVMDropConverter:
         # ``void *`` for a variadic arg so it renders clean, not a signed cast.
         self._array_elt_addr = {}  # ptrtoint-of-GEP-into-array-alloca SSA name ->
         # its EFFECTIVE byte offset for the variadic-arg decline gate. The value is 0
-        # ONLY for a faithful whole-buffer pointer: a ZERO-offset address (``&buf[0]``,
-        # e.g. ``scanf("%s", &buf)``) into a buffer that is NEVER GEP'd at any other
-        # offset (so the forced prototype keeps it coherent and it renders like
-        # native). A NONZERO offset (``&perms[1]``), a non-constant index, OR a
-        # zero-offset address into a multi-purpose buffer touched at other offsets
-        # (which Hex-Rays fragments into scalar lvars -> divergent render) all carry a
+        # for a faithful whole-buffer pointer: a ZERO-offset address (``&buf[0]``,
+        # e.g. ``scanf("%s", &buf)``) into a ``[N x T]`` buffer the ARRAY-LVAR retype
+        # pass can cohere into one ``T[N]`` lvar (a nameable scalar/ptr element) -- it
+        # then renders like native ``scanf("%s", buf)`` EVEN if the buffer is GEP'd at
+        # other offsets too. A NONZERO offset (``&perms[1]``), a non-constant index,
+        # OR a zero-offset address into a buffer the retype CANNOT cohere all carry a
         # non-zero effective offset (None for the sentinel), so _emit_call_vararg
         # declines them for a clean native fallback rather than ship a divergent body.
-        # Populated in drop() where the offsets + per-buffer fragmentation are known.
+        # Populated in drop() where the offsets + per-buffer cohesibility are known.
         self._str_index = None       # IDB string-literal content -> ea (lazy)
 
     # -- public API ------------------------------------------------------
@@ -523,15 +530,19 @@ class LLVMDropConverter:
         try:
             hx.mark_cfunc_dirty(host_ea)
             cf = hx.decompile(host_ea)
-            # Type the struct-pointer cursor slots and re-drop so the type
-            # propagation re-runs -- the only thing that beats the decompiler's own
-            # param-propagated pointer inference is a persistent user type at the
-            # cursor lvar's ACTUAL (post-decompile) location, applied between two
-            # full decompiles. Build failures leave cf untyped (unchanged).
-            if (cf is not None and box["err"] is None
-                    and self._save_struct_ptr_lvar_types(host_ea, fn, cf)):
-                hx.mark_cfunc_dirty(host_ea)
-                cf = hx.decompile(host_ea)
+            # Type the struct-pointer cursor slots AND the GEP'd array slots, then
+            # re-drop so the type propagation re-runs -- the only thing that beats
+            # the decompiler's own inference (param-propagated pointers; a buffer
+            # shattered into per-offset scalar stkvars) is a persistent user type at
+            # each lvar's ACTUAL (post-decompile) location, applied between two full
+            # decompiles. Both retypes share the one re-decompile. Build failures
+            # leave cf untyped (unchanged).
+            if cf is not None and box["err"] is None:
+                retyped = self._save_struct_ptr_lvar_types(host_ea, fn, cf)
+                retyped = self._save_array_lvar_types(host_ea, fn, cf) or retyped
+                if retyped:
+                    hx.mark_cfunc_dirty(host_ea)
+                    cf = hx.decompile(host_ea)
         finally:
             hook.unhook()
         return cf, box
@@ -1706,14 +1717,14 @@ class LLVMDropConverter:
                 f"vararg call result consumed for @{ops[-1].name}")
         # Decline a vararg that is a non-faithful stack-array element address (see
         # the population site for the full taxonomy + the B5 proof). The EFFECTIVE
-        # offset in ``_array_elt_addr`` already folds in buffer-fragmentation: it is 0
-        # ONLY for a zero-offset whole-buffer pointer into a buffer that is never
-        # GEP'd elsewhere (a clean ``scanf("%s", &buf)`` target that stays coherent
-        # and renders faithfully). A nonzero offset (``&perms[1]``), a non-constant
-        # index, OR a zero offset into a fragmenting multi-purpose buffer (OLLVM's
-        # ``v56``) all carry a non-zero effective offset and DECLINE for a clean
-        # native fallback -- never a building-but-divergent body. (Scoped to the
-        # variadic path -- non-vararg array-address uses are unaffected.)
+        # offset in ``_array_elt_addr`` folds in buffer cohesibility: it is 0 for a
+        # zero-offset whole-buffer pointer into a buffer the ARRAY-LVAR retype can
+        # cohere into one ``T[N]`` lvar (a clean ``scanf("%s", buf)`` target that
+        # renders faithfully even when the buffer is also GEP'd at other offsets). A
+        # nonzero offset (``&perms[1]``), a non-constant index, OR a zero offset into
+        # a buffer the retype CANNOT cohere all carry a non-zero effective offset and
+        # DECLINE for a clean native fallback -- never a building-but-divergent body.
+        # (Scoped to the variadic path -- non-vararg array-address uses unaffected.)
         def _is_mid_array_addr(name):
             # True iff NAME is an array-element address that is NOT a faithful
             # whole-buffer pointer (effective offset != 0 -> decline).
@@ -2472,6 +2483,74 @@ class LLVMDropConverter:
                 applied = True
         return applied
 
+    @staticmethod
+    def _array_elt_tinfo(elem_str: str, elem_size: int):
+        """A ``tinfo_t`` for one cohesion-eligible GEP'd-array element, else None.
+
+        SCOPED TO BYTE BUFFERS (``i8`` element -> ``char``): a ``[N x i8]`` stack
+        buffer is the case Hex-Rays shatters into ~N disjoint scalar stkvars when the
+        drop resolves each GEP to a bare ``sp+const`` ref (native's ``char buf[104]``
+        fed to ``scanf("%s", buf)`` becomes ``scanf("%s", &fragment)``). Typing the
+        slot ``char[N]`` is what cohers it.
+
+        WIDER integer / ``ptr`` element arrays are deliberately EXCLUDED: a small
+        ``[2 x ptr]`` / ``[10 x ptr]`` aggregate local already drops faithfully, and
+        forcing a ``void *[N]`` lvar over a slot the body ALSO uses as a single
+        returned pointer (``hash_insert``'s ``&matched_ent`` / ``return
+        matched_ent[0]``) trips Hex-Rays' "local variable allocation has failed"
+        banner -- a regression. Returning None there leaves the slot exactly as the
+        drop emitted it (strict zero-regression)."""
+        if elem_str == "i8":
+            return ida_typeinf.tinfo_t(ida_typeinf.BTF_CHAR)
+        return None
+
+    def _save_array_lvar_types(self, host_ea: int, fn, cf) -> bool:
+        """Type each GEP'd ``[N x T]`` frame slot as a single ``T[N]`` array lvar so
+        the decompiler renders the buffer WHOLE (native's ``char buf[104]`` fed to
+        ``scanf("%s", buf)``) instead of shattering the GEP-by-GEP ``sp+const``
+        scalar refs into ~N disjoint scalar stkvars.
+
+        Exactly mirrors ``_save_struct_ptr_lvar_types``: GIVEN a first ``cf``, locate
+        each array slot's stkvar by the frame offset the drop assigned it
+        (``self._addr_taken[name][0]``), then persist a user type at that lvar's
+        ACTUAL (post-decompile) location via ``modify_user_lvar_info(MLI_TYPE)``. The
+        caller re-decompiles so type/structural analysis re-runs over the now-cohesive
+        slot. Returns True iff any type was applied (caller must re-decompile)."""
+        if cf is None or not self._array_alloca_elt:
+            return False
+        # frame offset -> array tinfo (only faithfully-typeable element kinds).
+        want: dict = {}
+        for nm, (elem_str, elem_size, count) in self._array_alloca_elt.items():
+            slot = self._addr_taken.get(nm)
+            if slot is None or count <= 0:
+                continue
+            elt = self._array_elt_tinfo(elem_str, elem_size)
+            if elt is None:
+                continue
+            arr = ida_typeinf.tinfo_t()
+            if not arr.create_array(elt, count) or not arr.is_array():
+                continue
+            want[slot[0]] = arr
+        if not want:
+            return False
+        applied = False
+        for v in cf.get_lvars():
+            if not v.is_stk_var():
+                continue
+            tif = want.get(v.get_stkoff())
+            if tif is None:
+                continue
+            if v.type() is not None and v.type().dstr() == tif.dstr():
+                continue  # already this array type (idempotent re-drop)
+            info = hx.lvar_saved_info_t()
+            info.ll.location = v.location
+            info.ll.defea = v.defea
+            info.type = tif
+            info.size = tif.get_size()
+            if hx.modify_user_lvar_info(host_ea, hx.MLI_TYPE, info):
+                applied = True
+        return applied
+
     def _scan_ptr_deref_aliases(self, fn) -> None:
         """SSA names that are a no-op ``bitcast`` chain rooted DIRECTLY at a
         pointer-typed addr-taken alloca (``self._ptr_allocas``), with no ``load``
@@ -2710,6 +2789,7 @@ class LLVMDropConverter:
         names = {ins.name for bb in fn.blocks for ins in bb.instructions
                  if ins.opcode == "alloca"}
         self._addr_taken = {}
+        self._array_alloca_elt = {}
         self._arg_spill_kill = set()
         if not names:
             return {}
@@ -2738,6 +2818,26 @@ class LLVMDropConverter:
         decl_types = self._alloca_decl_types(fn)
         cursors = self._cursor_struct_ptrs(fn, names, gepd, escaped, decl_types)
         escaped |= cursors
+        # Distinct CONSTANT byte offsets each GEP'd alloca is reached at. The
+        # ARRAY-LVAR retype fires ONLY for a buffer touched at >= 2 distinct offsets
+        # -- the genuinely FRAGMENTING case (OLLVM's ``[104 x i8] v56`` GEP'd at 21
+        # offsets that Hex-Rays shatters into scalar stkvars). A buffer reached only
+        # at offset 0 (every cp.ll byte buffer: ``samedir_template(.., buf)``) is
+        # already coherent on its own; forcing a ``char[N]`` lvar over it gains
+        # nothing and trips Hex-Rays' "local variable allocation has failed" banner.
+        gep_offsets: dict[str, set] = {n: set() for n in gepd}
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode != "getelementptr":
+                    continue
+                sops = list(ins.operands)
+                if not sops or sops[0].name not in gepd:
+                    continue
+                try:
+                    gep_offsets[sops[0].name].add(
+                        self._gep_field_offset(ins, sops, {}))
+                except Exception:  # noqa: BLE001 - unknown offset counts as distinct
+                    gep_offsets[sops[0].name].add(None)
         # An incoming reg arg spilled to a slot that is then read ACROSS a call
         # (and consumed by that call) must rest in a real frame slot, NOT a scalar
         # kreg: Hex-Rays forwards a kreg copy of the raw incoming register into the
@@ -2868,6 +2968,18 @@ class LLVMDropConverter:
                     dims = self._array_dims(str(ins))
                     if dims is not None:
                         arr_sz = dims[0] * dims[2]
+                        # Record (elem_str, elem_byte_size, count) so the
+                        # post-decompile retype pass can give this slot a single
+                        # ``T[N]`` lvar instead of letting Hex-Rays shatter the
+                        # GEP-by-GEP scalar refs into N disjoint stkvars. Scoped to
+                        # cohesion-eligible byte buffers (_array_elt_tinfo) that are
+                        # ACTUALLY fragmenting -- reached at >= 2 distinct offsets.
+                        # A single-offset (offset-0-only) buffer is already coherent;
+                        # retyping it gains nothing and trips the allocation-failed
+                        # banner (force_linkat). Both gates -> strict zero-regression.
+                        if (self._array_elt_tinfo(dims[1], dims[2]) is not None
+                                and len(gep_offsets.get(nm, ())) >= 2):
+                            self._array_alloca_elt[nm] = (dims[1], dims[2], dims[0])
                     elif nm and self._alloca_struct_key(ins) is not None:
                         arr_sz = sz  # whole-struct size (via _struct_size)
                     else:
@@ -3258,42 +3370,47 @@ class LLVMDropConverter:
                         self._ptr_origin_vals.add(ins.name)
 
         # Address of a STACK-ARRAY ELEMENT (``ptrtoint`` of a ``getelementptr`` into
-        # a ``[N x T]`` alloca). When such an address is passed as a VARIADIC arg, the
-        # drop's forced-prototype frame layout may not keep the array buffer coherent.
-        # Two distinct failure shapes both render DIVERGENT (bytes stay ABI-correct,
-        # but the pseudocode reads unlike native), so _emit_call_vararg DECLINES them
-        # for a clean native fallback (NEVER a building-but-divergent body):
+        # a ``[N x T]`` alloca) passed as a VARIADIC arg. A MID-array element
+        # (``&perms[1]`` -- a NONZERO GEP offset) is divergent (the forced prototype
+        # fragments ``[12 x i8] perms`` and Hex-Rays tail-duplicates the call), so
+        # _emit_call_vararg DECLINES it for a clean native fallback (NEVER a
+        # building-but-divergent body). A WHOLE-buffer pointer (``&buf[0]``, offset 0)
+        # USED to also fragment when the buffer was touched at other offsets (OLLVM's
+        # ``[104 x i8] v56``, GEP'd at 25+ offsets -> ``scanf("%s", &buf)`` rendered
+        # over a 4-byte fragment). The ARRAY-LVAR retype pass now cohers such a buffer
+        # into ONE ``T[N]`` lvar, so the offset-0 pointer renders native's
+        # ``scanf("%s", buf)`` and rides the variadic path (see below).
         #
-        #   1. MID-array element (``&perms[1]`` -- a NONZERO GEP offset): the forced
-        #      prototype fragments ``[12 x i8] perms`` into disjoint scalar lvars and
-        #      Hex-Rays tail-duplicates the call.
-        #   2. WHOLE-buffer pointer (``&buf[0]``, offset 0) into a buffer that is ALSO
-        #      accessed at OTHER offsets -- a multi-purpose scratch region (OLLVM's
-        #      ``[104 x i8] v56``, touched at 25+ offsets). Even though the address is
-        #      offset 0, Hex-Rays re-derives the addr-taken slot into scalar lvars, so
-        #      ``scanf("%s", &buf)`` renders ``scanf("%s", (signed __int64)&v57)`` over
-        #      a 4-byte fragment instead of native's coherent ``scanf("%s", v56)``.
-        #
-        # The ONLY faithful shape is a ZERO-offset address into a WHOLE-BUFFER-ONLY
-        # array -- one that is never GEP'd at a nonzero offset (a pure ``scanf``/
-        # ``fgets`` target). That stays coherent, so it rides the variadic path.
-        # ``self._array_elt_addr`` therefore maps each array-element ptrtoint name to
-        # its EFFECTIVE offset for the gate: the GEP's constant byte offset if the
-        # source buffer is whole-buffer-only, else a sentinel non-zero offset (None)
-        # that forces the decline. Scoped to the vararg path so non-variadic
-        # array-address uses (already faithful) are untouched.
+        # The faithful shape is a ZERO-offset whole-buffer address (``&buf[0]``, a
+        # ``scanf``/``fgets`` target). This stays coherent -- and is rendered as ONE
+        # ``T[N]`` lvar -- WHEN the post-decompile ARRAY-LVAR retype pass
+        # (_save_array_lvar_types) can type the slot: a ``[N x T]`` alloca whose
+        # element T is a nameable scalar/ptr. Such a buffer renders like native's
+        # ``scanf("%s", buf)`` EVEN when it is also GEP'd at nonzero offsets
+        # elsewhere (a multi-purpose ``char buf[104]`` that scanf fills then strtok
+        # walks -- exactly native C). A NONZERO offset (``&perms[1]``) is a
+        # mid-element address and still declines. A buffer the retype CANNOT cohere
+        # (struct/exotic element, or an alloca the layout cannot lay out) keeps the
+        # old conservative rule: a zero-offset address into it is treated as
+        # fragmenting (None) and declines. ``self._array_elt_addr`` maps each
+        # array-element ptrtoint name to its EFFECTIVE offset for the gate. Scoped to
+        # the vararg path so non-variadic array-address uses are untouched.
         _arr_alloca = set()
+        _arr_nameable: set = set()  # [N x T] with a retype-nameable element T
         _arr_re = re.compile(r"=\s*alloca\s+\[\d+ x ")
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.name and ins.opcode == "alloca" and _arr_re.search(
                         str(ins).strip()):
                     _arr_alloca.add(ins.name)
+                    dims = self._array_dims(str(ins))
+                    if dims is not None and self._array_elt_tinfo(
+                            dims[1], dims[2]) is not None:
+                        _arr_nameable.add(ins.name)
         # For each GEP-into-array result: (source alloca name, CONSTANT byte offset).
-        # offset is None for a non-constant index. Also accumulate, per source array,
-        # whether it is EVER reached at a nonzero/non-constant offset (-> fragments).
+        # offset is None for a non-constant index. Track distinct offsets per array.
         _gep_into_arr: dict[str, tuple[str, int | None]] = {}
-        _arr_fragments: dict[str, bool] = {n: False for n in _arr_alloca}
+        _arr_distinct: dict[str, set] = {n: set() for n in _arr_alloca}
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.name and ins.opcode == "getelementptr":
@@ -3306,14 +3423,19 @@ class LLVMDropConverter:
                             # failure (non-constant index -> NotImplementedError, an
                             # exotic operand -> ValueError, an un-laid-out element)
                             # means the offset is unknown: record None so the address
-                            # is treated as fragmenting/non-zero and DECLINES. Never
-                            # let offset analysis crash an otherwise-working drop.
+                            # is treated as nonzero and DECLINES. Never let offset
+                            # analysis crash an otherwise-working drop.
                             off = self._gep_field_offset(ins, sops, {})
                         except Exception:  # noqa: BLE001 - conservative: unknown -> decline
                             off = None
                         _gep_into_arr[ins.name] = (base, off)
-                        if off != 0:  # nonzero OR None -> the buffer is multi-purpose
-                            _arr_fragments[base] = True
+                        _arr_distinct[base].add(off)
+        # A buffer is COHESIBLE iff the retype will actually fire on it: a nameable
+        # byte buffer reached at >= 2 distinct offsets (the fragmenting case the
+        # retype repairs). EXACTLY mirrors the _scan_allocas gate, so the offset-0
+        # vararg gate proceeds iff the slot really cohers into one ``T[N]`` lvar.
+        _arr_cohesible = {n for n in _arr_nameable
+                          if len(_arr_distinct.get(n, ())) >= 2}
         self._array_elt_addr = {}
         for bb in fn.blocks:
             for ins in bb.instructions:
@@ -3321,9 +3443,11 @@ class LLVMDropConverter:
                     sops = list(ins.operands)
                     if sops and sops[0].name in _gep_into_arr:
                         base, off = _gep_into_arr[sops[0].name]
-                        # A zero-offset address into a FRAGMENTING buffer is not a
-                        # faithful whole-buffer pointer -> sentinel None forces decline.
-                        if off == 0 and _arr_fragments.get(base):
+                        # A zero-offset address into a buffer the retype pass cannot
+                        # cohere is not a faithful whole-buffer pointer -> sentinel
+                        # None forces decline. A cohesible buffer keeps off==0 and
+                        # rides the variadic path (renders ``scanf("%s", buf)``).
+                        if off == 0 and base not in _arr_cohesible:
                             off = None
                         self._array_elt_addr[ins.name] = off
 
