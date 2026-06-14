@@ -4391,8 +4391,18 @@ class LLVMDropConverter:
         # is NOT dead-code-eliminated and survives as a DUPLICATE store + stale rax
         # write. Strip retb to its m_ret tail (singleblock does its own full wipe;
         # only the multiblock sink retb is missed by the 1..needed clear above).
-        while retb.head is not None and retb.head is not retb.tail:
-            retb.remove_from_block(retb.head)
+        # Strip only the NON-terminator instructions (mirror ``_build_singleblock``).
+        # The old ``while retb.head is not retb.tail`` guard was a latent 50342
+        # generator: IDAPython returns a FRESH ``minsn_t`` wrapper per attribute
+        # access, so ``retb.head is not retb.tail`` is ALWAYS true (distinct Python
+        # objects) even for a lone ``m_ret`` -- the loop then deletes the ``m_ret``
+        # itself, leaving a sink block with no terminator (value-numbering INTERR).
+        ins = retb.head
+        while ins is not None:
+            nxt = ins.next
+            if int(ins.opcode) not in _TERM:
+                retb.remove_from_block(ins)
+            ins = nxt
         retb.mark_lists_dirty()
         for s in range(needed + 1, retb.serial):  # leftover host blocks -> dead
             lb = mba.get_mblock(s)
