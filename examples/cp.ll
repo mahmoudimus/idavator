@@ -6115,7 +6115,8 @@ define i8* @"argmatch_invalid"(i8* %".1", i8* %".2", i64 %".3")
   %".32" = load i64, i64* %".31"
   %".33" = bitcast i8** %"v4" to i64*
   %".34" = load i64, i64* %".33"
-  %".35" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 0, i8* %".30")
+  %".35" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, i64, ...)*
+  %".36" = call i8* (i32, i32, i8*, i64, i64, ...) %".35"(i32 0, i32 0, i8* %".30", i64 %".32", i64 %".34")
   br label %"@5"
 "@5":
   %".8" = load i8*, i8** %"funcresult"
@@ -12163,7 +12164,7 @@ define i1 @"set_file_security_ctx"(i8* %".1", i1 %".2", i1 %".3", %"cp_options"*
 "@12":
   %".80" = call i32* @"__errno_location"()
   store i32* %".80", i32** %"v6"
-  %".82" = bitcast i32** %"v6" to i32*
+  %".82" = load i32*, i32** %"v6"
   %".83" = load i32, i32* %".82"
   %".84" = call i1 @"errno_unsupported"(i32 %".83")
   %".85" = zext i1 %".84" to i8
@@ -12179,20 +12180,21 @@ define i1 @"set_file_security_ctx"(i8* %".1", i1 %".2", i1 %".3", %"cp_options"*
   store i8* %".93", i8** %"v8"
   %".95" = call i32* @"__errno_location"()
   store i32* %".95", i32** %"v9"
-  %".97" = bitcast i32** %"v9" to i32*
+  %".97" = load i32*, i32** %"v9"
   %".98" = load i32, i32* %".97"
   %".99" = load i8*, i8** %"v8"
   %".100" = bitcast i8** %"v7" to i64*
   %".101" = load i64, i64* %".100"
-  %".102" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".98", i8* %".99")
+  %".102" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".103" = call i8* (i32, i32, i8*, i64, ...) %".102"(i32 0, i32 %".98", i8* %".99", i64 %".101")
   br label %"@14"
 "@14":
-  %".104" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".104"
+  %".105" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".105"
   br label %"@16"
 "@15":
-  %".107" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".107"
+  %".108" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".108"
   br label %"@16"
 "@16":
   %".10" = load i1, i1* %"funcresult"
@@ -20083,34 +20085,36 @@ define i1 @"create_hard_link"(i8* %".1", i8* %".2", i1 %".3", i1 %".4", i1 %".5"
   %".46" = load i64, i64* %".45"
   %".47" = bitcast i8** %"v6" to i64*
   %".48" = load i64, i64* %".47"
-  %".49" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".43", i8* %".44")
-  %".50" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".50"
+  %".49" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, i64, ...)*
+  %".50" = call i8* (i32, i32, i8*, i64, i64, ...) %".49"(i32 0, i32 %".43", i8* %".44", i64 %".46", i64 %".48")
+  %".51" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".51"
   br label %"@10"
 "@6":
-  %".53" = load i32, i32* %"err"
-  %".54" = icmp sge i32 %".53", 0
-  br i1 %".54", label %"@9", label %"@7"
+  %".54" = load i32, i32* %"err"
+  %".55" = icmp sge i32 %".54", 0
+  br i1 %".55", label %"@9", label %"@7"
 "@7":
-  %".56" = bitcast i1* %"verbose" to i8*
-  %".57" = load i8, i8* %".56"
-  %".58" = icmp eq i8 %".57", 0
-  br i1 %".58", label %"@9", label %"@8"
+  %".57" = bitcast i1* %"verbose" to i8*
+  %".58" = load i8, i8* %".57"
+  %".59" = icmp eq i8 %".58", 0
+  br i1 %".59", label %"@9", label %"@8"
 "@8":
-  %".60" = load i8*, i8** %"dst_name"
-  %".61" = call i8* @"quotearg_style"(i32 4, i8* %".60")
-  store i8* %".61", i8** %"v10"
-  %".63" = getelementptr [12 x i8], [12 x i8]* @"aRemovedS", i32 0, i32 0
-  %".64" = call i8* @"gettext"(i8* %".63")
-  store i8* %".64", i8** %"v11"
-  %".66" = load i8*, i8** %"v11"
-  %".67" = bitcast i8** %"v10" to i64*
-  %".68" = load i64, i64* %".67"
-  %".69" = call i32 (i8*, ...) @"printf"(i8* %".66")
+  %".61" = load i8*, i8** %"dst_name"
+  %".62" = call i8* @"quotearg_style"(i32 4, i8* %".61")
+  store i8* %".62", i8** %"v10"
+  %".64" = getelementptr [12 x i8], [12 x i8]* @"aRemovedS", i32 0, i32 0
+  %".65" = call i8* @"gettext"(i8* %".64")
+  store i8* %".65", i8** %"v11"
+  %".67" = load i8*, i8** %"v11"
+  %".68" = bitcast i8** %"v10" to i64*
+  %".69" = load i64, i64* %".68"
+  %".70" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, ...)*
+  %".71" = call i32 (i8*, i64, ...) %".70"(i8* %".67", i64 %".69")
   br label %"@9"
 "@9":
-  %".71" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".71"
+  %".73" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".73"
   br label %"@10"
 "@10":
   %".14" = load i1, i1* %"funcresult"
@@ -20832,8 +20836,9 @@ define i32 @"dup_safer"(i32 %".1")
   br label %"@1"
 "@1":
   %".7" = load i32, i32* %"fd"
-  %".8" = call i32 (i32, i32, ...) @"rpl_fcntl"(i32 %".7", i32 0)
-  store i32 %".8", i32* %"funcresult"
+  %".8" = bitcast i32 (i32, i32, ...)* @"rpl_fcntl" to i32 (i32, i32, i64, ...)*
+  %".9" = call i32 (i32, i32, i64, ...) %".8"(i32 %".7", i32 0, i64 3)
+  store i32 %".9", i32* %"funcresult"
   br label %"@2"
 "@2":
   %".4" = load i32, i32* %"funcresult"
@@ -21005,8 +21010,9 @@ define i32 @"rpl_fcntl_DUPFD"(i32 %".1", i32 %".2")
   %".9" = load i32, i32* %"fd"
   %".10" = load i32, i32* %"target"
   %".11" = zext i32 %".10" to i64
-  %".12" = call i32 (i32, i32, ...) @"fcntl"(i32 %".9", i32 0)
-  store i32 %".12", i32* %"funcresult"
+  %".12" = bitcast i32 (i32, i32, ...)* @"fcntl" to i32 (i32, i32, i64, ...)*
+  %".13" = call i32 (i32, i32, i64, ...) %".12"(i32 %".9", i32 0, i64 %".11")
+  store i32 %".13", i32* %"funcresult"
   br label %"@2"
 "@2":
   %".6" = load i32, i32* %"funcresult"
@@ -21033,73 +21039,75 @@ define i32 @"rpl_fcntl_DUPFD_CLOEXEC"(i32 %".1", i32 %".2")
   %".12" = load i32, i32* %"fd"
   %".13" = load i32, i32* %"target"
   %".14" = zext i32 %".13" to i64
-  %".15" = call i32 (i32, i32, ...) @"fcntl"(i32 %".12", i32 1030)
-  store i32 %".15", i32* %"result"
-  %".17" = load i32, i32* %"result"
-  %".18" = icmp sge i32 %".17", 0
-  br i1 %".18", label %"@4", label %"@3"
+  %".15" = bitcast i32 (i32, i32, ...)* @"fcntl" to i32 (i32, i32, i64, ...)*
+  %".16" = call i32 (i32, i32, i64, ...) %".15"(i32 %".12", i32 1030, i64 %".14")
+  store i32 %".16", i32* %"result"
+  %".18" = load i32, i32* %"result"
+  %".19" = icmp sge i32 %".18", 0
+  br i1 %".19", label %"@4", label %"@3"
 "@3":
-  %".20" = call i32* @"__errno_location"()
-  %".21" = load i32, i32* %".20"
-  %".22" = icmp eq i32 %".21", 22
-  br i1 %".22", label %"@5", label %"@4"
+  %".21" = call i32* @"__errno_location"()
+  %".22" = load i32, i32* %".21"
+  %".23" = icmp eq i32 %".22", 22
+  br i1 %".23", label %"@5", label %"@4"
 "@4":
   store i32 1, i32* @"have_dupfd_cloexec.0"
   br label %"@8"
 "@5":
-  %".26" = load i32, i32* %"fd"
-  %".27" = load i32, i32* %"target"
-  %".28" = call i32 @"rpl_fcntl_DUPFD"(i32 %".26", i32 %".27")
-  store i32 %".28", i32* %"result"
-  %".30" = load i32, i32* %"result"
-  %".31" = icmp slt i32 %".30", 0
-  br i1 %".31", label %"@8", label %"@6"
+  %".27" = load i32, i32* %"fd"
+  %".28" = load i32, i32* %"target"
+  %".29" = call i32 @"rpl_fcntl_DUPFD"(i32 %".27", i32 %".28")
+  store i32 %".29", i32* %"result"
+  %".31" = load i32, i32* %"result"
+  %".32" = icmp slt i32 %".31", 0
+  br i1 %".32", label %"@8", label %"@6"
 "@6":
   store i32 4294967295, i32* @"have_dupfd_cloexec.0"
   br label %"@8"
 "@7":
-  %".35" = load i32, i32* %"fd"
-  %".36" = load i32, i32* %"target"
-  %".37" = call i32 @"rpl_fcntl_DUPFD"(i32 %".35", i32 %".36")
-  store i32 %".37", i32* %"result"
+  %".36" = load i32, i32* %"fd"
+  %".37" = load i32, i32* %"target"
+  %".38" = call i32 @"rpl_fcntl_DUPFD"(i32 %".36", i32 %".37")
+  store i32 %".38", i32* %"result"
   br label %"@8"
 "@8":
-  %".40" = load i32, i32* %"result"
-  %".41" = icmp slt i32 %".40", 0
-  br i1 %".41", label %"@13", label %"@9"
+  %".41" = load i32, i32* %"result"
+  %".42" = icmp slt i32 %".41", 0
+  br i1 %".42", label %"@13", label %"@9"
 "@9":
-  %".43" = load i32, i32* @"have_dupfd_cloexec.0"
-  %".44" = icmp ne i32 %".43", 4294967295
-  br i1 %".44", label %"@13", label %"@10"
+  %".44" = load i32, i32* @"have_dupfd_cloexec.0"
+  %".45" = icmp ne i32 %".44", 4294967295
+  br i1 %".45", label %"@13", label %"@10"
 "@10":
-  %".46" = load i32, i32* %"result"
-  %".47" = call i32 (i32, i32, ...) @"fcntl"(i32 %".46", i32 1)
-  store i32 %".47", i32* %"flags"
-  %".49" = load i32, i32* %"flags"
-  %".50" = icmp slt i32 %".49", 0
-  br i1 %".50", label %"@12", label %"@11"
+  %".47" = load i32, i32* %"result"
+  %".48" = call i32 (i32, i32, ...) @"fcntl"(i32 %".47", i32 1)
+  store i32 %".48", i32* %"flags"
+  %".50" = load i32, i32* %"flags"
+  %".51" = icmp slt i32 %".50", 0
+  br i1 %".51", label %"@12", label %"@11"
 "@11":
-  %".52" = load i32, i32* %"result"
-  %".53" = load i32, i32* %"flags"
-  %".54" = or i32 %".53", 1
-  %".55" = zext i32 %".54" to i64
-  %".56" = call i32 (i32, i32, ...) @"fcntl"(i32 %".52", i32 2)
-  %".57" = icmp ne i32 %".56", 4294967295
-  br i1 %".57", label %"@13", label %"@12"
+  %".53" = load i32, i32* %"result"
+  %".54" = load i32, i32* %"flags"
+  %".55" = or i32 %".54", 1
+  %".56" = zext i32 %".55" to i64
+  %".57" = bitcast i32 (i32, i32, ...)* @"fcntl" to i32 (i32, i32, i64, ...)*
+  %".58" = call i32 (i32, i32, i64, ...) %".57"(i32 %".53", i32 2, i64 %".56")
+  %".59" = icmp ne i32 %".58", 4294967295
+  br i1 %".59", label %"@13", label %"@12"
 "@12":
-  %".59" = call i32* @"__errno_location"()
-  %".60" = load i32, i32* %".59"
-  store i32 %".60", i32* %"saved_errno"
-  %".62" = load i32, i32* %"result"
-  %".63" = call i32 @"close"(i32 %".62")
-  %".64" = load i32, i32* %"saved_errno"
-  %".65" = call i32* @"__errno_location"()
-  store i32 %".64", i32* %".65"
+  %".61" = call i32* @"__errno_location"()
+  %".62" = load i32, i32* %".61"
+  store i32 %".62", i32* %"saved_errno"
+  %".64" = load i32, i32* %"result"
+  %".65" = call i32 @"close"(i32 %".64")
+  %".66" = load i32, i32* %"saved_errno"
+  %".67" = call i32* @"__errno_location"()
+  store i32 %".66", i32* %".67"
   store i32 4294967295, i32* %"result"
   br label %"@13"
 "@13":
-  %".69" = load i32, i32* %"result"
-  store i32 %".69", i32* %"funcresult"
+  %".71" = load i32, i32* %"result"
+  store i32 %".71", i32* %"funcresult"
   br label %"@14"
 "@14":
   %".6" = load i32, i32* %"funcresult"
@@ -26311,45 +26319,46 @@ define i8* @"opendir_safer"(i8* %".1")
   br i1 %".18", label %"@8", label %"@3"
 "@3":
   %".20" = load i32, i32* %"fd"
-  %".21" = call i32 (i32, i32, ...) @"rpl_fcntl"(i32 %".20", i32 1030)
-  store i32 %".21", i32* %"f"
-  %".23" = load i32, i32* %"f"
-  %".24" = icmp sge i32 %".23", 0
-  br i1 %".24", label %"@5", label %"@4"
+  %".21" = bitcast i32 (i32, i32, ...)* @"rpl_fcntl" to i32 (i32, i32, i64, ...)*
+  %".22" = call i32 (i32, i32, i64, ...) %".21"(i32 %".20", i32 1030, i64 3)
+  store i32 %".22", i32* %"f"
+  %".24" = load i32, i32* %"f"
+  %".25" = icmp sge i32 %".24", 0
+  br i1 %".25", label %"@5", label %"@4"
 "@4":
-  %".26" = call i32* @"__errno_location"()
-  %".27" = load i32, i32* %".26"
-  store i32 %".27", i32* %"e"
-  %".29" = bitcast i8** %"newdp" to i64*
-  store i64 0, i64* %".29"
+  %".27" = call i32* @"__errno_location"()
+  %".28" = load i32, i32* %".27"
+  store i32 %".28", i32* %"e"
+  %".30" = bitcast i8** %"newdp" to i64*
+  store i64 0, i64* %".30"
   br label %"@7"
 "@5":
-  %".32" = load i32, i32* %"f"
-  %".33" = call i8* @"fdopendir"(i32 %".32")
-  store i8* %".33", i8** %"newdp"
-  %".35" = call i32* @"__errno_location"()
-  %".36" = load i32, i32* %".35"
-  store i32 %".36", i32* %"e"
-  %".38" = load i8*, i8** %"newdp"
-  %".39" = ptrtoint i8* %".38" to i64
-  %".40" = icmp ne i64 %".39", 0
-  br i1 %".40", label %"@7", label %"@6"
+  %".33" = load i32, i32* %"f"
+  %".34" = call i8* @"fdopendir"(i32 %".33")
+  store i8* %".34", i8** %"newdp"
+  %".36" = call i32* @"__errno_location"()
+  %".37" = load i32, i32* %".36"
+  store i32 %".37", i32* %"e"
+  %".39" = load i8*, i8** %"newdp"
+  %".40" = ptrtoint i8* %".39" to i64
+  %".41" = icmp ne i64 %".40", 0
+  br i1 %".41", label %"@7", label %"@6"
 "@6":
-  %".42" = load i32, i32* %"f"
-  %".43" = call i32 @"close"(i32 %".42")
+  %".43" = load i32, i32* %"f"
+  %".44" = call i32 @"close"(i32 %".43")
   br label %"@7"
 "@7":
-  %".45" = load i8*, i8** %"dp"
-  %".46" = call i32 @"closedir"(i8* %".45")
-  %".47" = load i32, i32* %"e"
-  %".48" = call i32* @"__errno_location"()
-  store i32 %".47", i32* %".48"
-  %".50" = load i8*, i8** %"newdp"
-  store i8* %".50", i8** %"dp"
+  %".46" = load i8*, i8** %"dp"
+  %".47" = call i32 @"closedir"(i8* %".46")
+  %".48" = load i32, i32* %"e"
+  %".49" = call i32* @"__errno_location"()
+  store i32 %".48", i32* %".49"
+  %".51" = load i8*, i8** %"newdp"
+  store i8* %".51", i8** %"dp"
   br label %"@8"
 "@8":
-  %".53" = load i8*, i8** %"dp"
-  store i8* %".53", i8** %"funcresult"
+  %".54" = load i8*, i8** %"dp"
+  store i8* %".54", i8** %"funcresult"
   br label %"@9"
 "@9":
   %".4" = load i8*, i8** %"funcresult"
@@ -28343,8 +28352,9 @@ define i32 @"clone_file"(i32 %".1", i32 %".2")
   %".9" = load i32, i32* %"dest_fd"
   %".10" = load i32, i32* %"src_fd"
   %".11" = zext i32 %".10" to i64
-  %".12" = call i32 (i32, i64, ...) @"ioctl"(i32 %".9", i64 1074041865)
-  store i32 %".12", i32* %"funcresult"
+  %".12" = bitcast i32 (i32, i64, ...)* @"ioctl" to i32 (i32, i64, i64, ...)*
+  %".13" = call i32 (i32, i64, i64, ...) %".12"(i32 %".9", i64 1074041865, i64 %".11")
+  store i32 %".13", i32* %"funcresult"
   br label %"@2"
 "@2":
   %".6" = load i32, i32* %"funcresult"
@@ -34165,91 +34175,97 @@ define i8* @"hash_print_statistics"(%"Hash_table"* %".1", %"FILE"* %".2")
   %".21" = load %"FILE"*, %"FILE"** %"stream"
   %".22" = getelementptr [24 x i8], [24 x i8]* @"aEntriesLu", i32 0, i32 0
   %".23" = load i64, i64* %"n_entries"
-  %".24" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".21", i8* %".22")
-  %".25" = load %"FILE"*, %"FILE"** %"stream"
-  %".26" = getelementptr [24 x i8], [24 x i8]* @"aBucketsLu", i32 0, i32 0
-  %".27" = load i64, i64* %"n_buckets"
-  %".28" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".25", i8* %".26")
-  %".29" = load i64, i64* %"n_buckets_used"
-  %".30" = icmp slt i64 %".29", 0
-  br i1 %".30", label %"@3", label %"@2"
+  %".24" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, ...)*
+  %".25" = call i32 (%"FILE"*, i8*, i64, ...) %".24"(%"FILE"* %".21", i8* %".22", i64 %".23")
+  %".26" = load %"FILE"*, %"FILE"** %"stream"
+  %".27" = getelementptr [24 x i8], [24 x i8]* @"aBucketsLu", i32 0, i32 0
+  %".28" = load i64, i64* %"n_buckets"
+  %".29" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, ...)*
+  %".30" = call i32 (%"FILE"*, i8*, i64, ...) %".29"(%"FILE"* %".26", i8* %".27", i64 %".28")
+  %".31" = load i64, i64* %"n_buckets_used"
+  %".32" = icmp slt i64 %".31", 0
+  br i1 %".32", label %"@3", label %"@2"
 "@2":
-  %".32" = bitcast i64* %"n_buckets_used" to i32*
-  %".33" = load i32, i32* %".32"
-  %".34" = sitofp i32 %".33" to double
+  %".34" = bitcast i64* %"n_buckets_used" to i32*
+  %".35" = load i32, i32* %".34"
+  %".36" = sitofp i32 %".35" to double
+  store double %".36", double* %"v2"
   br label %"@4"
 "@3":
-  %".36" = bitcast i64* %"n_buckets_used" to i8*
-  %".37" = load i8, i8* %".36"
-  %".38" = and i8 %".37", 1
-  %".39" = zext i8 %".38" to i32
-  %".40" = load i64, i64* %"n_buckets_used"
-  %".41" = zext i8 1 to i64
-  %".42" = ashr i64 %".40", %".41"
-  %".43" = trunc i64 %".42" to i32
-  %".44" = or i32 %".39", %".43"
-  %".45" = sitofp i32 %".44" to double
-  %".46" = bitcast i64* %"n_buckets_used" to i8*
-  %".47" = load i8, i8* %".46"
-  %".48" = and i8 %".47", 1
-  %".49" = zext i8 %".48" to i32
-  %".50" = load i64, i64* %"n_buckets_used"
-  %".51" = zext i8 1 to i64
-  %".52" = ashr i64 %".50", %".51"
-  %".53" = trunc i64 %".52" to i32
-  %".54" = or i32 %".49", %".53"
-  %".55" = sitofp i32 %".54" to double
-  %".56" = fadd double %".45", %".55"
-  store double %".56", double* %"v2"
+  %".39" = bitcast i64* %"n_buckets_used" to i8*
+  %".40" = load i8, i8* %".39"
+  %".41" = and i8 %".40", 1
+  %".42" = zext i8 %".41" to i32
+  %".43" = load i64, i64* %"n_buckets_used"
+  %".44" = zext i8 1 to i64
+  %".45" = ashr i64 %".43", %".44"
+  %".46" = trunc i64 %".45" to i32
+  %".47" = or i32 %".42", %".46"
+  %".48" = sitofp i32 %".47" to double
+  %".49" = bitcast i64* %"n_buckets_used" to i8*
+  %".50" = load i8, i8* %".49"
+  %".51" = and i8 %".50", 1
+  %".52" = zext i8 %".51" to i32
+  %".53" = load i64, i64* %"n_buckets_used"
+  %".54" = zext i8 1 to i64
+  %".55" = ashr i64 %".53", %".54"
+  %".56" = trunc i64 %".55" to i32
+  %".57" = or i32 %".52", %".56"
+  %".58" = sitofp i32 %".57" to double
+  %".59" = fadd double %".48", %".58"
+  store double %".59", double* %"v2"
   br label %"@4"
 "@4":
-  %".59" = load double, double* %"v2"
-  %".60" = fmul double 0x4059000000000000, %".59"
-  store double %".60", double* %"v3"
-  %".62" = load i64, i64* %"n_buckets"
-  %".63" = icmp slt i64 %".62", 0
-  br i1 %".63", label %"@6", label %"@5"
+  %".62" = load double, double* %"v2"
+  %".63" = fmul double 0x4059000000000000, %".62"
+  store double %".63", double* %"v3"
+  %".65" = load i64, i64* %"n_buckets"
+  %".66" = icmp slt i64 %".65", 0
+  br i1 %".66", label %"@6", label %"@5"
 "@5":
-  %".65" = bitcast i64* %"n_buckets" to i32*
-  %".66" = load i32, i32* %".65"
-  %".67" = sitofp i32 %".66" to double
+  %".68" = bitcast i64* %"n_buckets" to i32*
+  %".69" = load i32, i32* %".68"
+  %".70" = sitofp i32 %".69" to double
+  store double %".70", double* %"v4"
   br label %"@7"
 "@6":
-  %".69" = bitcast i64* %"n_buckets" to i8*
-  %".70" = load i8, i8* %".69"
-  %".71" = and i8 %".70", 1
-  %".72" = zext i8 %".71" to i32
-  %".73" = load i64, i64* %"n_buckets"
-  %".74" = zext i8 1 to i64
-  %".75" = ashr i64 %".73", %".74"
-  %".76" = trunc i64 %".75" to i32
-  %".77" = or i32 %".72", %".76"
-  %".78" = sitofp i32 %".77" to double
-  %".79" = bitcast i64* %"n_buckets" to i8*
-  %".80" = load i8, i8* %".79"
-  %".81" = and i8 %".80", 1
-  %".82" = zext i8 %".81" to i32
-  %".83" = load i64, i64* %"n_buckets"
-  %".84" = zext i8 1 to i64
-  %".85" = ashr i64 %".83", %".84"
-  %".86" = trunc i64 %".85" to i32
-  %".87" = or i32 %".82", %".86"
-  %".88" = sitofp i32 %".87" to double
-  %".89" = fadd double %".78", %".88"
-  store double %".89", double* %"v4"
+  %".73" = bitcast i64* %"n_buckets" to i8*
+  %".74" = load i8, i8* %".73"
+  %".75" = and i8 %".74", 1
+  %".76" = zext i8 %".75" to i32
+  %".77" = load i64, i64* %"n_buckets"
+  %".78" = zext i8 1 to i64
+  %".79" = ashr i64 %".77", %".78"
+  %".80" = trunc i64 %".79" to i32
+  %".81" = or i32 %".76", %".80"
+  %".82" = sitofp i32 %".81" to double
+  %".83" = bitcast i64* %"n_buckets" to i8*
+  %".84" = load i8, i8* %".83"
+  %".85" = and i8 %".84", 1
+  %".86" = zext i8 %".85" to i32
+  %".87" = load i64, i64* %"n_buckets"
+  %".88" = zext i8 1 to i64
+  %".89" = ashr i64 %".87", %".88"
+  %".90" = trunc i64 %".89" to i32
+  %".91" = or i32 %".86", %".90"
+  %".92" = sitofp i32 %".91" to double
+  %".93" = fadd double %".82", %".92"
+  store double %".93", double* %"v4"
   br label %"@7"
 "@7":
-  %".92" = load %"FILE"*, %"FILE"** %"stream"
-  %".93" = getelementptr [33 x i8], [33 x i8]* @"aBucketsUsedLu2", i32 0, i32 0
-  %".94" = load i64, i64* %"n_buckets_used"
-  %".95" = load double, double* %"v3"
-  %".96" = load double, double* %"v4"
-  %".97" = fdiv double %".95", %".96"
-  %".98" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".92", i8* %".93")
-  %".99" = load %"FILE"*, %"FILE"** %"stream"
-  %".100" = getelementptr [24 x i8], [24 x i8]* @"aMaxBucketLengt", i32 0, i32 0
-  %".101" = load i64, i64* %"max_bucket_length"
-  %".102" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".99", i8* %".100")
+  %".96" = load %"FILE"*, %"FILE"** %"stream"
+  %".97" = getelementptr [33 x i8], [33 x i8]* @"aBucketsUsedLu2", i32 0, i32 0
+  %".98" = load i64, i64* %"n_buckets_used"
+  %".99" = load double, double* %"v3"
+  %".100" = load double, double* %"v4"
+  %".101" = fdiv double %".99", %".100"
+  %".102" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, double, ...)*
+  %".103" = call i32 (%"FILE"*, i8*, i64, double, ...) %".102"(%"FILE"* %".96", i8* %".97", i64 %".98", double %".101")
+  %".104" = load %"FILE"*, %"FILE"** %"stream"
+  %".105" = getelementptr [24 x i8], [24 x i8]* @"aMaxBucketLengt", i32 0, i32 0
+  %".106" = load i64, i64* %"max_bucket_length"
+  %".107" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, ...)*
+  %".108" = call i32 (%"FILE"*, i8*, i64, ...) %".107"(%"FILE"* %".104", i8* %".105", i64 %".106")
   br label %"@8"
 "@8":
   %".6" = load i8*, i8** %"funcresult"
@@ -36196,20 +36212,23 @@ define i32 @"try_file"(i8* %".1", i8* %".2")
   store i8* %".2", i8** %"flags"
   br label %"@1"
 "@1":
-  %".9" = bitcast i8** %"flags" to i32*
-  %".10" = load i32, i32* %".9"
-  store i32 %".10", i32* %"v2"
-  %".12" = bitcast i8** %"flags" to i32*
-  %".13" = load i32, i32* %".12"
-  %".14" = trunc i32 %".13" to i8
-  %".15" = and i8 %".14", 60
-  %".16" = bitcast i32* %"v2" to i8*
-  %".17" = or i8 %".15", 194
-  store i8 %".17", i8* %".16"
-  %".19" = load i8*, i8** %"tmpl"
-  %".20" = load i32, i32* %"v2"
-  %".21" = call i32 (i8*, i32, ...) @"open"(i8* %".19", i32 %".20")
-  store i32 %".21", i32* %"funcresult"
+  %".9" = load i8*, i8** %"flags"
+  %".10" = bitcast i8* %".9" to i32*
+  %".11" = load i32, i32* %".10"
+  store i32 %".11", i32* %"v2"
+  %".13" = load i8*, i8** %"flags"
+  %".14" = bitcast i8* %".13" to i32*
+  %".15" = load i32, i32* %".14"
+  %".16" = trunc i32 %".15" to i8
+  %".17" = and i8 %".16", 60
+  %".18" = bitcast i32* %"v2" to i8*
+  %".19" = or i8 %".17", 194
+  store i8 %".19", i8* %".18"
+  %".21" = load i8*, i8** %"tmpl"
+  %".22" = load i32, i32* %"v2"
+  %".23" = bitcast i32 (i8*, i32, ...)* @"open" to i32 (i8*, i32, i64, ...)*
+  %".24" = call i32 (i8*, i32, i64, ...) %".23"(i8* %".21", i32 %".22", i64 384)
+  store i32 %".24", i32* %"funcresult"
   br label %"@2"
 "@2":
   %".6" = load i32, i32* %"funcresult"
