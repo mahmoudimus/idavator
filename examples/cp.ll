@@ -1360,6 +1360,7 @@ declare i64 @"__do_global_dtors_aux_fini_array_entry"()
 @"fstatat_ptr" = global i8* null
 @"__ctype_b_loc_ptr" = global i8* null
 declare i8* @"data_freer"(i8* %".1")
+declare i8* @"quote"(i8* %".1")
 
 @"__libc_start_main_ptr" = global i8* null
 @"_ITM_deregisterTMCloneTable_ptr" = global i8* null
@@ -6286,73 +6287,73 @@ define i8* @"argmatch_valid"(i8** %".1", i8* %".2", i64 %".3")
   %".12" = bitcast i8** %"last_val" to i64*
   store i64 0, i64* %".12"
   %".14" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
-  %".15" = bitcast %"FILE"* %".14" to i8*
-  %".16" = bitcast %"FILE"** %"v3" to i8*
-  %".17" = call i8* @"memcpy"(i8* %".16", i8* %".15", i64 216)
-  %".18" = getelementptr [21 x i8], [21 x i8]* @"aValidArguments", i32 0, i32 0
-  %".19" = call i8* @"gettext"(i8* %".18")
-  store i8* %".19", i8** %"v4"
-  %".21" = load i8*, i8** %"v4"
-  %".22" = load %"FILE"*, %"FILE"** %"v3"
-  %".23" = call i32 @"fputs_unlocked"(i8* %".21", %"FILE"* %".22")
+  store %"FILE"* %".14", %"FILE"** %"v3"
+  %".16" = getelementptr [21 x i8], [21 x i8]* @"aValidArguments", i32 0, i32 0
+  %".17" = call i8* @"gettext"(i8* %".16")
+  store i8* %".17", i8** %"v4"
+  %".19" = load i8*, i8** %"v4"
+  %".20" = load %"FILE"*, %"FILE"** %"v3"
+  %".21" = call i32 @"fputs_unlocked"(i8* %".19", %"FILE"* %".20")
   store i64 0, i64* %"i"
   br label %"@7"
 "@2":
-  %".26" = load i64, i64* %"i"
-  %".27" = icmp eq i64 %".26", 0
-  br i1 %".27", label %"@4", label %"@3"
+  %".24" = load i64, i64* %"i"
+  %".25" = icmp eq i64 %".24", 0
+  br i1 %".25", label %"@4", label %"@3"
 "@3":
-  %".29" = load i8*, i8** %"last_val"
-  %".30" = load i64, i64* %"i"
-  %".31" = load i64, i64* %"valsize"
-  %".32" = mul i64 %".30", %".31"
-  %".33" = load i8*, i8** %"vallist"
-  %".34" = getelementptr i8, i8* %".33", i64 %".32"
-  %".35" = load i64, i64* %"valsize"
-  %".36" = call i32 @"memcmp"(i8* %".29", i8* %".34", i64 %".35")
-  %".37" = icmp eq i32 %".36", 0
-  br i1 %".37", label %"@5", label %"@4"
+  %".27" = load i8*, i8** %"last_val"
+  %".28" = load i64, i64* %"i"
+  %".29" = load i64, i64* %"valsize"
+  %".30" = mul i64 %".28", %".29"
+  %".31" = load i8*, i8** %"vallist"
+  %".32" = getelementptr i8, i8* %".31", i64 %".30"
+  %".33" = load i64, i64* %"valsize"
+  %".34" = call i32 @"memcmp"(i8* %".27", i8* %".32", i64 %".33")
+  %".35" = icmp eq i32 %".34", 0
+  br i1 %".35", label %"@5", label %"@4"
 "@4":
-  %".39" = load i64, i64* %"i"
-  %".40" = mul i64 8, %".39"
-  %".41" = load i8**, i8*** %"arglist"
-  %".42" = bitcast i8** %".41" to i8*
-  %".43" = getelementptr i8, i8* %".42", i64 %".40"
-  %".44" = bitcast i8* %".43" to i8**
-  %".45" = bitcast i8** %".44" to i64*
-  %".46" = load i64, i64* %".45"
-  %".47" = inttoptr i64 %".46" to i8*
-  %".48" = call i8* @"_ZZN6google8protobuf8internal16OnShutdownDeleteINS0_12_GLOBAL__N_113MetadataOwnerEEEPT_S6_ENUlPKvE_4_FUNES8__0"(i8* %".47")
-  store i8* %".48", i8** %"v5"
-  %".50" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
-  %".51" = getelementptr [8 x i8], [8 x i8]* @"aS_2", i32 0, i32 0
-  %".52" = load i8*, i8** %"v5"
-  %".53" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".50", i8* %".51")
-  %".54" = load i64, i64* %"i"
-  %".55" = load i64, i64* %"valsize"
-  %".56" = mul i64 %".54", %".55"
-  %".57" = load i8*, i8** %"vallist"
-  %".58" = getelementptr i8, i8* %".57", i64 %".56"
-  %".59" = bitcast i8** %"last_val" to i64*
-  %".60" = ptrtoint i8* %".58" to i64
-  store i64 %".60", i64* %".59"
+  %".37" = load i64, i64* %"i"
+  %".38" = mul i64 8, %".37"
+  %".39" = load i8**, i8*** %"arglist"
+  %".40" = bitcast i8** %".39" to i8*
+  %".41" = getelementptr i8, i8* %".40", i64 %".38"
+  %".42" = bitcast i8* %".41" to i8**
+  %".43" = bitcast i8** %".42" to i64*
+  %".44" = load i64, i64* %".43"
+  %".45" = inttoptr i64 %".44" to i8*
+  %".46" = call i8* @"quote"(i8* %".45")
+  store i8* %".46", i8** %"v5"
+  %".48" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
+  %".49" = getelementptr [8 x i8], [8 x i8]* @"aS_2", i32 0, i32 0
+  %".50" = load i8*, i8** %"v5"
+  %".51" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i8*, ...)*
+  %".52" = call i32 (%"FILE"*, i8*, i8*, ...) %".51"(%"FILE"* %".48", i8* %".49", i8* %".50")
+  %".53" = load i64, i64* %"i"
+  %".54" = load i64, i64* %"valsize"
+  %".55" = mul i64 %".53", %".54"
+  %".56" = load i8*, i8** %"vallist"
+  %".57" = getelementptr i8, i8* %".56", i64 %".55"
+  %".58" = bitcast i8** %"last_val" to i64*
+  %".59" = ptrtoint i8* %".57" to i64
+  store i64 %".59", i64* %".58"
   br label %"@6"
 "@5":
-  %".63" = load i64, i64* %"i"
-  %".64" = mul i64 8, %".63"
-  %".65" = load i8**, i8*** %"arglist"
-  %".66" = bitcast i8** %".65" to i8*
-  %".67" = getelementptr i8, i8* %".66", i64 %".64"
-  %".68" = bitcast i8* %".67" to i8**
-  %".69" = bitcast i8** %".68" to i64*
-  %".70" = load i64, i64* %".69"
-  %".71" = inttoptr i64 %".70" to i8*
-  %".72" = call i8* @"_ZZN6google8protobuf8internal16OnShutdownDeleteINS0_12_GLOBAL__N_113MetadataOwnerEEEPT_S6_ENUlPKvE_4_FUNES8__0"(i8* %".71")
-  store i8* %".72", i8** %"v6"
-  %".74" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
-  %".75" = bitcast i8** @"aS_3" to i8*
-  %".76" = load i8*, i8** %"v6"
-  %".77" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".74", i8* %".75")
+  %".62" = load i64, i64* %"i"
+  %".63" = mul i64 8, %".62"
+  %".64" = load i8**, i8*** %"arglist"
+  %".65" = bitcast i8** %".64" to i8*
+  %".66" = getelementptr i8, i8* %".65", i64 %".63"
+  %".67" = bitcast i8* %".66" to i8**
+  %".68" = bitcast i8** %".67" to i64*
+  %".69" = load i64, i64* %".68"
+  %".70" = inttoptr i64 %".69" to i8*
+  %".71" = call i8* @"quote"(i8* %".70")
+  store i8* %".71", i8** %"v6"
+  %".73" = load %"FILE"*, %"FILE"** @"stderr@GLIBC_2.2.5"
+  %".74" = bitcast i8** @"aS_3" to i8*
+  %".75" = load i8*, i8** %"v6"
+  %".76" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i8*, ...)*
+  %".77" = call i32 (%"FILE"*, i8*, i8*, ...) %".76"(%"FILE"* %".73", i8* %".74", i8* %".75")
   br label %"@6"
 "@6":
   %".79" = load i64, i64* %"i"
