@@ -7053,182 +7053,194 @@ define i8* @"emit_ancillary_info"(i8* %".1")
   store i8* %".9", i8** %".12"
   %".14" = getelementptr [16 x i8], [16 x i8]* @"aTestInvocation", i32 0, i32 0
   %".15" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 0
-  %".16" = bitcast %"emit_ancillary_info::infomap"* %".15" to i64*
-  %".17" = bitcast i64* %".16" to i8**
-  store i8* %".14", i8** %".17"
-  %".19" = getelementptr [10 x i8], [10 x i8]* @"domainname", i32 0, i32 0
-  %".20" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 1
-  %".21" = bitcast %"emit_ancillary_info::infomap"* %".20" to i64*
-  %".22" = bitcast i64* %".21" to i8**
-  store i8* %".19", i8** %".22"
-  %".24" = getelementptr [22 x i8], [22 x i8]* @"aMultiCallInvoc", i32 0, i32 0
-  %".25" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 1
-  %".26" = bitcast %"emit_ancillary_info::infomap"* %".25" to i64*
-  %".27" = bitcast i64* %".26" to i8**
-  store i8* %".24", i8** %".27"
-  %".29" = getelementptr [10 x i8], [10 x i8]* @"aSha224sum", i32 0, i32 0
-  %".30" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 2
-  %".31" = bitcast %"emit_ancillary_info::infomap"* %".30" to i64*
-  %".32" = bitcast i64* %".31" to i8**
-  store i8* %".29", i8** %".32"
-  %".34" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
-  %".35" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 2
-  %".36" = bitcast %"emit_ancillary_info::infomap"* %".35" to i64*
-  %".37" = bitcast i64* %".36" to i8**
-  store i8* %".34", i8** %".37"
-  %".39" = getelementptr [10 x i8], [10 x i8]* @"aSha256sum", i32 0, i32 0
-  %".40" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 3
-  %".41" = bitcast %"emit_ancillary_info::infomap"* %".40" to i64*
-  %".42" = bitcast i64* %".41" to i8**
-  store i8* %".39", i8** %".42"
-  %".44" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
-  %".45" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 3
-  %".46" = bitcast %"emit_ancillary_info::infomap"* %".45" to i64*
-  %".47" = bitcast i64* %".46" to i8**
-  store i8* %".44", i8** %".47"
-  %".49" = getelementptr [10 x i8], [10 x i8]* @"aSha384sum", i32 0, i32 0
-  %".50" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 4
-  %".51" = bitcast %"emit_ancillary_info::infomap"* %".50" to i64*
-  %".52" = bitcast i64* %".51" to i8**
-  store i8* %".49", i8** %".52"
-  %".54" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
-  %".55" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 4
-  %".56" = bitcast %"emit_ancillary_info::infomap"* %".55" to i64*
-  %".57" = bitcast i64* %".56" to i8**
-  store i8* %".54", i8** %".57"
-  %".59" = getelementptr [10 x i8], [10 x i8]* @"aSha512sum", i32 0, i32 0
-  %".60" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 5
-  %".61" = bitcast %"emit_ancillary_info::infomap"* %".60" to i64*
-  %".62" = bitcast i64* %".61" to i8**
-  store i8* %".59", i8** %".62"
-  %".64" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
-  %".65" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 5
-  %".66" = bitcast %"emit_ancillary_info::infomap"* %".65" to i64*
+  %".16" = bitcast %"emit_ancillary_info::infomap"* %".15" to i8*
+  %".17" = getelementptr i8, i8* %".16", i32 8
+  %".18" = bitcast i8* %".17" to i64*
+  %".19" = bitcast i64* %".18" to i8**
+  store i8* %".14", i8** %".19"
+  %".21" = getelementptr [10 x i8], [10 x i8]* @"domainname", i32 0, i32 0
+  %".22" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 1
+  %".23" = bitcast %"emit_ancillary_info::infomap"* %".22" to i64*
+  %".24" = bitcast i64* %".23" to i8**
+  store i8* %".21", i8** %".24"
+  %".26" = getelementptr [22 x i8], [22 x i8]* @"aMultiCallInvoc", i32 0, i32 0
+  %".27" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 1
+  %".28" = bitcast %"emit_ancillary_info::infomap"* %".27" to i8*
+  %".29" = getelementptr i8, i8* %".28", i32 8
+  %".30" = bitcast i8* %".29" to i64*
+  %".31" = bitcast i64* %".30" to i8**
+  store i8* %".26", i8** %".31"
+  %".33" = getelementptr [10 x i8], [10 x i8]* @"aSha224sum", i32 0, i32 0
+  %".34" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 2
+  %".35" = bitcast %"emit_ancillary_info::infomap"* %".34" to i64*
+  %".36" = bitcast i64* %".35" to i8**
+  store i8* %".33", i8** %".36"
+  %".38" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
+  %".39" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 2
+  %".40" = bitcast %"emit_ancillary_info::infomap"* %".39" to i8*
+  %".41" = getelementptr i8, i8* %".40", i32 8
+  %".42" = bitcast i8* %".41" to i64*
+  %".43" = bitcast i64* %".42" to i8**
+  store i8* %".38", i8** %".43"
+  %".45" = getelementptr [10 x i8], [10 x i8]* @"aSha256sum", i32 0, i32 0
+  %".46" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 3
+  %".47" = bitcast %"emit_ancillary_info::infomap"* %".46" to i64*
+  %".48" = bitcast i64* %".47" to i8**
+  store i8* %".45", i8** %".48"
+  %".50" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
+  %".51" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 3
+  %".52" = bitcast %"emit_ancillary_info::infomap"* %".51" to i8*
+  %".53" = getelementptr i8, i8* %".52", i32 8
+  %".54" = bitcast i8* %".53" to i64*
+  %".55" = bitcast i64* %".54" to i8**
+  store i8* %".50", i8** %".55"
+  %".57" = getelementptr [10 x i8], [10 x i8]* @"aSha384sum", i32 0, i32 0
+  %".58" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 4
+  %".59" = bitcast %"emit_ancillary_info::infomap"* %".58" to i64*
+  %".60" = bitcast i64* %".59" to i8**
+  store i8* %".57", i8** %".60"
+  %".62" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
+  %".63" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 4
+  %".64" = bitcast %"emit_ancillary_info::infomap"* %".63" to i8*
+  %".65" = getelementptr i8, i8* %".64", i32 8
+  %".66" = bitcast i8* %".65" to i64*
   %".67" = bitcast i64* %".66" to i8**
-  store i8* %".64", i8** %".67"
-  %".69" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 6
-  %".70" = bitcast %"emit_ancillary_info::infomap"* %".69" to i64*
-  store i64 0, i64* %".70"
-  %".72" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 6
-  %".73" = bitcast %"emit_ancillary_info::infomap"* %".72" to i64*
-  store i64 0, i64* %".73"
-  %".75" = load i8*, i8** %"program"
-  store i8* %".75", i8** %"node"
-  %".77" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 0
-  %".78" = bitcast %"emit_ancillary_info::infomap"* %".77" to i8*
-  %".79" = bitcast %"emit_ancillary_info::infomap"** %"map_prog" to i8*
-  %".80" = call i8* @"memcpy"(i8* %".79", i8* %".78", i64 16)
+  store i8* %".62", i8** %".67"
+  %".69" = getelementptr [10 x i8], [10 x i8]* @"aSha512sum", i32 0, i32 0
+  %".70" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 5
+  %".71" = bitcast %"emit_ancillary_info::infomap"* %".70" to i64*
+  %".72" = bitcast i64* %".71" to i8**
+  store i8* %".69", i8** %".72"
+  %".74" = getelementptr [15 x i8], [15 x i8]* @"aSha2Utilities", i32 0, i32 0
+  %".75" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 5
+  %".76" = bitcast %"emit_ancillary_info::infomap"* %".75" to i8*
+  %".77" = getelementptr i8, i8* %".76", i32 8
+  %".78" = bitcast i8* %".77" to i64*
+  %".79" = bitcast i64* %".78" to i8**
+  store i8* %".74", i8** %".79"
+  %".81" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 6
+  %".82" = bitcast %"emit_ancillary_info::infomap"* %".81" to i64*
+  store i64 0, i64* %".82"
+  %".84" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 6
+  %".85" = bitcast %"emit_ancillary_info::infomap"* %".84" to i8*
+  %".86" = getelementptr i8, i8* %".85", i32 8
+  %".87" = bitcast i8* %".86" to i64*
+  store i64 0, i64* %".87"
+  %".89" = load i8*, i8** %"program"
+  store i8* %".89", i8** %"node"
+  %".91" = getelementptr [7 x %"emit_ancillary_info::infomap"], [7 x %"emit_ancillary_info::infomap"]* %"infomap", i32 0, i32 0
+  store %"emit_ancillary_info::infomap"* %".91", %"emit_ancillary_info::infomap"** %"map_prog"
   br label %"@3"
 "@2":
-  %".82" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
-  %".83" = bitcast %"emit_ancillary_info::infomap"* %".82" to i8*
-  %".84" = getelementptr i8, i8* %".83", i64 16
-  %".85" = bitcast i8* %".84" to %"emit_ancillary_info::infomap"*
-  %".86" = bitcast %"emit_ancillary_info::infomap"* %".85" to i8*
-  %".87" = bitcast %"emit_ancillary_info::infomap"** %"map_prog" to i8*
-  %".88" = call i8* @"memcpy"(i8* %".87", i8* %".86", i64 16)
+  %".94" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
+  %".95" = bitcast %"emit_ancillary_info::infomap"* %".94" to i8*
+  %".96" = getelementptr i8, i8* %".95", i64 16
+  %".97" = bitcast i8* %".96" to %"emit_ancillary_info::infomap"*
+  store %"emit_ancillary_info::infomap"* %".97", %"emit_ancillary_info::infomap"** %"map_prog"
   br label %"@3"
 "@3":
-  %".90" = bitcast %"emit_ancillary_info::infomap"** %"map_prog" to i64*
-  %".91" = load i64, i64* %".90"
-  %".92" = icmp eq i64 %".91", 0
-  br i1 %".92", label %"@5", label %"@4"
+  %".100" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
+  %".101" = bitcast %"emit_ancillary_info::infomap"* %".100" to i64*
+  %".102" = load i64, i64* %".101"
+  %".103" = icmp eq i64 %".102", 0
+  br i1 %".103", label %"@5", label %"@4"
 "@4":
-  %".94" = load i8*, i8** %"program"
-  %".95" = bitcast %"emit_ancillary_info::infomap"** %"map_prog" to i64*
-  %".96" = load i64, i64* %".95"
-  %".97" = inttoptr i64 %".96" to i8*
-  %".98" = call i32 @"strcmp"(i8* %".94", i8* %".97")
-  %".99" = icmp ne i32 %".98", 0
-  br i1 %".99", label %"@2", label %"@5"
+  %".105" = load i8*, i8** %"program"
+  %".106" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
+  %".107" = bitcast %"emit_ancillary_info::infomap"* %".106" to i64*
+  %".108" = load i64, i64* %".107"
+  %".109" = inttoptr i64 %".108" to i8*
+  %".110" = call i32 @"strcmp"(i8* %".105", i8* %".109")
+  %".111" = icmp ne i32 %".110", 0
+  br i1 %".111", label %"@2", label %"@5"
 "@5":
-  %".101" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
-  %".102" = bitcast %"emit_ancillary_info::infomap"* %".101" to i8*
-  %".103" = getelementptr i8, i8* %".102", i64 8
-  %".104" = bitcast i8* %".103" to %"emit_ancillary_info::infomap"*
-  %".105" = bitcast %"emit_ancillary_info::infomap"* %".104" to i64*
-  %".106" = load i64, i64* %".105"
-  %".107" = icmp eq i64 %".106", 0
-  br i1 %".107", label %"@7", label %"@6"
+  %".113" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
+  %".114" = bitcast %"emit_ancillary_info::infomap"* %".113" to i8*
+  %".115" = getelementptr i8, i8* %".114", i64 8
+  %".116" = bitcast i8* %".115" to %"emit_ancillary_info::infomap"*
+  %".117" = bitcast %"emit_ancillary_info::infomap"* %".116" to i64*
+  %".118" = load i64, i64* %".117"
+  %".119" = icmp eq i64 %".118", 0
+  br i1 %".119", label %"@7", label %"@6"
 "@6":
-  %".109" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
-  %".110" = bitcast %"emit_ancillary_info::infomap"* %".109" to i8*
-  %".111" = getelementptr i8, i8* %".110", i64 8
-  %".112" = bitcast i8* %".111" to %"emit_ancillary_info::infomap"*
-  %".113" = bitcast %"emit_ancillary_info::infomap"* %".112" to i64*
-  %".114" = load i64, i64* %".113"
-  %".115" = bitcast i8** %"node" to i64*
-  store i64 %".114", i64* %".115"
+  %".121" = load %"emit_ancillary_info::infomap"*, %"emit_ancillary_info::infomap"** %"map_prog"
+  %".122" = bitcast %"emit_ancillary_info::infomap"* %".121" to i8*
+  %".123" = getelementptr i8, i8* %".122", i64 8
+  %".124" = bitcast i8* %".123" to %"emit_ancillary_info::infomap"*
+  %".125" = bitcast %"emit_ancillary_info::infomap"* %".124" to i8**
+  %".126" = load i8*, i8** %".125"
+  store i8* %".126", i8** %"node"
   br label %"@7"
 "@7":
-  %".118" = getelementptr [23 x i8], [23 x i8]* @"aSOnlineHelpS", i32 0, i32 0
-  %".119" = call i8* @"gettext"(i8* %".118")
-  store i8* %".119", i8** %"v1"
-  %".121" = load i8*, i8** %"v1"
-  %".122" = getelementptr [14 x i8], [14 x i8]* @"package", i32 0, i32 0
-  %".123" = ptrtoint i8* %".122" to i64
-  %".124" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg", i32 0, i32 0
-  %".125" = ptrtoint i8* %".124" to i64
-  %".126" = call i32 (i8*, ...) @"printf"(i8* %".121")
-  %".127" = inttoptr i64 0 to i8*
-  %".128" = call i8* @"setlocale"(i32 5, i8* %".127")
-  store i8* %".128", i8** %"lc_messages"
-  %".130" = load i8*, i8** %"lc_messages"
-  %".131" = ptrtoint i8* %".130" to i64
-  %".132" = icmp eq i64 %".131", 0
-  br i1 %".132", label %"@10", label %"@8"
+  %".129" = getelementptr [23 x i8], [23 x i8]* @"aSOnlineHelpS", i32 0, i32 0
+  %".130" = call i8* @"gettext"(i8* %".129")
+  store i8* %".130", i8** %"v1"
+  %".132" = load i8*, i8** %"v1"
+  %".133" = getelementptr [14 x i8], [14 x i8]* @"package", i32 0, i32 0
+  %".134" = ptrtoint i8* %".133" to i64
+  %".135" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg", i32 0, i32 0
+  %".136" = ptrtoint i8* %".135" to i64
+  %".137" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, i64, ...)*
+  %".138" = call i32 (i8*, i64, i64, ...) %".137"(i8* %".132", i64 %".134", i64 %".136")
+  %".139" = inttoptr i64 0 to i8*
+  %".140" = call i8* @"setlocale"(i32 5, i8* %".139")
+  store i8* %".140", i8** %"lc_messages"
+  %".142" = load i8*, i8** %"lc_messages"
+  %".143" = ptrtoint i8* %".142" to i64
+  %".144" = icmp eq i64 %".143", 0
+  br i1 %".144", label %"@10", label %"@8"
 "@8":
-  %".134" = load i8*, i8** %"lc_messages"
-  %".135" = bitcast i8** @"s2" to i8*
-  %".136" = call i32 @"strncmp"(i8* %".134", i8* %".135", i64 3)
-  %".137" = icmp eq i32 %".136", 0
-  br i1 %".137", label %"@10", label %"@9"
+  %".146" = load i8*, i8** %"lc_messages"
+  %".147" = bitcast i8** @"s2" to i8*
+  %".148" = call i32 @"strncmp"(i8* %".146", i8* %".147", i64 3)
+  %".149" = icmp eq i32 %".148", 0
+  br i1 %".149", label %"@10", label %"@9"
 "@9":
-  %".139" = load %"FILE"*, %"FILE"** @"stdout@GLIBC_2.2.5"
-  %".140" = bitcast %"FILE"* %".139" to i8*
-  %".141" = bitcast %"FILE"** %"v2" to i8*
-  %".142" = call i8* @"memcpy"(i8* %".141", i8* %".140", i64 216)
-  %".143" = getelementptr [71 x i8], [71 x i8]* @"aReportAnyTrans", i32 0, i32 0
-  %".144" = call i8* @"gettext"(i8* %".143")
-  store i8* %".144", i8** %"v3"
-  %".146" = load i8*, i8** %"v3"
-  %".147" = load %"FILE"*, %"FILE"** %"v2"
-  %".148" = call i32 @"fputs_unlocked"(i8* %".146", %"FILE"* %".147")
+  %".151" = load %"FILE"*, %"FILE"** @"stdout@GLIBC_2.2.5"
+  store %"FILE"* %".151", %"FILE"** %"v2"
+  %".153" = getelementptr [71 x i8], [71 x i8]* @"aReportAnyTrans", i32 0, i32 0
+  %".154" = call i8* @"gettext"(i8* %".153")
+  store i8* %".154", i8** %"v3"
+  %".156" = load i8*, i8** %"v3"
+  %".157" = load %"FILE"*, %"FILE"** %"v2"
+  %".158" = call i32 @"fputs_unlocked"(i8* %".156", %"FILE"* %".157")
   br label %"@10"
 "@10":
-  %".150" = getelementptr [27 x i8], [27 x i8]* @"aFullDocumentat", i32 0, i32 0
-  %".151" = call i8* @"gettext"(i8* %".150")
-  store i8* %".151", i8** %"v4"
-  %".153" = load i8*, i8** %"v4"
-  %".154" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg", i32 0, i32 0
-  %".155" = ptrtoint i8* %".154" to i64
-  %".156" = bitcast i8** %"program" to i64*
-  %".157" = load i64, i64* %".156"
-  %".158" = call i32 (i8*, ...) @"printf"(i8* %".153")
-  %".159" = load i8*, i8** %"node"
-  %".160" = load i8*, i8** %"program"
-  %".161" = ptrtoint i8* %".159" to i64
-  %".162" = ptrtoint i8* %".160" to i64
-  %".163" = icmp ne i64 %".161", %".162"
-  br i1 %".163", label %"@12", label %"@11"
+  %".160" = getelementptr [27 x i8], [27 x i8]* @"aFullDocumentat", i32 0, i32 0
+  %".161" = call i8* @"gettext"(i8* %".160")
+  store i8* %".161", i8** %"v4"
+  %".163" = load i8*, i8** %"v4"
+  %".164" = getelementptr [40 x i8], [40 x i8]* @"aHttpsWwwGnuOrg", i32 0, i32 0
+  %".165" = ptrtoint i8* %".164" to i64
+  %".166" = bitcast i8** %"program" to i64*
+  %".167" = load i64, i64* %".166"
+  %".168" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, i64, ...)*
+  %".169" = call i32 (i8*, i64, i64, ...) %".168"(i8* %".163", i64 %".165", i64 %".167")
+  %".170" = load i8*, i8** %"node"
+  %".171" = load i8*, i8** %"program"
+  %".172" = ptrtoint i8* %".170" to i64
+  %".173" = ptrtoint i8* %".171" to i64
+  %".174" = icmp ne i64 %".172", %".173"
+  br i1 %".174", label %"@12", label %"@11"
 "@11":
-  %".165" = getelementptr [12 x i8], [12 x i8]* @"aInvocation", i32 0, i32 0
-  store i8* %".165", i8** %"v5"
+  %".176" = getelementptr [12 x i8], [12 x i8]* @"aInvocation", i32 0, i32 0
+  store i8* %".176", i8** %"v5"
   br label %"@13"
 "@12":
-  %".168" = getelementptr [2 x i8], [2 x i8]* @"locale", i32 0, i32 0
-  store i8* %".168", i8** %"v5"
+  %".179" = getelementptr [2 x i8], [2 x i8]* @"locale", i32 0, i32 0
+  store i8* %".179", i8** %"v5"
   br label %"@13"
 "@13":
-  %".171" = getelementptr [51 x i8], [51 x i8]* @"aOrAvailableLoc", i32 0, i32 0
-  %".172" = call i8* @"gettext"(i8* %".171")
-  store i8* %".172", i8** %"v6"
-  %".174" = load i8*, i8** %"v6"
-  %".175" = bitcast i8** %"node" to i64*
-  %".176" = load i64, i64* %".175"
-  %".177" = bitcast i8** %"v5" to i64*
-  %".178" = load i64, i64* %".177"
-  %".179" = call i32 (i8*, ...) @"printf"(i8* %".174")
+  %".182" = getelementptr [51 x i8], [51 x i8]* @"aOrAvailableLoc", i32 0, i32 0
+  %".183" = call i8* @"gettext"(i8* %".182")
+  store i8* %".183", i8** %"v6"
+  %".185" = load i8*, i8** %"v6"
+  %".186" = bitcast i8** %"node" to i64*
+  %".187" = load i64, i64* %".186"
+  %".188" = bitcast i8** %"v5" to i64*
+  %".189" = load i64, i64* %".188"
+  %".190" = bitcast i32 (i8*, ...)* @"printf" to i32 (i8*, i64, i64, ...)*
+  %".191" = call i32 (i8*, i64, i64, ...) %".190"(i8* %".185", i64 %".187", i64 %".189")
   br label %"@14"
 "@14":
   %".4" = load i8*, i8** %"funcresult"

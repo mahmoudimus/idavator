@@ -437,6 +437,17 @@ def get_offset_to(builder: ir.IRBuilder, arg: ir.Value, off: int = 0) -> ir.Valu
                 ir.Constant(ir.IntType(32), off // size),
             ),
         )
+        # `off // size` selects the array element, but `off % size` -- the
+        # intra-element field offset -- must also be carried. Otherwise an
+        # array-of-struct addressed at a member byte offset (e.g. `infomap[i]`
+        # whose {node, program} fields share one 16-byte element) collapses
+        # every member store onto field 0 (`.node` overwriting `.program`).
+        # Mirror the IdentifiedStructType branch below: decay to `i8*` and
+        # append the byte remainder as a trailing GEP.
+        rem = off % size
+        if rem > 0:
+            rval = typecast(rval, ir.IntType(8).as_pointer(), builder)
+            rval = builder.gep(rval, (ir.Constant(ir.IntType(32), rem),))
     elif isinstance(pointee, ir.IdentifiedStructType):
         # A struct-typed local addressed at a member byte offset (e.g. the IDA
         # microcode `ldx ..., new_ent@8` writing `new_ent.st_ino`). The base is
