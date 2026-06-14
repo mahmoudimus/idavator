@@ -36154,8 +36154,9 @@ define %"timespec" @"get_stat_birthtime"(%"stat"* %".1")
   %".8" = bitcast i8* %".7" to i64*
   store i64 18446744073709551615, i64* %".8"
   %".10" = bitcast %"timespec"* %"funcresult" to i8*
-  %".11" = bitcast i8* %".10" to i64*
-  store i64 18446744073709551615, i64* %".11"
+  %".11" = getelementptr i8, i8* %".10", i32 8
+  %".12" = bitcast i8* %".11" to i64*
+  store i64 18446744073709551615, i64* %".12"
   br label %"@2"
 "@2":
   %".4" = load %"timespec", %"timespec"* %"funcresult"

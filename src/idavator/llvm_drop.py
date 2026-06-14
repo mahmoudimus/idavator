@@ -280,6 +280,17 @@ def _type_size(type_str) -> int:
     return 4
 
 
+# llvmlite TypeKind for an aggregate STRUCT (LLVMStructTypeKind). Derived from
+# the enum so it survives an llvmlite/LLVM bump; the literal 10 is the
+# LLVM-C documented value and the fallback if the import shape changes.
+try:  # pragma: no cover - trivial enum probe
+    from llvmlite.binding.typeref import TypeKind as _LLVMTypeKind
+
+    _LLVM_STRUCT_KIND = int(_LLVMTypeKind.struct)
+except Exception:  # noqa: BLE001
+    _LLVM_STRUCT_KIND = 10
+
+
 _LEGAL_KREG_SIZES = (1, 2, 4, 8, 16)
 
 
@@ -653,34 +664,130 @@ class LLVMDropConverter:
         return "int"
 
     @staticmethod
-    def _ret_ctype(fn) -> str:
+    def _scalar_ctype(t) -> str:
+        """C type of a SCALAR/pointer LLVM type (the legacy substring scan). A
+        pointer renders ``void *``; an integer is sized by its ``iN`` token."""
+        if getattr(t, "is_pointer", False) or str(t) == "ptr":
+            return "void *"
+        s = str(t)
+        if "i64" in s:
+            return "__int64"
+        if "i16" in s:
+            return "__int16"
+        if "i8" in s:
+            return "char"
+        return "int"
+
+    @classmethod
+    def _ret_field_ctypes(cls, t) -> list | None:
+        """Per-field C types of a MULTI-FIELD AGGREGATE LLVM return type (a named
+        struct or literal ``{..}`` with >1 element, e.g. ``%timespec = {i64,i64}``),
+        or ``None`` for a scalar / pointer / void / single-field type.
+
+        Detection uses the ACTUAL LLVM type kind (``TypeKind.struct`` -> the
+        llvmlite ``.elements`` list), NOT a substring match against the typedef
+        string -- the substring scan is what collapsed ``ret %timespec`` to a
+        scalar ``__int64`` (the struct's text contains ``i64``). A single-field
+        aggregate is left to the scalar path: SysV returns it in one register, so a
+        struct-return prototype would only add a spurious wrapper."""
+        # struct kind == TypeKind.struct (10); llvmlite exposes .elements only for
+        # aggregates. Guard with getattr so a non-struct typeref is a clean None.
+        kind = getattr(t, "type_kind", None)
+        if kind is None or int(kind) != _LLVM_STRUCT_KIND:
+            return None
+        try:
+            fields = list(t.elements)
+        except Exception:  # noqa: BLE001 -- opaque/identified struct w/o body
+            return None
+        if len(fields) <= 1:
+            return None
+        return [cls._scalar_ctype(f) for f in fields]
+
+    @classmethod
+    def _ret_decl(cls, fn) -> tuple[str, str]:
+        """``(prefix, return_ctype)`` for the host prototype's return.
+
+        For a multi-field aggregate return the prefix is an inline struct typedef
+        (``struct __idv_ret_agg {__int64 f0; __int64 f1;};``) and the return type is
+        that struct's name -- so Hex-Rays applies the x86-64 SysV aggregate-return
+        rule (a 16-byte ``{i64,i64}`` is returned in rax:rdx) instead of truncating
+        to a single register. Scalar / pointer / void returns yield an empty prefix
+        and the legacy scalar C type, leaving every non-aggregate signature byte
+        for byte unchanged."""
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode != "ret":
+                    continue
+                ops = list(ins.operands)
+                if not ops:
+                    return "", "void"
+                t = ops[0].type
+                agg = cls._ret_field_ctypes(t)
+                if agg is None:
+                    return "", cls._scalar_ctype(t)
+                members = " ".join(f"{ct} f{i};" for i, ct in enumerate(agg))
+                tag = "__idv_ret_agg"
+                return f"struct {tag} {{ {members} }};", f"struct {tag}"
+        return "", "void"
+
+    @classmethod
+    def _ret_ctype(cls, fn) -> str:
+        """Scalar return C type (back-compat shim). The aggregate-aware path is
+        ``_ret_decl``; this returns the scalar form a non-aggregate fn would use."""
+        return cls._ret_decl(fn)[1]
+
+    def _agg_type_size(self, t) -> int | None:
+        """Byte size of a MULTI-FIELD aggregate LLVM type (the return slot's
+        ``%timespec``), honouring struct layout -- or ``None`` for a scalar /
+        single-field type. ``_type_size`` mis-sizes a ``%struct`` (its substring
+        scan returns 8 for ``%timespec``), truncating the 16-byte funcresult load /
+        ret to one register; this resolves the real width from the parsed layout
+        (by struct name, with the llvmlite ``.NN`` suffix tolerated) so the full
+        aggregate reaches the ret and Hex-Rays splits it into rax:rdx."""
+        if self._ret_field_ctypes(t) is None:
+            return None
+        name = getattr(t, "name", None)
+        if name:
+            key = name if name in self._struct_size else re.sub(r"\.\d+$", "", name)
+            if key in self._struct_size:
+                return self._struct_size[key][0]
+        # Anonymous / literal struct: sum the element sizes from the type string.
+        try:
+            return sum(_type_size(str(f)) for f in t.elements)
+        except Exception:  # noqa: BLE001
+            return None
+
+    @classmethod
+    def _returns_aggregate(cls, fn) -> bool:
+        """True if ``fn``'s ``ret`` yields a MULTI-FIELD aggregate (e.g. a 16-byte
+        ``%timespec = {i64,i64}`` returned in rax:rdx). Used to SUPPRESS the scalar
+        return-slot / return-phi promotion: a multi-register aggregate must stay a
+        real addressed stack slot so EVERY field store lands at its own offset
+        (collapsing the slot to one return reg drops all but field 0 -- the
+        ``get_stat_birthtime`` ``tv_nsec`` loss). The prototype (``_ret_decl``)
+        already declares the aggregate return, so Hex-Rays splits the 16-byte
+        slot load into rax:rdx on its own."""
         for bb in fn.blocks:
             for ins in bb.instructions:
                 if ins.opcode == "ret":
                     ops = list(ins.operands)
                     if not ops:
-                        return "void"
-                    t = ops[0].type
-                    if getattr(t, "is_pointer", False) or str(t) == "ptr":
-                        return "void *"
-                    s = str(t)
-                    if "i64" in s:
-                        return "__int64"
-                    if "i16" in s:
-                        return "__int16"
-                    if "i8" in s:
-                        return "char"
-                    return "int"
-        return "void"
+                        return False
+                    return cls._ret_field_ctypes(ops[0].type) is not None
+        return False
 
     @classmethod
     def _force_prototype(cls, host_ea: int, fn) -> None:
         args = list(fn.arguments)
         params = ", ".join(f"{cls._arg_ctype(a, fn)} a{i}"
                            for i, a in enumerate(args)) or "void"
-        ret = cls._ret_ctype(fn)
+        prefix, ret = cls._ret_decl(fn)
         tif = ida_typeinf.tinfo_t()
-        ida_typeinf.parse_decl(tif, None, f"{ret} __fastcall f({params});", 0)
+        # A multi-field aggregate return needs its inline struct typedef parsed in
+        # the SAME declaration so ``ret`` names a known UDT (the SysV split into
+        # rax:rdx is then Hex-Rays' own aggregate-return lowering).
+        decl = f"{prefix} {ret} __fastcall f({params});".strip()
+        ida_typeinf.parse_decl(tif, None, decl, 0)
         ida_typeinf.apply_tinfo(host_ea, tif, ida_typeinf.TINFO_DEFINITE)
 
     @staticmethod
@@ -1168,7 +1275,11 @@ class LLVMDropConverter:
             # alloca itself emits nothing -- load/store route to that kreg.
             return anchor
         if op == "load":
-            out_sz = _type_size(ins.type)
+            # A struct-typed load (``load %timespec, funcresult``) is mis-sized to 8
+            # by ``_type_size``'s substring scan; resolve the true aggregate width so
+            # the whole return slot reaches the ret (else the rax:rdx split drops the
+            # high field). Scalars are unchanged.
+            out_sz = self._agg_type_size(ins.type) or _type_size(ins.type)
             if out_sz > 16:
                 # A WHOLE-STRUCT load (``load i448`` == read all 56 bytes of a
                 # ``struct quoting_options``). The value is too wide for a kreg
@@ -1406,6 +1517,18 @@ class LLVMDropConverter:
             idx = self._desc(ops[1], vmap, 8)
             if idx[0] == "num":
                 off = idx[1] * elem_sz
+                if base[0] in ("stkaddr", "stkvar") and off != 0:
+                    # GEP at a CONSTANT byte offset off a frame-slot ADDRESS (e.g.
+                    # ``gep i8, i8* bitcast(funcresult), 8`` -> the ``tv_nsec`` field
+                    # of the 16-byte return slot). Fold the constant into the slot
+                    # offset so the result is itself a clean ``&stkvar(off+N)`` --
+                    # NOT an ``m_add`` into an opaque register address. A register
+                    # address can't resolve back to the stkvar, so the field store
+                    # is lost (the ``get_stat_birthtime`` ``tv_nsec`` collapse).
+                    # Mirrors the ``_addr_taken`` GEP fast path above; here the base
+                    # is a bitcast ALIAS of the alloca, already resolved to stkaddr.
+                    vmap[ins.name] = ("stkaddr", base[1] + off, 8)
+                    return anchor
                 if off == 0:
                     # The off==0 decay of a global base yields its ADDRESS, not
                     # the lvalue read at it: a gvar base decays to gvaraddr
@@ -2390,7 +2513,11 @@ class LLVMDropConverter:
         ops = list(term.operands)
         if not ops:
             return anchor
-        sz = _type_size(ops[0].type)
+        # A multi-field aggregate return (``%timespec``) is 16 bytes in rax:rdx, not
+        # the 8 ``_type_size`` reports; size the ret value to the true aggregate
+        # width so the whole struct is moved to the return reg and Hex-Rays' SysV
+        # aggregate-return lowering splits it (the prototype already declares it).
+        sz = self._agg_type_size(ops[0].type) or _type_size(ops[0].type)
         d = self._desc(ops[0], vmap, sz)
         if d[0] == "reg" and d[1] == eax:
             return anchor  # already in the return reg (promoted return slot)
@@ -3396,7 +3523,16 @@ class LLVMDropConverter:
         a non-escaping alloca). The shape gate below (single ret name + load-of-slot
         + ``_ret_slot_uses_ok``) is the real guard; noreturn is no longer required.
         See memory idavator_drop_noreturn_50342_rootcause.
+
+        SUPPRESSED for a multi-field aggregate return: scalarizing a 16-byte
+        ``{i64,i64}`` return slot to ONE return reg drops every field but the first
+        (the ``get_stat_birthtime`` ``tv_nsec`` loss, and any per-field-store form).
+        The slot instead stays a real stkvar; the aggregate-return prototype lets
+        Hex-Rays split its full-width load into rax:rdx (see ``_agg_type_size``-sized
+        funcresult load + ret).
         """
+        if self._returns_aggregate(fn):
+            return
         ret_names = set()
         for bb in fn.blocks:
             term = list(bb.instructions)[-1]
@@ -3432,7 +3568,12 @@ class LLVMDropConverter:
         B's ret skips the now-redundant mov). Originally GATED on a noreturn call;
         generalized alongside ``_detect_ret_slot`` to fire for ANY fn whose ret is a
         single phi result -- writing the return reg per-edge is what native does and
-        avoids the materialised post-merge read regardless of noreturn."""
+        avoids the materialised post-merge read regardless of noreturn.
+
+        SUPPRESSED for a multi-field aggregate return (mirrors ``_detect_ret_slot``):
+        a multi-register return must not collapse onto a single ABI reg."""
+        if self._returns_aggregate(fn):
+            return
         ret_names = set()
         for bb in fn.blocks:
             term = list(bb.instructions)[-1]
