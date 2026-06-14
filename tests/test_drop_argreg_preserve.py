@@ -117,26 +117,47 @@ class TestArgRegPreserve:
             f"argmatch_invalid args clobbered (not context=a0, arg=a1):\n"
             f"{dropped}")
 
-    def test_setlocale_null_unlocked_memcpy_gets_result(
+    def test_setlocale_null_unlocked_declines_divergent_body(
             self, examples_dir: Path) -> None:
-        """``setlocale_null_unlocked`` copies the ``result`` of
-        ``setlocale_null_androidfix`` (preserved across ``strlen``) into ``buf``
-        -- the source pointer is the saved result, not a stale register."""
+        """``setlocale_null_unlocked`` only builds via the SROA fallback (the
+        faithful path INTERRs 50342 on the return slot), and that degraded body
+        DIVERGES: it collapses the three distinct returns (0 / 0x22 / 0x16) into
+        the ``strlen`` result and drops the ``*buf = 0`` error-path store. A
+        divergent body is worse than a clean native fallback, so the B5 decline
+        gate now REFUSES it -> ``cf is None`` (the caller uses the correct native
+        decompilation). (Previously this asserted the memcpy-source sub-property of
+        the divergent body; that narrow property was faithful but the whole body
+        was not -- B5 correctness over coverage.)"""
         if not _idalib():
             pytest.skip("idalib unavailable")
-        dropped = _drop_only(examples_dir, "setlocale_null_unlocked")
+        import idapro
+        import ida_hexrays
+        import ida_idaapi
+        import ida_name
 
-        # the result of setlocale_null_androidfix is saved and reused as the
-        # memcpy source (a single saved var, e.g. v6 = v3), surviving strlen.
-        assert "setlocale_null_androidfix" in dropped, (
-            f"androidfix call lost:\n{dropped}")
-        # the androidfix result is bound to a saved variable (``vN = vM;``) that
-        # the memcpy reads -- without preservation the source was the
-        # un-aliased, clobbered ``v5``. Pin the saved-result copy + a memcpy into
-        # the destination buffer ``a1``.
-        import re
-        assert re.search(r"\bv\d+ = v\d+;", dropped), (
-            f"androidfix result not saved to a stable var (clobbered):\n"
-            f"{dropped}")
-        assert re.search(r"memcpy\(a1, v\d+,", dropped), (
-            f"memcpy destination/source shape lost (arg clobbered):\n{dropped}")
+        binary = examples_dir / "cp"
+        ir_path = examples_dir / "cp.ll"
+        if not (binary.exists() and ir_path.exists()):
+            pytest.skip("missing cp / cp.ll")
+        from idavator.llvm_drop import LLVMDropConverter
+
+        tmp = Path(tempfile.mkdtemp(prefix="argreg_preserve_"))
+        dst = tmp / "cp"
+        shutil.copy(binary, dst)
+        idapro.open_database(str(dst), True)
+        try:
+            assert ida_hexrays.init_hexrays_plugin()
+            ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "setlocale_null_unlocked")
+            if ea == ida_idaapi.BADADDR:
+                pytest.skip("setlocale_null_unlocked not in this binary")
+            conv = LLVMDropConverter(ir_path.read_text())
+            cf = conv.drop(ea, "setlocale_null_unlocked")
+            assert conv.last_error is None, conv.last_error
+            assert cf is None, (
+                "expected a native fallback (divergent SROA body declined), got a "
+                f"shipped body:\n{cf}")
+            assert conv.last_declined_divergent is True, (
+                "body should have been declined by the B5 divergence gate")
+        finally:
+            idapro.close_database()
+            shutil.rmtree(tmp, ignore_errors=True)

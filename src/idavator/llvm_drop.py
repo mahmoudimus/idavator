@@ -31,6 +31,7 @@ import ida_strlist
 import ida_typeinf
 import llvmlite.binding as llvm
 
+from idavator import oracle
 from idavator.cfg_verify import try_verify
 
 logger = logging.getLogger("idavator.llvm_drop")
@@ -515,6 +516,15 @@ class LLVMDropConverter:
         # declines them for a clean native fallback rather than ship a divergent body.
         # Populated in drop() where the offsets + per-buffer cohesibility are known.
         self._str_index = None       # IDB string-literal content -> ea (lazy)
+        # AUDIT/B5 instrumentation: which build path produced the shipped body
+        # ("PRIMARY" | "KREG-RETRY" | "SROA-FALLBACK") and the INTERR the PRIMARY
+        # faithful path raised (None when it failed LATE, post-preoptimized, as the
+        # return-slot 50342 family does). Set in ``drop``; read by the audit sweep.
+        self.last_build_path = "PRIMARY"
+        self.last_primary_interr = None
+        self.last_primary_late_interr = None
+        self.last_primary_ret_promoted = False
+        self.last_declined_divergent = False
 
     # -- public API ------------------------------------------------------
     def drop(self, host_ea: int, llvm_fn_name: str):
@@ -529,7 +539,25 @@ class LLVMDropConverter:
         alloca into a return phi, which the return-phi promotion writes straight to
         the return reg (clearing 50342). Because the retry only runs when the plain
         drop already FAILED, every currently-passing function is untouched."""
+        # AUDIT instrumentation (no behavior change): record which build path
+        # produced the SHIPPED body ("PRIMARY" | "KREG-RETRY" | "SROA-FALLBACK")
+        # and the PRIMARY path's INTERRs (the SROA/kreg retries fire only on a
+        # primary LATE failure). The B5 decline gate keys off ``last_build_path``
+        # (degraded == not PRIMARY) plus a native-fidelity self-check.
+        self.last_build_path = "PRIMARY"
+        self.last_primary_interr = None
+        self.last_primary_late_interr = None
+        self.last_primary_ret_promoted = False
+        self.last_declined_divergent = False
+        # B5 gate reference: the host's pseudocode BEFORE the drop mutates its
+        # microcode (the round-trip oracle reference). Captured here, with NO drop
+        # hook installed, so it is the TRUE native body; only consulted if a
+        # DEGRADED retry later produces a body (see the decline gate below).
+        native_c = self._capture_native_pseudocode(host_ea)
         cf, box = self._drop_from_module(self.module, host_ea, llvm_fn_name)
+        self.last_primary_interr = box["interr"]
+        self.last_primary_late_interr = box.get("late_interr")
+        self.last_primary_ret_promoted = box.get("ret_promoted", False)
         is_late_failure = (cf is None and box["err"] is None
                            and box["interr"] is None)
         # FAITHFUL 50342 retry (scoped, zero-regression): a late failure where a
@@ -552,6 +580,7 @@ class LLVMDropConverter:
             if cfk is not None:
                 cf, box = cfk, boxk
                 is_late_failure = False
+                self.last_build_path = "KREG-RETRY"
         if is_late_failure:
             opt = self._get_sroa_module()
             if opt is not None and any(
@@ -562,11 +591,67 @@ class LLVMDropConverter:
                 cf2, box2 = self._drop_from_module(opt, host_ea, llvm_fn_name)
                 if cf2 is not None:
                     cf, box = cf2, box2
+                    self.last_build_path = "SROA-FALLBACK"
+        # B5 DECLINE GATE (correctness over coverage): a DEGRADED retry only fires
+        # after the faithful PRIMARY path failed LATE on the return-slot family
+        # (INTERR 50342 at MMAT_GLBOPT2). Both the SROA reshape and the kreg-kill
+        # are coarser lowerings whose RETURN/store structure can silently diverge
+        # from the source (the ``quotearg_n_options`` class: a return-slot collapse
+        # that returns the errno pointer instead of ``val``; phantom-global stores;
+        # a scrambled switch/loop). A DIVERGENT body is strictly worse than a clean
+        # native fallback, so SELF-VERIFY any degraded body against the host's own
+        # pre-drop pseudocode (the round-trip reference) and DECLINE if it does not
+        # round-trip faithfully. This declines exactly the divergent degraded bodies
+        # while preserving every faithful degraded recovery (the oracle splits them
+        # cleanly). No-op when the oracle is unavailable (no fidelity check possible)
+        # or when the primary path succeeded (a non-degraded body is already trusted).
+        if (cf is not None and self.last_build_path != "PRIMARY"
+                and not self._degraded_body_is_faithful(native_c, cf)):
+            logger.warning(
+                "drop @%s: %s body diverges from native pre-drop pseudocode "
+                "(return-slot/degraded-lowering family) -> DECLINE (native "
+                "fallback)", llvm_fn_name, self.last_build_path)
+            self.last_declined_divergent = True
+            cf = None
         if box["err"]:
             logger.error("drop build failed:\n%s", box["err"])
         self.last_interr = box["interr"]
         self.last_error = box["err"]
         return cf
+
+    @staticmethod
+    def _capture_native_pseudocode(host_ea: int):
+        """The host's current pseudocode (``str(cfunc)``) with NO drop hook
+        active -- the TRUE native body, used as the B5 decline-gate reference.
+        Returns None on any decompile failure (the gate then ships unconditionally,
+        since it can only DECLINE on a positive divergence finding)."""
+        try:
+            cf = hx.decompile(host_ea)
+            return str(cf) if cf is not None else None
+        except Exception:  # noqa: BLE001 -- no native -> gate ships (no false decline)
+            return None
+
+    def _degraded_body_is_faithful(self, native_c, cf) -> bool:
+        """True if a DEGRADED-path body ``cf`` round-trips faithfully against the
+        host's pre-drop ``native_c`` (the round-trip reference). Conservative when
+        verification is impossible: returns True (ship) if the oracle is
+        unavailable, native could not be captured, or the comparison itself errors
+        -- the gate only ever DECLINES on a POSITIVE divergence finding, never on
+        an inconclusive one, so it cannot regress a function the oracle can't read.
+
+        Lives here (not the oracle module) so the IDA-boundary ``drop`` owns the
+        ``str(cfunc)`` rendering; the actual canonical compare is the IDA-free
+        ``idavator.oracle.matches``."""
+        if not native_c:
+            return True
+        try:
+            if not oracle.clang_available():
+                return True
+            return oracle.matches(native_c, str(cf))
+        except Exception:  # noqa: BLE001 -- inconclusive -> ship (no false decline)
+            logger.debug("degraded-body fidelity check errored; shipping",
+                         exc_info=True)
+            return True
 
     def _drop_from_module(self, module, host_ea: int, llvm_fn_name: str):
         """Rebuild ``host_ea`` from ``llvm_fn_name`` in ``module``; return
@@ -583,7 +668,8 @@ class LLVMDropConverter:
             hf.flags &= ~ida_funcs.FUNC_NORET
             ida_funcs.update_func(hf)
 
-        box = {"interr": None, "err": None}
+        box = {"interr": None, "err": None, "late_interr": None,
+               "ret_promoted": False}
         conv = self
 
         class _Hook(hx.Hexrays_Hooks):
@@ -592,9 +678,22 @@ class LLVMDropConverter:
                     conv._build(mba, fn)
                     ok, code = try_verify(mba, "after llvm drop")
                     box["interr"] = code
+                    # AUDIT: record whether a return SLOT/PHI promotion was active
+                    # for this build -- the return-slot family signal for the gate.
+                    box["ret_promoted"] = (conv._ret_off is not None
+                                           or conv._ret_kreg is not None
+                                           or conv._ret_phi is not None)
                 except Exception:  # noqa: BLE001
                     import traceback
                     box["err"] = traceback.format_exc()
+                return 0
+
+            def interr(self, code):  # hxe_interr: LATE failure (post-preoptimized)
+                # The return-slot 50342 family surfaces HERE, during ``decompile``
+                # at MMAT_GLBOPT2 -- AFTER ``preoptimized``'s ``try_verify`` already
+                # passed -- so ``box["interr"]`` stays None. Capture it separately.
+                if box["late_interr"] is None:
+                    box["late_interr"] = code
                 return 0
 
         hook = _Hook()
