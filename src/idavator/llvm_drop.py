@@ -142,6 +142,21 @@ _ICMP_SET = {
 _HELPER_INTRINSICS = frozenset({
     "__ROL1__", "__ROL2__", "__ROL4__", "__ROL8__",
     "__ROR1__", "__ROR2__", "__ROR4__", "__ROR8__",
+    # A DYNAMIC stack allocation (VLA / explicit alloca). The lifter renders it
+    # as ``%p = call i8* @alloca(i64 %sz)``; there is no ``alloca`` symbol to
+    # resolve, so ``_emit_call`` would raise ``unresolved callee @alloca`` and
+    # the drop falls back to native. IDA's OWN native decompiler renders this
+    # construct as a literal ``v = alloca(sz)`` helper call (it does NOT lower
+    # it to a ``sub rsp`` / negative stkvar in the pseudocode), and in this
+    # cohort the alloca RESULT is dead -- the buffer the body actually uses is
+    # the frame anchor (``&xa`` in re_protect), reached via the preceding
+    # stack-probe loop, not the returned pointer. So a HELPER-call rendering of
+    # ``alloca`` (rax = alloca(sz), result captured into a kreg) is BYTE-faithful
+    # to native here and needs no rsp modeling -- the rsp-adjusting ROLE_ALLOCA
+    # m_call form is what trips INTERR 52359 at stack-address resolution
+    # (the SP-consistency machine wants x86_spec_info.alloca_calls populated by
+    # binary-driven gen_microcode, unavailable at the preoptimized drop point).
+    "alloca",
 })
 
 # Pure-WRITER libc calls that write THROUGH their destination pointer arg WITHOUT
@@ -2965,6 +2980,82 @@ class LLVMDropConverter:
             total += d[1] * (strides[k] if k < len(strides) else esz)
         return total
 
+    _HEAP_ALLOCATORS = frozenset({
+        "xmalloc", "xcalloc", "malloc", "calloc", "realloc", "xrealloc",
+        "xnmalloc", "xmemdup", "xzalloc", "reallocarray",
+    })
+
+    @staticmethod
+    def _has_dynamic_alloca(fn) -> bool:
+        """True if ``fn`` contains a ``call ptr @alloca(...)`` -- a DYNAMIC stack
+        allocation (VLA / explicit alloca). Such a call is lowered as a HELPER call
+        (see ``_HELPER_INTRINSICS``); this predicate scopes the divergence gate
+        below to the alloca cohort so it can never touch the (alloca-free) faithful
+        corpus."""
+        for bb in fn.blocks:
+            for ins in bb.instructions:
+                if ins.opcode == "call" and list(ins.operands)[-1].name == "alloca":
+                    return True
+        return False
+
+    def _alloca_cohort_diverges(self, fn) -> bool:
+        """B5 gate: a DYNAMIC-alloca function whose body ALSO builds a HEAP object
+        through a pointer-typed stack alloca currently drops to a DIVERGENT body and
+        must stay a native fallback.
+
+        The trigger is a heap-allocator result (``xmalloc`` &c.) stored into an
+        ``alloca ptr`` slot that is then reloaded and written through field-by-field
+        (``make_dir_parents_private``'s ``v16 = xmalloc(168); v16->st = src_st``).
+        With the dynamic-alloca frame model engaged, the drop mis-resolves the
+        reloaded heap pointer and the struct-local copy source onto the SAME scalar,
+        emitting self-referential garbage stores (``*(QWORD *)(v.st_dev+8)=v.st_dev``)
+        -- a real semantic divergence, not a rendering difference. The underlying
+        heap-pointer/struct-copy lowering bug is INDEPENDENT of alloca (it also
+        appears, correctly lowered, in alloca-free functions such as ``record_file``/
+        ``xrealloc`` -- which is why this gate is SCOPED to the dynamic-alloca cohort:
+        it must not, and by construction cannot, decline those faithful drops).
+
+        Returns True -> the converter declines (cf=None) rather than ship a wrong
+        body. ``re_protect`` (no heap allocation) is unaffected and drops faithfully.
+        Remove this gate once the heap-into-pointer-alloca struct copy lowers
+        correctly under the alloca frame model.
+        """
+        if not self._has_dynamic_alloca(fn):
+            return False
+        insns = [(i.name, i.opcode, str(i).strip())
+                 for bb in fn.blocks for i in bb.instructions]
+        ptr_alloca = {nm for nm, op, s in insns
+                      if op == "alloca" and re.match(r"%[\w.]+\s*=\s*alloca\s+ptr\b", s)}
+        if not ptr_alloca:
+            return False
+        heap_res = {nm for nm, op, s in insns
+                    if op == "call"
+                    and any(re.search(r"@" + h + r"\(", s)
+                            for h in self._HEAP_ALLOCATORS)}
+        if not heap_res:
+            return False
+        # ptr->ptr bitcast alias chain, so a store into ``bitcast(%slot)`` counts.
+        alias: dict[str, str] = {}
+        for nm, op, s in insns:
+            m = re.match(r"%([\w.]+)\s*=\s*bitcast\s+ptr\s+%([\w.]+)\s+to\s+ptr", s)
+            if op == "bitcast" and m:
+                alias[m.group(1)] = m.group(2)
+
+        def _root(x: str) -> str:
+            seen: set = set()
+            while x in alias and x not in seen:
+                seen.add(x)
+                x = alias[x]
+            return x
+
+        for nm, op, s in insns:
+            if op != "store":
+                continue
+            m = re.match(r"store\s+ptr\s+%([\w.]+),\s+ptr\s+%([\w.]+)", s)
+            if m and m.group(1) in heap_res and _root(m.group(2)) in ptr_alloca:
+                return True
+        return False
+
     def _scan_allocas(self, mba, fn) -> dict:
         """Classify each alloca; return the SCALAR-SLOT kreg map and populate
         ``self._addr_taken`` (name -> (stkoff, size)) for address-taken ones.
@@ -3642,6 +3733,13 @@ class LLVMDropConverter:
                             off = None
                         self._array_elt_addr[ins.name] = off
 
+        if self._alloca_cohort_diverges(fn):
+            # B5: a dynamic-alloca function that also builds a heap object through a
+            # pointer stack alloca drops to a divergent body -> decline cleanly.
+            raise NotImplementedError(
+                "dynamic-alloca cohort: heap object built through a pointer-typed "
+                "stack alloca -- struct copy mis-lowers under the alloca frame "
+                "model; native fallback (see _alloca_cohort_diverges)")
         self._allocas = self._scan_allocas(mba, fn)
         self._scan_ptr_deref_aliases(fn)
         self._detect_ret_slot(fn)
