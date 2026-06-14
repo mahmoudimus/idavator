@@ -111,8 +111,24 @@ class TestSwitchDrop:
             idapro.close_database()
 
     def test_real_version_etc_switch(self, examples_dir: Path) -> None:
-        """cp!version_etc_arn has a 10-case switch; its dropped if-ladder must
-        match the decompiled reference (modulo lvar names)."""
+        """cp!version_etc_arn must DECLINE to a clean native fallback.
+
+        The function's author-list ``switch`` arms call ``fprintf`` with up to 9
+        author varargs; the larger arms therefore carry MORE than 6 integer args,
+        so the 7th+ varargs SPILL onto the stack. The converter cannot faithfully
+        lower a stack-passed variadic tail (the synthesized mcallinfo verifies at
+        MMAT_PREOPTIMIZED but glbopt's stack-arg-area analysis then trips INTERR
+        50836 on a hand-built frame -- see ``_emit_call_vararg``). The correct
+        outcome is a CLEAN DECLINE (``last_error`` set, ``cf`` -> native fallback),
+        NOT a building-but-divergent drop that drops every author vararg and emits
+        a spurious ``while(1)``.
+
+        The native fallback is itself faithful on this IDA build (a clean switch
+        with every vararg forwarded), so declining is correct, not a degraded
+        oracle. (Earlier this test asserted a faithful if-ladder drop; that never
+        held -- the native renders a real ``switch`` (case arms), not an ``== N``
+        ladder, and the >6-arg arms cannot be lowered. Ticket d81-nh63.)
+        """
         if not _idalib():
             pytest.skip("idalib unavailable")
         import idapro
@@ -134,21 +150,15 @@ class TestSwitchDrop:
             ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "version_etc_arn")
             if ea == ida_idaapi.BADADDR:
                 pytest.skip("version_etc_arn not in this build")
-            orig = str(hx.decompile(ea))
             conv = LLVMDropConverter(ll.read_text())
-            cf = conv.drop(ea, "version_etc_arn")
-            text = str(cf) if cf is not None else "<None>"
-            assert conv.last_error is None, conv.last_error
-            assert conv.last_interr is None, f"INTERR {conv.last_interr}"
-            assert cf is not None, "decompile failed"
-            # The reference renders the switch as an if-ladder; the drop must
-            # produce the SAME case ladder (==N comparisons over the same vals).
-            ladder = [n for n in (1, 2, 3, 4, 5, 6, 7, 8, 9)
-                      if f"== {n}" in orig]
-            assert len(ladder) >= 5, f"reference ladder too small: {ladder}"
-            for n in ladder:
-                assert f"== {n}" in text, (
-                    f"dropped C missing case '== {n}' present in reference:\n"
-                    f"{text}")
+            conv.drop(ea, "version_etc_arn")
+            # Clean decline: an error is recorded and it names the stack-passed
+            # variadic tail (the supported, intentional fallback path). The
+            # harness classifies a recorded error as real_drop=False -> native.
+            assert conv.last_error is not None, (
+                "expected version_etc_arn to DECLINE (stack-passed variadic "
+                "tail), but the drop reported no error")
+            assert "stack-passed variadic tail" in conv.last_error, (
+                f"declined for an unexpected reason:\n{conv.last_error}")
         finally:
             idapro.close_database()

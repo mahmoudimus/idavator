@@ -7528,528 +7528,532 @@ define i8* @"version_etc_arn"(%"FILE"* %".1", i8* %".2", i8* %".3", i8* %".4", i
   %".25" = load i8*, i8** %"command_name"
   %".26" = load i8*, i8** %"package"
   %".27" = load i8*, i8** %"version"
-  %".28" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".23", i8* %".24")
+  %".28" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i8*, i8*, i8*, ...)*
+  %".29" = call i32 (%"FILE"*, i8*, i8*, i8*, i8*, ...) %".28"(%"FILE"* %".23", i8* %".24", i8* %".25", i8* %".26", i8* %".27")
   br label %"@4"
 "@3":
-  %".30" = load %"FILE"*, %"FILE"** %"stream"
-  %".31" = getelementptr [7 x i8], [7 x i8]* @"aSS_3", i32 0, i32 0
-  %".32" = load i8*, i8** %"package"
-  %".33" = load i8*, i8** %"version"
-  %".34" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".30", i8* %".31")
+  %".31" = load %"FILE"*, %"FILE"** %"stream"
+  %".32" = getelementptr [7 x i8], [7 x i8]* @"aSS_3", i32 0, i32 0
+  %".33" = load i8*, i8** %"package"
+  %".34" = load i8*, i8** %"version"
+  %".35" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i8*, i8*, ...)*
+  %".36" = call i32 (%"FILE"*, i8*, i8*, i8*, ...) %".35"(%"FILE"* %".31", i8* %".32", i8* %".33", i8* %".34")
   br label %"@4"
 "@4":
-  %".36" = bitcast i8** @"aC" to i8*
-  %".37" = call i8* @"gettext"(i8* %".36")
-  store i8* %".37", i8** %"v6"
-  %".39" = load %"FILE"*, %"FILE"** %"stream"
-  %".40" = getelementptr [47 x i8], [47 x i8]* @"version_etc_copyright", i32 0, i32 0
-  %".41" = load i8*, i8** %"v6"
-  %".42" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".39", i8* %".40")
-  %".43" = load %"FILE"*, %"FILE"** %"stream"
-  %".44" = call i32 @"fputc_unlocked"(i32 10, %"FILE"* %".43")
-  %".45" = getelementptr [171 x i8], [171 x i8]* @"aLicenseGplv3Gn", i32 0, i32 0
-  %".46" = call i8* @"gettext"(i8* %".45")
-  store i8* %".46", i8** %"v7"
-  %".48" = load %"FILE"*, %"FILE"** %"stream"
-  %".49" = load i8*, i8** %"v7"
-  %".50" = getelementptr [34 x i8], [34 x i8]* @"aHttpsGnuOrgLic", i32 0, i32 0
-  %".51" = ptrtoint i8* %".50" to i64
-  %".52" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".48", i8* %".49")
-  %".53" = load %"FILE"*, %"FILE"** %"stream"
-  %".54" = call i32 @"fputc_unlocked"(i32 10, %"FILE"* %".53")
-  %".55" = load i64, i64* %"n_authors"
-  switch i64 %".55", label %"@14" [i64 0, label %"@15" i64 1, label %"@5" i64 2, label %"@6" i64 3, label %"@7" i64 4, label %"@8" i64 5, label %"@9" i64 6, label %"@10" i64 7, label %"@11" i64 8, label %"@12" i64 9, label %"@13"]
+  %".38" = bitcast i8** @"aC" to i8*
+  %".39" = call i8* @"gettext"(i8* %".38")
+  store i8* %".39", i8** %"v6"
+  %".41" = load %"FILE"*, %"FILE"** %"stream"
+  %".42" = getelementptr [47 x i8], [47 x i8]* @"version_etc_copyright", i32 0, i32 0
+  %".43" = load i8*, i8** %"v6"
+  %".44" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i8*, i32, ...)*
+  %".45" = call i32 (%"FILE"*, i8*, i8*, i32, ...) %".44"(%"FILE"* %".41", i8* %".42", i8* %".43", i32 2020)
+  %".46" = load %"FILE"*, %"FILE"** %"stream"
+  %".47" = call i32 @"fputc_unlocked"(i32 10, %"FILE"* %".46")
+  %".48" = getelementptr [171 x i8], [171 x i8]* @"aLicenseGplv3Gn", i32 0, i32 0
+  %".49" = call i8* @"gettext"(i8* %".48")
+  store i8* %".49", i8** %"v7"
+  %".51" = load %"FILE"*, %"FILE"** %"stream"
+  %".52" = load i8*, i8** %"v7"
+  %".53" = getelementptr [34 x i8], [34 x i8]* @"aHttpsGnuOrgLic", i32 0, i32 0
+  %".54" = ptrtoint i8* %".53" to i64
+  %".55" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, ...)*
+  %".56" = call i32 (%"FILE"*, i8*, i64, ...) %".55"(%"FILE"* %".51", i8* %".52", i64 %".54")
+  %".57" = load %"FILE"*, %"FILE"** %"stream"
+  %".58" = call i32 @"fputc_unlocked"(i32 10, %"FILE"* %".57")
+  %".59" = load i64, i64* %"n_authors"
+  switch i64 %".59", label %"@14" [i64 0, label %"@15" i64 1, label %"@5" i64 2, label %"@6" i64 3, label %"@7" i64 4, label %"@8" i64 5, label %"@9" i64 6, label %"@10" i64 7, label %"@11" i64 8, label %"@12" i64 9, label %"@13"]
 "@5":
-  %".57" = bitcast i8*** %"authors" to i64*
-  %".58" = load i64, i64* %".57"
-  %".59" = bitcast i8** %"v8" to i64*
-  store i64 %".58", i64* %".59"
-  %".61" = getelementptr [16 x i8], [16 x i8]* @"aWrittenByS", i32 0, i32 0
-  %".62" = call i8* @"gettext"(i8* %".61")
-  store i8* %".62", i8** %"v9"
-  %".64" = load %"FILE"*, %"FILE"** %"stream"
-  %".65" = load i8*, i8** %"v9"
-  %".66" = bitcast i8** %"v8" to i64*
-  %".67" = load i64, i64* %".66"
-  %".68" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".64", i8* %".65")
+  %".61" = load i8**, i8*** %"authors"
+  %".62" = load i8*, i8** %".61"
+  store i8* %".62", i8** %"v8"
+  %".64" = getelementptr [16 x i8], [16 x i8]* @"aWrittenByS", i32 0, i32 0
+  %".65" = call i8* @"gettext"(i8* %".64")
+  store i8* %".65", i8** %"v9"
+  %".67" = load %"FILE"*, %"FILE"** %"stream"
+  %".68" = load i8*, i8** %"v9"
+  %".69" = bitcast i8** %"v8" to i64*
+  %".70" = load i64, i64* %".69"
+  %".71" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, ...)*
+  %".72" = call i32 (%"FILE"*, i8*, i64, ...) %".71"(%"FILE"* %".67", i8* %".68", i64 %".70")
   br label %"@15"
 "@6":
-  %".70" = load i8**, i8*** %"authors"
-  %".71" = bitcast i8** %".70" to i8*
-  %".72" = getelementptr i8, i8* %".71", i64 8
-  %".73" = bitcast i8* %".72" to i8**
-  %".74" = bitcast i8** %".73" to i64*
-  %".75" = load i64, i64* %".74"
-  store i64 %".75", i64* %"v10"
-  %".77" = bitcast i8*** %"authors" to i64*
-  %".78" = load i64, i64* %".77"
-  %".79" = bitcast i8** %"v11" to i64*
-  store i64 %".78", i64* %".79"
-  %".81" = getelementptr [23 x i8], [23 x i8]* @"aWrittenBySAndS", i32 0, i32 0
-  %".82" = call i8* @"gettext"(i8* %".81")
-  store i8* %".82", i8** %"v12"
-  %".84" = load %"FILE"*, %"FILE"** %"stream"
-  %".85" = load i8*, i8** %"v12"
-  %".86" = bitcast i8** %"v11" to i64*
-  %".87" = load i64, i64* %".86"
-  %".88" = load i64, i64* %"v10"
-  %".89" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".84", i8* %".85")
+  %".74" = load i8**, i8*** %"authors"
+  %".75" = bitcast i8** %".74" to i8*
+  %".76" = getelementptr i8, i8* %".75", i64 8
+  %".77" = bitcast i8* %".76" to i8**
+  %".78" = bitcast i8** %".77" to i64*
+  %".79" = load i64, i64* %".78"
+  store i64 %".79", i64* %"v10"
+  %".81" = load i8**, i8*** %"authors"
+  %".82" = load i8*, i8** %".81"
+  store i8* %".82", i8** %"v11"
+  %".84" = getelementptr [23 x i8], [23 x i8]* @"aWrittenBySAndS", i32 0, i32 0
+  %".85" = call i8* @"gettext"(i8* %".84")
+  store i8* %".85", i8** %"v12"
+  %".87" = load %"FILE"*, %"FILE"** %"stream"
+  %".88" = load i8*, i8** %"v12"
+  %".89" = bitcast i8** %"v11" to i64*
+  %".90" = load i64, i64* %".89"
+  %".91" = load i64, i64* %"v10"
+  %".92" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, ...)*
+  %".93" = call i32 (%"FILE"*, i8*, i64, i64, ...) %".92"(%"FILE"* %".87", i8* %".88", i64 %".90", i64 %".91")
   br label %"@15"
 "@7":
-  %".91" = load i8**, i8*** %"authors"
-  %".92" = bitcast i8** %".91" to i8*
-  %".93" = getelementptr i8, i8* %".92", i64 16
-  %".94" = bitcast i8* %".93" to i8**
-  %".95" = bitcast i8** %".94" to i64*
-  %".96" = load i64, i64* %".95"
-  store i64 %".96", i64* %"v13"
-  %".98" = load i8**, i8*** %"authors"
-  %".99" = bitcast i8** %".98" to i8*
-  %".100" = getelementptr i8, i8* %".99", i64 8
-  %".101" = bitcast i8* %".100" to i8**
-  %".102" = bitcast i8** %".101" to i64*
-  %".103" = load i64, i64* %".102"
-  store i64 %".103", i64* %"v14"
-  %".105" = bitcast i8*** %"authors" to i64*
-  %".106" = load i64, i64* %".105"
-  %".107" = bitcast i8** %"v15" to i64*
-  store i64 %".106", i64* %".107"
-  %".109" = getelementptr [28 x i8], [28 x i8]* @"aWrittenBySSAnd", i32 0, i32 0
-  %".110" = call i8* @"gettext"(i8* %".109")
-  store i8* %".110", i8** %"v16"
-  %".112" = load %"FILE"*, %"FILE"** %"stream"
-  %".113" = load i8*, i8** %"v16"
-  %".114" = bitcast i8** %"v15" to i64*
-  %".115" = load i64, i64* %".114"
-  %".116" = load i64, i64* %"v14"
-  %".117" = load i64, i64* %"v13"
-  %".118" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".112", i8* %".113")
+  %".95" = load i8**, i8*** %"authors"
+  %".96" = bitcast i8** %".95" to i8*
+  %".97" = getelementptr i8, i8* %".96", i64 16
+  %".98" = bitcast i8* %".97" to i8**
+  %".99" = bitcast i8** %".98" to i64*
+  %".100" = load i64, i64* %".99"
+  store i64 %".100", i64* %"v13"
+  %".102" = load i8**, i8*** %"authors"
+  %".103" = bitcast i8** %".102" to i8*
+  %".104" = getelementptr i8, i8* %".103", i64 8
+  %".105" = bitcast i8* %".104" to i8**
+  %".106" = bitcast i8** %".105" to i64*
+  %".107" = load i64, i64* %".106"
+  store i64 %".107", i64* %"v14"
+  %".109" = load i8**, i8*** %"authors"
+  %".110" = load i8*, i8** %".109"
+  store i8* %".110", i8** %"v15"
+  %".112" = getelementptr [28 x i8], [28 x i8]* @"aWrittenBySSAnd", i32 0, i32 0
+  %".113" = call i8* @"gettext"(i8* %".112")
+  store i8* %".113", i8** %"v16"
+  %".115" = load %"FILE"*, %"FILE"** %"stream"
+  %".116" = load i8*, i8** %"v16"
+  %".117" = bitcast i8** %"v15" to i64*
+  %".118" = load i64, i64* %".117"
+  %".119" = load i64, i64* %"v14"
+  %".120" = load i64, i64* %"v13"
+  %".121" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, ...)*
+  %".122" = call i32 (%"FILE"*, i8*, i64, i64, i64, ...) %".121"(%"FILE"* %".115", i8* %".116", i64 %".118", i64 %".119", i64 %".120")
   br label %"@15"
 "@8":
-  %".120" = load i8**, i8*** %"authors"
-  %".121" = bitcast i8** %".120" to i8*
-  %".122" = getelementptr i8, i8* %".121", i64 24
-  %".123" = bitcast i8* %".122" to i8**
-  %".124" = bitcast i8** %".123" to i64*
-  %".125" = load i64, i64* %".124"
-  store i64 %".125", i64* %"v17"
-  %".127" = load i8**, i8*** %"authors"
-  %".128" = bitcast i8** %".127" to i8*
-  %".129" = getelementptr i8, i8* %".128", i64 16
-  %".130" = bitcast i8* %".129" to i8**
-  %".131" = bitcast i8** %".130" to i64*
-  %".132" = load i64, i64* %".131"
-  store i64 %".132", i64* %"v18"
-  %".134" = load i8**, i8*** %"authors"
-  %".135" = bitcast i8** %".134" to i8*
-  %".136" = getelementptr i8, i8* %".135", i64 8
-  %".137" = bitcast i8* %".136" to i8**
-  %".138" = bitcast i8** %".137" to i64*
-  %".139" = load i64, i64* %".138"
-  store i64 %".139", i64* %"v19"
-  %".141" = bitcast i8*** %"authors" to i64*
-  %".142" = load i64, i64* %".141"
-  %".143" = bitcast i8** %"v20" to i64*
-  store i64 %".142", i64* %".143"
-  %".145" = getelementptr [32 x i8], [32 x i8]* @"aWrittenBySSSAn", i32 0, i32 0
-  %".146" = call i8* @"gettext"(i8* %".145")
-  store i8* %".146", i8** %"v21"
-  %".148" = load %"FILE"*, %"FILE"** %"stream"
-  %".149" = load i8*, i8** %"v21"
-  %".150" = bitcast i8** %"v20" to i64*
-  %".151" = load i64, i64* %".150"
-  %".152" = load i64, i64* %"v19"
-  %".153" = load i64, i64* %"v18"
-  %".154" = load i64, i64* %"v17"
-  %".155" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".148", i8* %".149")
+  %".124" = load i8**, i8*** %"authors"
+  %".125" = bitcast i8** %".124" to i8*
+  %".126" = getelementptr i8, i8* %".125", i64 24
+  %".127" = bitcast i8* %".126" to i8**
+  %".128" = bitcast i8** %".127" to i64*
+  %".129" = load i64, i64* %".128"
+  store i64 %".129", i64* %"v17"
+  %".131" = load i8**, i8*** %"authors"
+  %".132" = bitcast i8** %".131" to i8*
+  %".133" = getelementptr i8, i8* %".132", i64 16
+  %".134" = bitcast i8* %".133" to i8**
+  %".135" = bitcast i8** %".134" to i64*
+  %".136" = load i64, i64* %".135"
+  store i64 %".136", i64* %"v18"
+  %".138" = load i8**, i8*** %"authors"
+  %".139" = bitcast i8** %".138" to i8*
+  %".140" = getelementptr i8, i8* %".139", i64 8
+  %".141" = bitcast i8* %".140" to i8**
+  %".142" = bitcast i8** %".141" to i64*
+  %".143" = load i64, i64* %".142"
+  store i64 %".143", i64* %"v19"
+  %".145" = load i8**, i8*** %"authors"
+  %".146" = load i8*, i8** %".145"
+  store i8* %".146", i8** %"v20"
+  %".148" = getelementptr [32 x i8], [32 x i8]* @"aWrittenBySSSAn", i32 0, i32 0
+  %".149" = call i8* @"gettext"(i8* %".148")
+  store i8* %".149", i8** %"v21"
+  %".151" = load %"FILE"*, %"FILE"** %"stream"
+  %".152" = load i8*, i8** %"v21"
+  %".153" = bitcast i8** %"v20" to i64*
+  %".154" = load i64, i64* %".153"
+  %".155" = load i64, i64* %"v19"
+  %".156" = load i64, i64* %"v18"
+  %".157" = load i64, i64* %"v17"
+  %".158" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, ...)*
+  %".159" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, ...) %".158"(%"FILE"* %".151", i8* %".152", i64 %".154", i64 %".155", i64 %".156", i64 %".157")
   br label %"@15"
 "@9":
-  %".157" = load i8**, i8*** %"authors"
-  %".158" = bitcast i8** %".157" to i8*
-  %".159" = getelementptr i8, i8* %".158", i64 32
-  %".160" = bitcast i8* %".159" to i8**
-  %".161" = bitcast i8** %".160" to i64*
-  %".162" = load i64, i64* %".161"
-  store i64 %".162", i64* %"v22"
-  %".164" = load i8**, i8*** %"authors"
-  %".165" = bitcast i8** %".164" to i8*
-  %".166" = getelementptr i8, i8* %".165", i64 24
-  %".167" = bitcast i8* %".166" to i8**
-  %".168" = bitcast i8** %".167" to i64*
-  %".169" = load i64, i64* %".168"
-  store i64 %".169", i64* %"v23"
-  %".171" = load i8**, i8*** %"authors"
-  %".172" = bitcast i8** %".171" to i8*
-  %".173" = getelementptr i8, i8* %".172", i64 16
-  %".174" = bitcast i8* %".173" to i8**
-  %".175" = bitcast i8** %".174" to i64*
-  %".176" = load i64, i64* %".175"
-  store i64 %".176", i64* %"v24"
-  %".178" = load i8**, i8*** %"authors"
-  %".179" = bitcast i8** %".178" to i8*
-  %".180" = getelementptr i8, i8* %".179", i64 8
-  %".181" = bitcast i8* %".180" to i8**
-  %".182" = bitcast i8** %".181" to i64*
-  %".183" = load i64, i64* %".182"
-  store i64 %".183", i64* %"v25"
-  %".185" = bitcast i8*** %"authors" to i64*
-  %".186" = load i64, i64* %".185"
-  %".187" = bitcast i8** %"v26" to i64*
-  store i64 %".186", i64* %".187"
-  %".189" = getelementptr [36 x i8], [36 x i8]* @"aWrittenBySSSSA", i32 0, i32 0
-  %".190" = call i8* @"gettext"(i8* %".189")
-  store i8* %".190", i8** %"v27"
-  %".192" = load %"FILE"*, %"FILE"** %"stream"
-  %".193" = load i8*, i8** %"v27"
-  %".194" = bitcast i8** %"v26" to i64*
-  %".195" = load i64, i64* %".194"
-  %".196" = load i64, i64* %"v25"
-  %".197" = load i64, i64* %"v24"
-  %".198" = load i64, i64* %"v23"
-  %".199" = load i64, i64* %"v22"
-  %".200" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".192", i8* %".193")
+  %".161" = load i8**, i8*** %"authors"
+  %".162" = bitcast i8** %".161" to i8*
+  %".163" = getelementptr i8, i8* %".162", i64 32
+  %".164" = bitcast i8* %".163" to i8**
+  %".165" = bitcast i8** %".164" to i64*
+  %".166" = load i64, i64* %".165"
+  store i64 %".166", i64* %"v22"
+  %".168" = load i8**, i8*** %"authors"
+  %".169" = bitcast i8** %".168" to i8*
+  %".170" = getelementptr i8, i8* %".169", i64 24
+  %".171" = bitcast i8* %".170" to i8**
+  %".172" = bitcast i8** %".171" to i64*
+  %".173" = load i64, i64* %".172"
+  store i64 %".173", i64* %"v23"
+  %".175" = load i8**, i8*** %"authors"
+  %".176" = bitcast i8** %".175" to i8*
+  %".177" = getelementptr i8, i8* %".176", i64 16
+  %".178" = bitcast i8* %".177" to i8**
+  %".179" = bitcast i8** %".178" to i64*
+  %".180" = load i64, i64* %".179"
+  store i64 %".180", i64* %"v24"
+  %".182" = load i8**, i8*** %"authors"
+  %".183" = bitcast i8** %".182" to i8*
+  %".184" = getelementptr i8, i8* %".183", i64 8
+  %".185" = bitcast i8* %".184" to i8**
+  %".186" = bitcast i8** %".185" to i64*
+  %".187" = load i64, i64* %".186"
+  store i64 %".187", i64* %"v25"
+  %".189" = load i8**, i8*** %"authors"
+  %".190" = load i8*, i8** %".189"
+  store i8* %".190", i8** %"v26"
+  %".192" = getelementptr [36 x i8], [36 x i8]* @"aWrittenBySSSSA", i32 0, i32 0
+  %".193" = call i8* @"gettext"(i8* %".192")
+  store i8* %".193", i8** %"v27"
+  %".195" = load %"FILE"*, %"FILE"** %"stream"
+  %".196" = load i8*, i8** %"v27"
+  %".197" = bitcast i8** %"v26" to i64*
+  %".198" = load i64, i64* %".197"
+  %".199" = load i64, i64* %"v25"
+  %".200" = load i64, i64* %"v24"
+  %".201" = load i64, i64* %"v23"
+  %".202" = load i64, i64* %"v22"
+  %".203" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, ...)*
+  %".204" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, ...) %".203"(%"FILE"* %".195", i8* %".196", i64 %".198", i64 %".199", i64 %".200", i64 %".201", i64 %".202")
   br label %"@15"
 "@10":
-  %".202" = load i8**, i8*** %"authors"
-  %".203" = bitcast i8** %".202" to i8*
-  %".204" = getelementptr i8, i8* %".203", i64 40
-  %".205" = bitcast i8* %".204" to i8**
-  %".206" = bitcast i8** %".205" to i64*
-  %".207" = load i64, i64* %".206"
-  store i64 %".207", i64* %"v28"
-  %".209" = load i8**, i8*** %"authors"
-  %".210" = bitcast i8** %".209" to i8*
-  %".211" = getelementptr i8, i8* %".210", i64 32
-  %".212" = bitcast i8* %".211" to i8**
-  %".213" = bitcast i8** %".212" to i64*
-  %".214" = load i64, i64* %".213"
-  store i64 %".214", i64* %"v29"
-  %".216" = load i8**, i8*** %"authors"
-  %".217" = bitcast i8** %".216" to i8*
-  %".218" = getelementptr i8, i8* %".217", i64 24
-  %".219" = bitcast i8* %".218" to i8**
-  %".220" = bitcast i8** %".219" to i64*
-  %".221" = load i64, i64* %".220"
-  store i64 %".221", i64* %"v67"
-  %".223" = load i8**, i8*** %"authors"
-  %".224" = bitcast i8** %".223" to i8*
-  %".225" = getelementptr i8, i8* %".224", i64 16
-  %".226" = bitcast i8* %".225" to i8**
-  %".227" = bitcast i8** %".226" to i64*
-  %".228" = load i64, i64* %".227"
-  store i64 %".228", i64* %"v30"
-  %".230" = load i8**, i8*** %"authors"
-  %".231" = bitcast i8** %".230" to i8*
-  %".232" = getelementptr i8, i8* %".231", i64 8
-  %".233" = bitcast i8* %".232" to i8**
-  %".234" = bitcast i8** %".233" to i64*
-  %".235" = load i64, i64* %".234"
-  store i64 %".235", i64* %"v31"
-  %".237" = bitcast i8*** %"authors" to i64*
-  %".238" = load i64, i64* %".237"
-  %".239" = bitcast i8** %"v32" to i64*
-  store i64 %".238", i64* %".239"
-  %".241" = getelementptr [40 x i8], [40 x i8]* @"aWrittenBySSSSS", i32 0, i32 0
-  %".242" = call i8* @"gettext"(i8* %".241")
-  store i8* %".242", i8** %"v33"
-  %".244" = load %"FILE"*, %"FILE"** %"stream"
-  %".245" = load i8*, i8** %"v33"
-  %".246" = bitcast i8** %"v32" to i64*
-  %".247" = load i64, i64* %".246"
-  %".248" = load i64, i64* %"v31"
-  %".249" = load i64, i64* %"v30"
-  %".250" = load i64, i64* %"v67"
-  %".251" = load i64, i64* %"v29"
-  %".252" = load i64, i64* %"v28"
-  %".253" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".244", i8* %".245")
+  %".206" = load i8**, i8*** %"authors"
+  %".207" = bitcast i8** %".206" to i8*
+  %".208" = getelementptr i8, i8* %".207", i64 40
+  %".209" = bitcast i8* %".208" to i8**
+  %".210" = bitcast i8** %".209" to i64*
+  %".211" = load i64, i64* %".210"
+  store i64 %".211", i64* %"v28"
+  %".213" = load i8**, i8*** %"authors"
+  %".214" = bitcast i8** %".213" to i8*
+  %".215" = getelementptr i8, i8* %".214", i64 32
+  %".216" = bitcast i8* %".215" to i8**
+  %".217" = bitcast i8** %".216" to i64*
+  %".218" = load i64, i64* %".217"
+  store i64 %".218", i64* %"v29"
+  %".220" = load i8**, i8*** %"authors"
+  %".221" = bitcast i8** %".220" to i8*
+  %".222" = getelementptr i8, i8* %".221", i64 24
+  %".223" = bitcast i8* %".222" to i8**
+  %".224" = bitcast i8** %".223" to i64*
+  %".225" = load i64, i64* %".224"
+  store i64 %".225", i64* %"v67"
+  %".227" = load i8**, i8*** %"authors"
+  %".228" = bitcast i8** %".227" to i8*
+  %".229" = getelementptr i8, i8* %".228", i64 16
+  %".230" = bitcast i8* %".229" to i8**
+  %".231" = bitcast i8** %".230" to i64*
+  %".232" = load i64, i64* %".231"
+  store i64 %".232", i64* %"v30"
+  %".234" = load i8**, i8*** %"authors"
+  %".235" = bitcast i8** %".234" to i8*
+  %".236" = getelementptr i8, i8* %".235", i64 8
+  %".237" = bitcast i8* %".236" to i8**
+  %".238" = bitcast i8** %".237" to i64*
+  %".239" = load i64, i64* %".238"
+  store i64 %".239", i64* %"v31"
+  %".241" = load i8**, i8*** %"authors"
+  %".242" = load i8*, i8** %".241"
+  store i8* %".242", i8** %"v32"
+  %".244" = getelementptr [40 x i8], [40 x i8]* @"aWrittenBySSSSS", i32 0, i32 0
+  %".245" = call i8* @"gettext"(i8* %".244")
+  store i8* %".245", i8** %"v33"
+  %".247" = load %"FILE"*, %"FILE"** %"stream"
+  %".248" = load i8*, i8** %"v33"
+  %".249" = bitcast i8** %"v32" to i64*
+  %".250" = load i64, i64* %".249"
+  %".251" = load i64, i64* %"v31"
+  %".252" = load i64, i64* %"v30"
+  %".253" = load i64, i64* %"v67"
+  %".254" = load i64, i64* %"v29"
+  %".255" = load i64, i64* %"v28"
+  %".256" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, ...)*
+  %".257" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, ...) %".256"(%"FILE"* %".247", i8* %".248", i64 %".250", i64 %".251", i64 %".252", i64 %".253", i64 %".254", i64 %".255")
   br label %"@15"
 "@11":
-  %".255" = load i8**, i8*** %"authors"
-  %".256" = bitcast i8** %".255" to i8*
-  %".257" = getelementptr i8, i8* %".256", i64 48
-  %".258" = bitcast i8* %".257" to i8**
-  %".259" = bitcast i8** %".258" to i64*
-  %".260" = load i64, i64* %".259"
-  store i64 %".260", i64* %"v34"
-  %".262" = load i8**, i8*** %"authors"
-  %".263" = bitcast i8** %".262" to i8*
-  %".264" = getelementptr i8, i8* %".263", i64 40
-  %".265" = bitcast i8* %".264" to i8**
-  %".266" = bitcast i8** %".265" to i64*
-  %".267" = load i64, i64* %".266"
-  store i64 %".267", i64* %"v35"
-  %".269" = load i8**, i8*** %"authors"
-  %".270" = bitcast i8** %".269" to i8*
-  %".271" = getelementptr i8, i8* %".270", i64 32
-  %".272" = bitcast i8* %".271" to i8**
-  %".273" = bitcast i8** %".272" to i64*
-  %".274" = load i64, i64* %".273"
-  store i64 %".274", i64* %"v36"
-  %".276" = load i8**, i8*** %"authors"
-  %".277" = bitcast i8** %".276" to i8*
-  %".278" = getelementptr i8, i8* %".277", i64 24
-  %".279" = bitcast i8* %".278" to i8**
-  %".280" = bitcast i8** %".279" to i64*
-  %".281" = load i64, i64* %".280"
-  store i64 %".281", i64* %"v68"
-  %".283" = load i8**, i8*** %"authors"
-  %".284" = bitcast i8** %".283" to i8*
-  %".285" = getelementptr i8, i8* %".284", i64 16
-  %".286" = bitcast i8* %".285" to i8**
-  %".287" = bitcast i8** %".286" to i64*
-  %".288" = load i64, i64* %".287"
-  store i64 %".288", i64* %"v63"
-  %".290" = load i8**, i8*** %"authors"
-  %".291" = bitcast i8** %".290" to i8*
-  %".292" = getelementptr i8, i8* %".291", i64 8
-  %".293" = bitcast i8* %".292" to i8**
-  %".294" = bitcast i8** %".293" to i64*
-  %".295" = load i64, i64* %".294"
-  store i64 %".295", i64* %"v37"
-  %".297" = bitcast i8*** %"authors" to i64*
-  %".298" = load i64, i64* %".297"
-  %".299" = bitcast i8** %"v38" to i64*
-  store i64 %".298", i64* %".299"
-  %".301" = getelementptr [44 x i8], [44 x i8]* @"aWrittenBySSSSS_0", i32 0, i32 0
-  %".302" = call i8* @"gettext"(i8* %".301")
-  store i8* %".302", i8** %"v39"
-  %".304" = load %"FILE"*, %"FILE"** %"stream"
-  %".305" = load i8*, i8** %"v39"
-  %".306" = bitcast i8** %"v38" to i64*
-  %".307" = load i64, i64* %".306"
-  %".308" = load i64, i64* %"v37"
-  %".309" = load i64, i64* %"v63"
-  %".310" = load i64, i64* %"v68"
-  %".311" = load i64, i64* %"v36"
-  %".312" = load i64, i64* %"v35"
-  %".313" = load i64, i64* %"v34"
-  %".314" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".304", i8* %".305")
+  %".259" = load i8**, i8*** %"authors"
+  %".260" = bitcast i8** %".259" to i8*
+  %".261" = getelementptr i8, i8* %".260", i64 48
+  %".262" = bitcast i8* %".261" to i8**
+  %".263" = bitcast i8** %".262" to i64*
+  %".264" = load i64, i64* %".263"
+  store i64 %".264", i64* %"v34"
+  %".266" = load i8**, i8*** %"authors"
+  %".267" = bitcast i8** %".266" to i8*
+  %".268" = getelementptr i8, i8* %".267", i64 40
+  %".269" = bitcast i8* %".268" to i8**
+  %".270" = bitcast i8** %".269" to i64*
+  %".271" = load i64, i64* %".270"
+  store i64 %".271", i64* %"v35"
+  %".273" = load i8**, i8*** %"authors"
+  %".274" = bitcast i8** %".273" to i8*
+  %".275" = getelementptr i8, i8* %".274", i64 32
+  %".276" = bitcast i8* %".275" to i8**
+  %".277" = bitcast i8** %".276" to i64*
+  %".278" = load i64, i64* %".277"
+  store i64 %".278", i64* %"v36"
+  %".280" = load i8**, i8*** %"authors"
+  %".281" = bitcast i8** %".280" to i8*
+  %".282" = getelementptr i8, i8* %".281", i64 24
+  %".283" = bitcast i8* %".282" to i8**
+  %".284" = bitcast i8** %".283" to i64*
+  %".285" = load i64, i64* %".284"
+  store i64 %".285", i64* %"v68"
+  %".287" = load i8**, i8*** %"authors"
+  %".288" = bitcast i8** %".287" to i8*
+  %".289" = getelementptr i8, i8* %".288", i64 16
+  %".290" = bitcast i8* %".289" to i8**
+  %".291" = bitcast i8** %".290" to i64*
+  %".292" = load i64, i64* %".291"
+  store i64 %".292", i64* %"v63"
+  %".294" = load i8**, i8*** %"authors"
+  %".295" = bitcast i8** %".294" to i8*
+  %".296" = getelementptr i8, i8* %".295", i64 8
+  %".297" = bitcast i8* %".296" to i8**
+  %".298" = bitcast i8** %".297" to i64*
+  %".299" = load i64, i64* %".298"
+  store i64 %".299", i64* %"v37"
+  %".301" = load i8**, i8*** %"authors"
+  %".302" = load i8*, i8** %".301"
+  store i8* %".302", i8** %"v38"
+  %".304" = getelementptr [44 x i8], [44 x i8]* @"aWrittenBySSSSS_0", i32 0, i32 0
+  %".305" = call i8* @"gettext"(i8* %".304")
+  store i8* %".305", i8** %"v39"
+  %".307" = load %"FILE"*, %"FILE"** %"stream"
+  %".308" = load i8*, i8** %"v39"
+  %".309" = bitcast i8** %"v38" to i64*
+  %".310" = load i64, i64* %".309"
+  %".311" = load i64, i64* %"v37"
+  %".312" = load i64, i64* %"v63"
+  %".313" = load i64, i64* %"v68"
+  %".314" = load i64, i64* %"v36"
+  %".315" = load i64, i64* %"v35"
+  %".316" = load i64, i64* %"v34"
+  %".317" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, ...)*
+  %".318" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, ...) %".317"(%"FILE"* %".307", i8* %".308", i64 %".310", i64 %".311", i64 %".312", i64 %".313", i64 %".314", i64 %".315", i64 %".316")
   br label %"@15"
 "@12":
-  %".316" = load i8**, i8*** %"authors"
-  %".317" = bitcast i8** %".316" to i8*
-  %".318" = getelementptr i8, i8* %".317", i64 56
-  %".319" = bitcast i8* %".318" to i8**
-  %".320" = bitcast i8** %".319" to i64*
-  %".321" = load i64, i64* %".320"
-  store i64 %".321", i64* %"v69"
-  %".323" = load i8**, i8*** %"authors"
-  %".324" = bitcast i8** %".323" to i8*
-  %".325" = getelementptr i8, i8* %".324", i64 48
-  %".326" = bitcast i8* %".325" to i8**
-  %".327" = bitcast i8** %".326" to i64*
-  %".328" = load i64, i64* %".327"
-  store i64 %".328", i64* %"v40"
-  %".330" = load i8**, i8*** %"authors"
-  %".331" = bitcast i8** %".330" to i8*
-  %".332" = getelementptr i8, i8* %".331", i64 40
-  %".333" = bitcast i8* %".332" to i8**
-  %".334" = bitcast i8** %".333" to i64*
-  %".335" = load i64, i64* %".334"
-  store i64 %".335", i64* %"v41"
-  %".337" = load i8**, i8*** %"authors"
-  %".338" = bitcast i8** %".337" to i8*
-  %".339" = getelementptr i8, i8* %".338", i64 32
-  %".340" = bitcast i8* %".339" to i8**
-  %".341" = bitcast i8** %".340" to i64*
-  %".342" = load i64, i64* %".341"
-  store i64 %".342", i64* %"v42"
-  %".344" = load i8**, i8*** %"authors"
-  %".345" = bitcast i8** %".344" to i8*
-  %".346" = getelementptr i8, i8* %".345", i64 24
-  %".347" = bitcast i8* %".346" to i8**
-  %".348" = bitcast i8** %".347" to i64*
-  %".349" = load i64, i64* %".348"
-  store i64 %".349", i64* %"v64"
-  %".351" = load i8**, i8*** %"authors"
-  %".352" = bitcast i8** %".351" to i8*
-  %".353" = getelementptr i8, i8* %".352", i64 16
-  %".354" = bitcast i8* %".353" to i8**
-  %".355" = bitcast i8** %".354" to i64*
-  %".356" = load i64, i64* %".355"
-  store i64 %".356", i64* %"v60"
-  %".358" = load i8**, i8*** %"authors"
-  %".359" = bitcast i8** %".358" to i8*
-  %".360" = getelementptr i8, i8* %".359", i64 8
-  %".361" = bitcast i8* %".360" to i8**
-  %".362" = bitcast i8** %".361" to i64*
-  %".363" = load i64, i64* %".362"
-  store i64 %".363", i64* %"v43"
-  %".365" = bitcast i8*** %"authors" to i64*
-  %".366" = load i64, i64* %".365"
-  %".367" = bitcast i8** %"v44" to i64*
-  store i64 %".366", i64* %".367"
-  %".369" = getelementptr [48 x i8], [48 x i8]* @"aWrittenBySSSSS_1", i32 0, i32 0
-  %".370" = call i8* @"gettext"(i8* %".369")
-  store i8* %".370", i8** %"v45"
-  %".372" = load %"FILE"*, %"FILE"** %"stream"
-  %".373" = load i8*, i8** %"v45"
-  %".374" = bitcast i8** %"v44" to i64*
-  %".375" = load i64, i64* %".374"
-  %".376" = load i64, i64* %"v43"
-  %".377" = load i64, i64* %"v60"
-  %".378" = load i64, i64* %"v64"
-  %".379" = load i64, i64* %"v42"
-  %".380" = load i64, i64* %"v41"
-  %".381" = load i64, i64* %"v40"
-  %".382" = load i64, i64* %"v69"
-  %".383" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".372", i8* %".373")
+  %".320" = load i8**, i8*** %"authors"
+  %".321" = bitcast i8** %".320" to i8*
+  %".322" = getelementptr i8, i8* %".321", i64 56
+  %".323" = bitcast i8* %".322" to i8**
+  %".324" = bitcast i8** %".323" to i64*
+  %".325" = load i64, i64* %".324"
+  store i64 %".325", i64* %"v69"
+  %".327" = load i8**, i8*** %"authors"
+  %".328" = bitcast i8** %".327" to i8*
+  %".329" = getelementptr i8, i8* %".328", i64 48
+  %".330" = bitcast i8* %".329" to i8**
+  %".331" = bitcast i8** %".330" to i64*
+  %".332" = load i64, i64* %".331"
+  store i64 %".332", i64* %"v40"
+  %".334" = load i8**, i8*** %"authors"
+  %".335" = bitcast i8** %".334" to i8*
+  %".336" = getelementptr i8, i8* %".335", i64 40
+  %".337" = bitcast i8* %".336" to i8**
+  %".338" = bitcast i8** %".337" to i64*
+  %".339" = load i64, i64* %".338"
+  store i64 %".339", i64* %"v41"
+  %".341" = load i8**, i8*** %"authors"
+  %".342" = bitcast i8** %".341" to i8*
+  %".343" = getelementptr i8, i8* %".342", i64 32
+  %".344" = bitcast i8* %".343" to i8**
+  %".345" = bitcast i8** %".344" to i64*
+  %".346" = load i64, i64* %".345"
+  store i64 %".346", i64* %"v42"
+  %".348" = load i8**, i8*** %"authors"
+  %".349" = bitcast i8** %".348" to i8*
+  %".350" = getelementptr i8, i8* %".349", i64 24
+  %".351" = bitcast i8* %".350" to i8**
+  %".352" = bitcast i8** %".351" to i64*
+  %".353" = load i64, i64* %".352"
+  store i64 %".353", i64* %"v64"
+  %".355" = load i8**, i8*** %"authors"
+  %".356" = bitcast i8** %".355" to i8*
+  %".357" = getelementptr i8, i8* %".356", i64 16
+  %".358" = bitcast i8* %".357" to i8**
+  %".359" = bitcast i8** %".358" to i64*
+  %".360" = load i64, i64* %".359"
+  store i64 %".360", i64* %"v60"
+  %".362" = load i8**, i8*** %"authors"
+  %".363" = bitcast i8** %".362" to i8*
+  %".364" = getelementptr i8, i8* %".363", i64 8
+  %".365" = bitcast i8* %".364" to i8**
+  %".366" = bitcast i8** %".365" to i64*
+  %".367" = load i64, i64* %".366"
+  store i64 %".367", i64* %"v43"
+  %".369" = load i8**, i8*** %"authors"
+  %".370" = load i8*, i8** %".369"
+  store i8* %".370", i8** %"v44"
+  %".372" = getelementptr [48 x i8], [48 x i8]* @"aWrittenBySSSSS_1", i32 0, i32 0
+  %".373" = call i8* @"gettext"(i8* %".372")
+  store i8* %".373", i8** %"v45"
+  %".375" = load %"FILE"*, %"FILE"** %"stream"
+  %".376" = load i8*, i8** %"v45"
+  %".377" = bitcast i8** %"v44" to i64*
+  %".378" = load i64, i64* %".377"
+  %".379" = load i64, i64* %"v43"
+  %".380" = load i64, i64* %"v60"
+  %".381" = load i64, i64* %"v64"
+  %".382" = load i64, i64* %"v42"
+  %".383" = load i64, i64* %"v41"
+  %".384" = load i64, i64* %"v40"
+  %".385" = load i64, i64* %"v69"
+  %".386" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, ...)*
+  %".387" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, ...) %".386"(%"FILE"* %".375", i8* %".376", i64 %".378", i64 %".379", i64 %".380", i64 %".381", i64 %".382", i64 %".383", i64 %".384", i64 %".385")
   br label %"@15"
 "@13":
-  %".385" = load i8**, i8*** %"authors"
-  %".386" = bitcast i8** %".385" to i8*
-  %".387" = getelementptr i8, i8* %".386", i64 64
-  %".388" = bitcast i8* %".387" to i8**
-  %".389" = bitcast i8** %".388" to i64*
-  %".390" = load i64, i64* %".389"
-  store i64 %".390", i64* %"v70"
-  %".392" = load i8**, i8*** %"authors"
-  %".393" = bitcast i8** %".392" to i8*
-  %".394" = getelementptr i8, i8* %".393", i64 56
-  %".395" = bitcast i8* %".394" to i8**
-  %".396" = bitcast i8** %".395" to i64*
-  %".397" = load i64, i64* %".396"
-  store i64 %".397", i64* %"v65"
-  %".399" = load i8**, i8*** %"authors"
-  %".400" = bitcast i8** %".399" to i8*
-  %".401" = getelementptr i8, i8* %".400", i64 48
-  %".402" = bitcast i8* %".401" to i8**
-  %".403" = bitcast i8** %".402" to i64*
-  %".404" = load i64, i64* %".403"
-  store i64 %".404", i64* %"v46"
-  %".406" = load i8**, i8*** %"authors"
-  %".407" = bitcast i8** %".406" to i8*
-  %".408" = getelementptr i8, i8* %".407", i64 40
-  %".409" = bitcast i8* %".408" to i8**
-  %".410" = bitcast i8** %".409" to i64*
-  %".411" = load i64, i64* %".410"
-  store i64 %".411", i64* %"v47"
-  %".413" = load i8**, i8*** %"authors"
-  %".414" = bitcast i8** %".413" to i8*
-  %".415" = getelementptr i8, i8* %".414", i64 32
-  %".416" = bitcast i8* %".415" to i8**
-  %".417" = bitcast i8** %".416" to i64*
-  %".418" = load i64, i64* %".417"
-  store i64 %".418", i64* %"v48"
-  %".420" = load i8**, i8*** %"authors"
-  %".421" = bitcast i8** %".420" to i8*
-  %".422" = getelementptr i8, i8* %".421", i64 24
-  %".423" = bitcast i8* %".422" to i8**
-  %".424" = bitcast i8** %".423" to i64*
-  %".425" = load i64, i64* %".424"
-  store i64 %".425", i64* %"v61"
-  %".427" = load i8**, i8*** %"authors"
-  %".428" = bitcast i8** %".427" to i8*
-  %".429" = getelementptr i8, i8* %".428", i64 16
-  %".430" = bitcast i8* %".429" to i8**
-  %".431" = bitcast i8** %".430" to i64*
-  %".432" = load i64, i64* %".431"
-  store i64 %".432", i64* %"v58"
-  %".434" = load i8**, i8*** %"authors"
-  %".435" = bitcast i8** %".434" to i8*
-  %".436" = getelementptr i8, i8* %".435", i64 8
-  %".437" = bitcast i8* %".436" to i8**
-  %".438" = bitcast i8** %".437" to i64*
-  %".439" = load i64, i64* %".438"
-  store i64 %".439", i64* %"v49"
-  %".441" = bitcast i8*** %"authors" to i64*
-  %".442" = load i64, i64* %".441"
-  %".443" = bitcast i8** %"v50" to i64*
-  store i64 %".442", i64* %".443"
-  %".445" = getelementptr [52 x i8], [52 x i8]* @"aWrittenBySSSSS_2", i32 0, i32 0
-  %".446" = call i8* @"gettext"(i8* %".445")
-  store i8* %".446", i8** %"v51"
-  %".448" = load %"FILE"*, %"FILE"** %"stream"
-  %".449" = load i8*, i8** %"v51"
-  %".450" = bitcast i8** %"v50" to i64*
-  %".451" = load i64, i64* %".450"
-  %".452" = load i64, i64* %"v49"
-  %".453" = load i64, i64* %"v58"
-  %".454" = load i64, i64* %"v61"
-  %".455" = load i64, i64* %"v48"
-  %".456" = load i64, i64* %"v47"
-  %".457" = load i64, i64* %"v46"
-  %".458" = load i64, i64* %"v65"
-  %".459" = load i64, i64* %"v70"
-  %".460" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".448", i8* %".449")
+  %".389" = load i8**, i8*** %"authors"
+  %".390" = bitcast i8** %".389" to i8*
+  %".391" = getelementptr i8, i8* %".390", i64 64
+  %".392" = bitcast i8* %".391" to i8**
+  %".393" = bitcast i8** %".392" to i64*
+  %".394" = load i64, i64* %".393"
+  store i64 %".394", i64* %"v70"
+  %".396" = load i8**, i8*** %"authors"
+  %".397" = bitcast i8** %".396" to i8*
+  %".398" = getelementptr i8, i8* %".397", i64 56
+  %".399" = bitcast i8* %".398" to i8**
+  %".400" = bitcast i8** %".399" to i64*
+  %".401" = load i64, i64* %".400"
+  store i64 %".401", i64* %"v65"
+  %".403" = load i8**, i8*** %"authors"
+  %".404" = bitcast i8** %".403" to i8*
+  %".405" = getelementptr i8, i8* %".404", i64 48
+  %".406" = bitcast i8* %".405" to i8**
+  %".407" = bitcast i8** %".406" to i64*
+  %".408" = load i64, i64* %".407"
+  store i64 %".408", i64* %"v46"
+  %".410" = load i8**, i8*** %"authors"
+  %".411" = bitcast i8** %".410" to i8*
+  %".412" = getelementptr i8, i8* %".411", i64 40
+  %".413" = bitcast i8* %".412" to i8**
+  %".414" = bitcast i8** %".413" to i64*
+  %".415" = load i64, i64* %".414"
+  store i64 %".415", i64* %"v47"
+  %".417" = load i8**, i8*** %"authors"
+  %".418" = bitcast i8** %".417" to i8*
+  %".419" = getelementptr i8, i8* %".418", i64 32
+  %".420" = bitcast i8* %".419" to i8**
+  %".421" = bitcast i8** %".420" to i64*
+  %".422" = load i64, i64* %".421"
+  store i64 %".422", i64* %"v48"
+  %".424" = load i8**, i8*** %"authors"
+  %".425" = bitcast i8** %".424" to i8*
+  %".426" = getelementptr i8, i8* %".425", i64 24
+  %".427" = bitcast i8* %".426" to i8**
+  %".428" = bitcast i8** %".427" to i64*
+  %".429" = load i64, i64* %".428"
+  store i64 %".429", i64* %"v61"
+  %".431" = load i8**, i8*** %"authors"
+  %".432" = bitcast i8** %".431" to i8*
+  %".433" = getelementptr i8, i8* %".432", i64 16
+  %".434" = bitcast i8* %".433" to i8**
+  %".435" = bitcast i8** %".434" to i64*
+  %".436" = load i64, i64* %".435"
+  store i64 %".436", i64* %"v58"
+  %".438" = load i8**, i8*** %"authors"
+  %".439" = bitcast i8** %".438" to i8*
+  %".440" = getelementptr i8, i8* %".439", i64 8
+  %".441" = bitcast i8* %".440" to i8**
+  %".442" = bitcast i8** %".441" to i64*
+  %".443" = load i64, i64* %".442"
+  store i64 %".443", i64* %"v49"
+  %".445" = load i8**, i8*** %"authors"
+  %".446" = load i8*, i8** %".445"
+  store i8* %".446", i8** %"v50"
+  %".448" = getelementptr [52 x i8], [52 x i8]* @"aWrittenBySSSSS_2", i32 0, i32 0
+  %".449" = call i8* @"gettext"(i8* %".448")
+  store i8* %".449", i8** %"v51"
+  %".451" = load %"FILE"*, %"FILE"** %"stream"
+  %".452" = load i8*, i8** %"v51"
+  %".453" = bitcast i8** %"v50" to i64*
+  %".454" = load i64, i64* %".453"
+  %".455" = load i64, i64* %"v49"
+  %".456" = load i64, i64* %"v58"
+  %".457" = load i64, i64* %"v61"
+  %".458" = load i64, i64* %"v48"
+  %".459" = load i64, i64* %"v47"
+  %".460" = load i64, i64* %"v46"
+  %".461" = load i64, i64* %"v65"
+  %".462" = load i64, i64* %"v70"
+  %".463" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, i64, ...)*
+  %".464" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, i64, ...) %".463"(%"FILE"* %".451", i8* %".452", i64 %".454", i64 %".455", i64 %".456", i64 %".457", i64 %".458", i64 %".459", i64 %".460", i64 %".461", i64 %".462")
   br label %"@15"
 "@14":
-  %".462" = load i8**, i8*** %"authors"
-  %".463" = bitcast i8** %".462" to i8*
-  %".464" = getelementptr i8, i8* %".463", i64 64
-  %".465" = bitcast i8* %".464" to i8**
-  %".466" = bitcast i8** %".465" to i64*
-  %".467" = load i64, i64* %".466"
-  store i64 %".467", i64* %"v71"
-  %".469" = load i8**, i8*** %"authors"
-  %".470" = bitcast i8** %".469" to i8*
-  %".471" = getelementptr i8, i8* %".470", i64 56
-  %".472" = bitcast i8* %".471" to i8**
-  %".473" = bitcast i8** %".472" to i64*
-  %".474" = load i64, i64* %".473"
-  store i64 %".474", i64* %"v66"
-  %".476" = load i8**, i8*** %"authors"
-  %".477" = bitcast i8** %".476" to i8*
-  %".478" = getelementptr i8, i8* %".477", i64 48
-  %".479" = bitcast i8* %".478" to i8**
-  %".480" = bitcast i8** %".479" to i64*
-  %".481" = load i64, i64* %".480"
-  store i64 %".481", i64* %"v52"
-  %".483" = load i8**, i8*** %"authors"
-  %".484" = bitcast i8** %".483" to i8*
-  %".485" = getelementptr i8, i8* %".484", i64 40
-  %".486" = bitcast i8* %".485" to i8**
-  %".487" = bitcast i8** %".486" to i64*
-  %".488" = load i64, i64* %".487"
-  store i64 %".488", i64* %"v53"
-  %".490" = load i8**, i8*** %"authors"
-  %".491" = bitcast i8** %".490" to i8*
-  %".492" = getelementptr i8, i8* %".491", i64 32
-  %".493" = bitcast i8* %".492" to i8**
-  %".494" = bitcast i8** %".493" to i64*
-  %".495" = load i64, i64* %".494"
-  store i64 %".495", i64* %"v54"
-  %".497" = load i8**, i8*** %"authors"
-  %".498" = bitcast i8** %".497" to i8*
-  %".499" = getelementptr i8, i8* %".498", i64 24
-  %".500" = bitcast i8* %".499" to i8**
-  %".501" = bitcast i8** %".500" to i64*
-  %".502" = load i64, i64* %".501"
-  store i64 %".502", i64* %"v62"
-  %".504" = load i8**, i8*** %"authors"
-  %".505" = bitcast i8** %".504" to i8*
-  %".506" = getelementptr i8, i8* %".505", i64 16
-  %".507" = bitcast i8* %".506" to i8**
-  %".508" = bitcast i8** %".507" to i64*
-  %".509" = load i64, i64* %".508"
-  store i64 %".509", i64* %"v59"
-  %".511" = load i8**, i8*** %"authors"
-  %".512" = bitcast i8** %".511" to i8*
-  %".513" = getelementptr i8, i8* %".512", i64 8
-  %".514" = bitcast i8* %".513" to i8**
-  %".515" = bitcast i8** %".514" to i64*
-  %".516" = load i64, i64* %".515"
-  store i64 %".516", i64* %"v55"
-  %".518" = bitcast i8*** %"authors" to i64*
-  %".519" = load i64, i64* %".518"
-  %".520" = bitcast i8** %"v56" to i64*
-  store i64 %".519", i64* %".520"
-  %".522" = getelementptr [60 x i8], [60 x i8]* @"aWrittenBySSSSS_3", i32 0, i32 0
-  %".523" = call i8* @"gettext"(i8* %".522")
-  store i8* %".523", i8** %"v57"
-  %".525" = load %"FILE"*, %"FILE"** %"stream"
-  %".526" = load i8*, i8** %"v57"
-  %".527" = bitcast i8** %"v56" to i64*
-  %".528" = load i64, i64* %".527"
-  %".529" = load i64, i64* %"v55"
-  %".530" = load i64, i64* %"v59"
-  %".531" = load i64, i64* %"v62"
-  %".532" = load i64, i64* %"v54"
-  %".533" = load i64, i64* %"v53"
-  %".534" = load i64, i64* %"v52"
-  %".535" = load i64, i64* %"v66"
-  %".536" = load i64, i64* %"v71"
-  %".537" = call i32 (%"FILE"*, i8*, ...) @"fprintf"(%"FILE"* %".525", i8* %".526")
+  %".466" = load i8**, i8*** %"authors"
+  %".467" = bitcast i8** %".466" to i8*
+  %".468" = getelementptr i8, i8* %".467", i64 64
+  %".469" = bitcast i8* %".468" to i8**
+  %".470" = bitcast i8** %".469" to i64*
+  %".471" = load i64, i64* %".470"
+  store i64 %".471", i64* %"v71"
+  %".473" = load i8**, i8*** %"authors"
+  %".474" = bitcast i8** %".473" to i8*
+  %".475" = getelementptr i8, i8* %".474", i64 56
+  %".476" = bitcast i8* %".475" to i8**
+  %".477" = bitcast i8** %".476" to i64*
+  %".478" = load i64, i64* %".477"
+  store i64 %".478", i64* %"v66"
+  %".480" = load i8**, i8*** %"authors"
+  %".481" = bitcast i8** %".480" to i8*
+  %".482" = getelementptr i8, i8* %".481", i64 48
+  %".483" = bitcast i8* %".482" to i8**
+  %".484" = bitcast i8** %".483" to i64*
+  %".485" = load i64, i64* %".484"
+  store i64 %".485", i64* %"v52"
+  %".487" = load i8**, i8*** %"authors"
+  %".488" = bitcast i8** %".487" to i8*
+  %".489" = getelementptr i8, i8* %".488", i64 40
+  %".490" = bitcast i8* %".489" to i8**
+  %".491" = bitcast i8** %".490" to i64*
+  %".492" = load i64, i64* %".491"
+  store i64 %".492", i64* %"v53"
+  %".494" = load i8**, i8*** %"authors"
+  %".495" = bitcast i8** %".494" to i8*
+  %".496" = getelementptr i8, i8* %".495", i64 32
+  %".497" = bitcast i8* %".496" to i8**
+  %".498" = bitcast i8** %".497" to i64*
+  %".499" = load i64, i64* %".498"
+  store i64 %".499", i64* %"v54"
+  %".501" = load i8**, i8*** %"authors"
+  %".502" = bitcast i8** %".501" to i8*
+  %".503" = getelementptr i8, i8* %".502", i64 24
+  %".504" = bitcast i8* %".503" to i8**
+  %".505" = bitcast i8** %".504" to i64*
+  %".506" = load i64, i64* %".505"
+  store i64 %".506", i64* %"v62"
+  %".508" = load i8**, i8*** %"authors"
+  %".509" = bitcast i8** %".508" to i8*
+  %".510" = getelementptr i8, i8* %".509", i64 16
+  %".511" = bitcast i8* %".510" to i8**
+  %".512" = bitcast i8** %".511" to i64*
+  %".513" = load i64, i64* %".512"
+  store i64 %".513", i64* %"v59"
+  %".515" = load i8**, i8*** %"authors"
+  %".516" = bitcast i8** %".515" to i8*
+  %".517" = getelementptr i8, i8* %".516", i64 8
+  %".518" = bitcast i8* %".517" to i8**
+  %".519" = bitcast i8** %".518" to i64*
+  %".520" = load i64, i64* %".519"
+  store i64 %".520", i64* %"v55"
+  %".522" = load i8**, i8*** %"authors"
+  %".523" = load i8*, i8** %".522"
+  store i8* %".523", i8** %"v56"
+  %".525" = getelementptr [60 x i8], [60 x i8]* @"aWrittenBySSSSS_3", i32 0, i32 0
+  %".526" = call i8* @"gettext"(i8* %".525")
+  store i8* %".526", i8** %"v57"
+  %".528" = load %"FILE"*, %"FILE"** %"stream"
+  %".529" = load i8*, i8** %"v57"
+  %".530" = bitcast i8** %"v56" to i64*
+  %".531" = load i64, i64* %".530"
+  %".532" = load i64, i64* %"v55"
+  %".533" = load i64, i64* %"v59"
+  %".534" = load i64, i64* %"v62"
+  %".535" = load i64, i64* %"v54"
+  %".536" = load i64, i64* %"v53"
+  %".537" = load i64, i64* %"v52"
+  %".538" = load i64, i64* %"v66"
+  %".539" = load i64, i64* %"v71"
+  %".540" = bitcast i32 (%"FILE"*, i8*, ...)* @"fprintf" to i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, i64, ...)*
+  %".541" = call i32 (%"FILE"*, i8*, i64, i64, i64, i64, i64, i64, i64, i64, i64, ...) %".540"(%"FILE"* %".528", i8* %".529", i64 %".531", i64 %".532", i64 %".533", i64 %".534", i64 %".535", i64 %".536", i64 %".537", i64 %".538", i64 %".539")
   br label %"@15"
 "@15":
   %".16" = load i8*, i8** %"funcresult"

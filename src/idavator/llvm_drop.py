@@ -1698,6 +1698,28 @@ class LLVMDropConverter:
                          and not self._value_used(ins))
         callee_name = (self._fnptr_bitcast[callee.name]
                        if is_fnptr_cast else callee.name)
+        # A VARIADIC callee carrying surplus varargs that SPILL past the 6 integer
+        # arg registers (e.g. ``fprintf(stream, "...%s...", a0, ..., a4)`` with 5+
+        # author varargs) must reach ``_emit_call_vararg`` -- NOT the fixed-arity
+        # ``_emit_call_stackargs`` path below. ``_emit_call_vararg`` owns the
+        # variadic-tail policy: it forwards a register-resident tail faithfully and
+        # cleanly DECLINES a STACK-passed tail (args 6+) to a native fallback (the
+        # stack-tail lowering is not faithfully reconstructible -- see that method).
+        # Routing it through ``_emit_call_stackargs`` instead would decline anyway
+        # but for the wrong reason (``prototype arity 2 != call arity 7``), bypassing
+        # the variadic-tail policy. Scoped to a RESOLVED, variadic callee whose
+        # RESULT is discarded (the only shape ``_emit_call_vararg`` handles); a
+        # consumed-result variadic call falls through unchanged.
+        if (len(call_args) > len(argregs) and callee_name not in vmap
+                and not self._value_used(ins)):
+            _va_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, callee_name)
+            _va_tif = ida_typeinf.tinfo_t()
+            if (_va_ea != ida_idaapi.BADADDR
+                    and ida_nalt.get_tinfo(_va_tif, _va_ea)
+                    and _va_tif.is_func() and _va_tif.is_vararg_cc()
+                    and len(call_args) > _va_tif.get_nargs()):
+                return self._emit_call_vararg(
+                    mba, blk, anchor, ea, ins, vmap, _va_ea, _va_tif)
         # More integer args than ABI registers: the 7th+ ride on the stack. A
         # direct (named) callee whose prototype is known lets us build an
         # explicit mcallinfo (set_type does the SysV reg/stack classification),
@@ -1916,8 +1938,39 @@ class LLVMDropConverter:
         # Fixed args: set_type already created their slots + arglocs; fill values.
         for i in range(min(nfixed, fi.args.size())):
             _fill_arg(fi.args[i], call_args[i])
+        # STACK-PASSED VARIADIC TAIL -- DECLINE (clean native fallback).
+        #
+        # When a variadic call carries MORE than 6 integer args, the 7th+ author
+        # varargs spill onto the stack (SysV: rsp+0, rsp+8, ...). The microcode for
+        # such a call IS expressible -- an mcallinfo with ALOC_STACK arglocs for the
+        # tail (byte-identical to native Hex-Rays' own GLBOPT form, verified on
+        # version_etc_arn) PASSES ``mba.verify`` at MMAT_PREOPTIMIZED. BUT the FULL
+        # decompile still fails: glbopt's stack-argument area analysis expects the
+        # HOST frame to MODEL the outgoing-arg region (as Hex-Rays' machine-code
+        # lifter sets it up), which a hand-synthesised mba does not, so a later
+        # glbopt sub-pass rewrites a tail mov with mismatched operand sizes and
+        # trips INTERR 50836 ("wrong operand sizes", verify.cpp:948). Modelling the
+        # tail as SP-stores into a reserved outgoing-arg frame region is a much
+        # larger change than this call-emitter and is out of scope here.
+        #
+        # So DECLINE: raise so the drop DEFERS to IDA's native decompile of the
+        # function -- a native fallback is IDA's OWN output, NOT a divergent
+        # idavator drop. NOTE (oracle): unlike the prior `dd4079d` assumption, the
+        # PRISTINE native decompile of version_etc_arn is NOT while(1)-divergent on
+        # this IDA build; it renders a clean switch with every author vararg
+        # forwarded. The fallback is therefore genuinely faithful, and this decline
+        # REMOVES the live B5 divergence (the committed-IR drop dropped every
+        # vararg AND had a spurious while(1) from a partial build). Checked here,
+        # before any tail microcode is emitted, so no partial body is built.
+        if len(call_args) > len(arg_reg_names):
+            raise NotImplementedError(
+                f"stack-passed variadic tail ({len(call_args)} args > "
+                f"{len(arg_reg_names)} integer arg regs) for "
+                f"@{ops[-1].name}: declines to native fallback "
+                f"(glbopt INTERR 50836; see _emit_call_vararg)")
         # Variadic tail: APPEND each surplus arg with the next SysV integer
-        # register argloc, mirroring the native variadic tail.
+        # register argloc, mirroring the native variadic tail. (All appended args
+        # ride in registers here -- the stack-tail case declined above.)
         for i in range(nfixed, len(call_args)):
             a = call_args[i]
             arg = hx.mcallarg_t()
@@ -1939,8 +1992,9 @@ class LLVMDropConverter:
             else:
                 arg.type = self._int_tinfo(fsz)
             arg.size = fsz
-            if i < len(arg_reg_names):
-                arg.argloc._set_reg1(ida_idp.str2reg(arg_reg_names[i]))
+            # Every appended vararg rides in an integer arg register here (the
+            # stack-spill case > 6 args declined above).
+            arg.argloc._set_reg1(ida_idp.str2reg(arg_reg_names[i]))
             _fill_arg(arg, a)
             fi.args.push_back(arg)
         # Result scaffolding. The variadic callees we recover (printf/error/...)
