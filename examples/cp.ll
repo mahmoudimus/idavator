@@ -32939,8 +32939,8 @@ define i1 @"re_protect"(i8* %".1", i64 %".2", %"dir_attr"* %".3", %"cp_options"*
   store i64 %".2", i64* %"src_offset"
   store %"dir_attr"* %".3", %"dir_attr"** %"attr_list"
   store %"cp_options"* %".4", %"cp_options"** %"x"
-  %".120" = alloca %"timespec"
-  %".130" = alloca %"timespec"
+  %".114" = alloca %"timespec"
+  %".124" = alloca %"timespec"
   br label %"@1"
 "@1":
   %".13" = load i8*, i8** %"const_dst_name"
@@ -32948,304 +32948,300 @@ define i1 @"re_protect"(i8* %".1", i64 %".2", %"dir_attr"* %".3", %"cp_options"*
   %".15" = load i64, i64* %"src_offset"
   store i64 %".15", i64* %"src_offseta"
   %".17" = load %"dir_attr"*, %"dir_attr"** %"attr_list"
-  %".18" = bitcast %"dir_attr"* %".17" to i8*
-  %".19" = bitcast %"dir_attr"** %"attr_lista" to i8*
-  %".20" = call i8* @"memcpy"(i8* %".19", i8* %".18", i64 168)
-  %".21" = load %"cp_options"*, %"cp_options"** %"x"
-  %".22" = bitcast %"cp_options"* %".21" to i8*
-  %".23" = bitcast %"cp_options"** %"xa" to i8*
-  %".24" = call i8* @"memcpy"(i8* %".23", i8* %".22", i64 80)
-  %".25" = call i64 @"__readfsqword"(i32 40)
-  store i64 %".25", i64* %"v29"
-  %".27" = load i8*, i8** %"const_dst_name"
-  store i8* %".27", i8** %"__old"
-  %".29" = load i8*, i8** %"const_dst_name"
-  %".30" = call i64 @"strlen"(i8* %".29")
-  store i64 %".30", i64* %"v4"
-  %".32" = load i64, i64* %"v4"
-  %".33" = add i64 %".32", 1
-  store i64 %".33", i64* %"__len"
-  %".35" = load i64, i64* %"v4"
-  %".36" = add i64 %".35", 24
-  %".37" = udiv i64 %".36", 16
-  %".38" = mul i64 16, %".37"
-  store i64 %".38", i64* %"v5"
+  store %"dir_attr"* %".17", %"dir_attr"** %"attr_lista"
+  %".19" = load %"cp_options"*, %"cp_options"** %"x"
+  store %"cp_options"* %".19", %"cp_options"** %"xa"
+  %".21" = call i64 @"__readfsqword"(i32 40)
+  store i64 %".21", i64* %"v29"
+  %".23" = load i8*, i8** %"const_dst_name"
+  store i8* %".23", i8** %"__old"
+  %".25" = load i8*, i8** %"const_dst_name"
+  %".26" = call i64 @"strlen"(i8* %".25")
+  store i64 %".26", i64* %"v4"
+  %".28" = load i64, i64* %"v4"
+  %".29" = add i64 %".28", 1
+  store i64 %".29", i64* %"__len"
+  %".31" = load i64, i64* %"v4"
+  %".32" = add i64 %".31", 24
+  %".33" = udiv i64 %".32", 16
+  %".34" = mul i64 16, %".33"
+  store i64 %".34", i64* %"v5"
   br label %"@2"
 "@2":
-  %".41" = load i64, i64* %"v5"
-  %".42" = and i64 %".41", 18446744073709547520
-  %".43" = sub i64 0, %".42"
-  %".44" = bitcast %"cp_options"** %"xa" to i8*
-  %".45" = getelementptr i8, i8* %".44", i64 %".43"
-  %".46" = bitcast i8* %".45" to %"cp_options"**
-  %".47" = ptrtoint %"cp_options"** %"xa" to i64
-  %".48" = ptrtoint %"cp_options"** %".46" to i64
-  %".49" = icmp ne i64 %".47", %".48"
-  br i1 %".49", label %"@2", label %"@3"
+  %".37" = load i64, i64* %"v5"
+  %".38" = and i64 %".37", 18446744073709547520
+  %".39" = sub i64 0, %".38"
+  %".40" = bitcast %"cp_options"** %"xa" to i8*
+  %".41" = getelementptr i8, i8* %".40", i64 %".39"
+  %".42" = bitcast i8* %".41" to %"cp_options"**
+  %".43" = ptrtoint %"cp_options"** %"xa" to i64
+  %".44" = ptrtoint %"cp_options"** %".42" to i64
+  %".45" = icmp ne i64 %".43", %".44"
+  br i1 %".45", label %"@2", label %"@3"
 "@3":
-  %".51" = load i8*, i8** %"v6"
-  %".52" = bitcast i64* %"v5" to i16*
-  %".53" = load i16, i16* %".52"
-  %".54" = and i16 %".53", 4095
-  %".55" = sext i16 %".54" to i64
-  %".56" = call i8* @"alloca"(i64 %".55")
-  store i8* %".56", i8** %"v6"
-  %".58" = bitcast i64* %"v5" to i16*
-  %".59" = load i16, i16* %".58"
-  %".60" = and i16 %".59", 4095
-  %".61" = icmp eq i16 %".60", 0
-  br i1 %".61", label %"@5", label %"@4"
+  %".47" = load i8*, i8** %"v6"
+  %".48" = bitcast i64* %"v5" to i16*
+  %".49" = load i16, i16* %".48"
+  %".50" = and i16 %".49", 4095
+  %".51" = sext i16 %".50" to i64
+  %".52" = call i8* @"alloca"(i64 %".51")
+  store i8* %".52", i8** %"v6"
+  %".54" = bitcast i64* %"v5" to i16*
+  %".55" = load i16, i16* %".54"
+  %".56" = and i16 %".55", 4095
+  %".57" = icmp eq i16 %".56", 0
+  br i1 %".57", label %"@5", label %"@4"
 "@4":
-  %".63" = bitcast i64* %"v5" to i16*
-  %".64" = load i16, i16* %".63"
-  %".65" = and i16 %".64", 4095
-  %".66" = zext i16 %".65" to i64
-  %".67" = sub i64 %".66", 8
-  %".68" = bitcast %"cp_options"** %"xa" to i8*
-  %".69" = getelementptr i8, i8* %".68", i64 %".67"
-  %".70" = bitcast i8* %".69" to %"cp_options"**
-  %".71" = bitcast %"cp_options"** %".70" to i64*
-  %".72" = load i64, i64* %".71"
-  %".73" = bitcast i64* %"v5" to i16*
-  %".74" = load i16, i16* %".73"
-  %".75" = and i16 %".74", 4095
-  %".76" = zext i16 %".75" to i64
-  %".77" = sub i64 %".76", 8
-  %".78" = bitcast %"cp_options"** %"xa" to i8*
-  %".79" = getelementptr i8, i8* %".78", i64 %".77"
-  %".80" = bitcast i8* %".79" to %"cp_options"**
-  %".81" = bitcast %"cp_options"** %".80" to i64*
-  store i64 %".72", i64* %".81"
+  %".59" = bitcast i64* %"v5" to i16*
+  %".60" = load i16, i16* %".59"
+  %".61" = and i16 %".60", 4095
+  %".62" = zext i16 %".61" to i64
+  %".63" = sub i64 %".62", 8
+  %".64" = bitcast %"cp_options"** %"xa" to i8*
+  %".65" = getelementptr i8, i8* %".64", i64 %".63"
+  %".66" = bitcast i8* %".65" to %"cp_options"**
+  %".67" = bitcast %"cp_options"** %".66" to i64*
+  %".68" = load i64, i64* %".67"
+  %".69" = bitcast i64* %"v5" to i16*
+  %".70" = load i16, i16* %".69"
+  %".71" = and i16 %".70", 4095
+  %".72" = zext i16 %".71" to i64
+  %".73" = sub i64 %".72", 8
+  %".74" = bitcast %"cp_options"** %"xa" to i8*
+  %".75" = getelementptr i8, i8* %".74", i64 %".73"
+  %".76" = bitcast i8* %".75" to %"cp_options"**
+  %".77" = bitcast %"cp_options"** %".76" to i64*
+  store i64 %".68", i64* %".77"
   br label %"@5"
 "@5":
-  %".84" = bitcast i8** %"__new" to %"cp_options"***
-  store %"cp_options"** %"xa", %"cp_options"*** %".84"
-  %".86" = bitcast %"cp_options"** %"xa" to i8*
-  %".87" = load i8*, i8** %"__old"
-  %".88" = load i64, i64* %"__len"
-  %".89" = call i8* @"memcpy"(i8* %".86", i8* %".87", i64 %".88")
-  store i8* %".89", i8** %"dst_name"
-  %".91" = load i8*, i8** %"dst_name"
-  %".92" = load i64, i64* %"src_offseta"
-  %".93" = getelementptr i8, i8* %".91", i64 %".92"
-  store i8* %".93", i8** %"src_name"
-  %".95" = load %"dir_attr"*, %"dir_attr"** %"attr_lista"
-  %".96" = bitcast %"dir_attr"* %".95" to i8*
-  %".97" = bitcast %"dir_attr"** %"p" to i8*
-  %".98" = call i8* @"memcpy"(i8* %".97", i8* %".96", i64 168)
+  %".80" = bitcast i8** %"__new" to %"cp_options"***
+  store %"cp_options"** %"xa", %"cp_options"*** %".80"
+  %".82" = bitcast %"cp_options"** %"xa" to i8*
+  %".83" = load i8*, i8** %"__old"
+  %".84" = load i64, i64* %"__len"
+  %".85" = call i8* @"memcpy"(i8* %".82", i8* %".83", i64 %".84")
+  store i8* %".85", i8** %"dst_name"
+  %".87" = load i8*, i8** %"dst_name"
+  %".88" = load i64, i64* %"src_offseta"
+  %".89" = getelementptr i8, i8* %".87", i64 %".88"
+  store i8* %".89", i8** %"src_name"
+  %".91" = load %"dir_attr"*, %"dir_attr"** %"attr_lista"
+  store %"dir_attr"* %".91", %"dir_attr"** %"p"
   br label %"@21"
 "@6":
-  %".100" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".101" = bitcast %"dir_attr"* %".100" to i8*
-  %".102" = getelementptr i8, i8* %".101", i64 152
-  %".103" = bitcast i8* %".102" to %"dir_attr"*
-  %".104" = bitcast %"dir_attr"* %".103" to i64*
-  %".105" = load i64, i64* %".104"
-  %".106" = load i8*, i8** %"dst_name"
-  %".107" = getelementptr i8, i8* %".106", i64 %".105"
-  store i8 0, i8* %".107"
-  %".109" = load %"cp_options"*, %"cp_options"** %"xa"
-  %".110" = bitcast %"cp_options"* %".109" to i8*
-  %".111" = getelementptr i8, i8* %".110", i64 31
-  %".112" = bitcast i8* %".111" to %"cp_options"*
-  %".113" = bitcast %"cp_options"* %".112" to i8*
-  %".114" = load i8, i8* %".113"
-  %".115" = icmp eq i8 %".114", 0
-  br i1 %".115", label %"@9", label %"@7"
+  %".94" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".95" = bitcast %"dir_attr"* %".94" to i8*
+  %".96" = getelementptr i8, i8* %".95", i64 152
+  %".97" = bitcast i8* %".96" to %"dir_attr"*
+  %".98" = bitcast %"dir_attr"* %".97" to i64*
+  %".99" = load i64, i64* %".98"
+  %".100" = load i8*, i8** %"dst_name"
+  %".101" = getelementptr i8, i8* %".100", i64 %".99"
+  store i8 0, i8* %".101"
+  %".103" = load %"cp_options"*, %"cp_options"** %"xa"
+  %".104" = bitcast %"cp_options"* %".103" to i8*
+  %".105" = getelementptr i8, i8* %".104", i64 31
+  %".106" = bitcast i8* %".105" to %"cp_options"*
+  %".107" = bitcast %"cp_options"* %".106" to i8*
+  %".108" = load i8, i8* %".107"
+  %".109" = icmp eq i8 %".108", 0
+  br i1 %".109", label %"@9", label %"@7"
 "@7":
-  %".117" = bitcast %"dir_attr"** %"p" to %"stat"**
-  %".118" = load %"stat"*, %"stat"** %".117"
-  %".119" = call %"timespec" @"get_stat_atime"(%"stat"* %".118")
-  store %"timespec" %".119", %"timespec"* %".120"
-  %".122" = bitcast %"timespec"* %".120" to i128*
-  %".123" = load i128, i128* %".122"
-  %".124" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 0
-  %".125" = bitcast %"timespec"* %".124" to i128*
-  store i128 %".123", i128* %".125"
-  %".127" = bitcast %"dir_attr"** %"p" to %"stat"**
-  %".128" = load %"stat"*, %"stat"** %".127"
-  %".129" = call %"timespec" @"get_stat_mtime"(%"stat"* %".128")
-  store %"timespec" %".129", %"timespec"* %".130"
-  %".132" = bitcast %"timespec"* %".130" to i128*
-  %".133" = load i128, i128* %".132"
-  %".134" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 1
-  %".135" = bitcast %"timespec"* %".134" to i128*
-  store i128 %".133", i128* %".135"
-  %".137" = load i8*, i8** %"dst_name"
-  %".138" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 0
-  %".139" = call i32 @"utimens"(i8* %".137", %"timespec"* %".138")
-  %".140" = icmp eq i32 %".139", 0
-  br i1 %".140", label %"@9", label %"@8"
+  %".111" = bitcast %"dir_attr"** %"p" to %"stat"**
+  %".112" = load %"stat"*, %"stat"** %".111"
+  %".113" = call %"timespec" @"get_stat_atime"(%"stat"* %".112")
+  store %"timespec" %".113", %"timespec"* %".114"
+  %".116" = bitcast %"timespec"* %".114" to i128*
+  %".117" = load i128, i128* %".116"
+  %".118" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 0
+  %".119" = bitcast %"timespec"* %".118" to i128*
+  store i128 %".117", i128* %".119"
+  %".121" = bitcast %"dir_attr"** %"p" to %"stat"**
+  %".122" = load %"stat"*, %"stat"** %".121"
+  %".123" = call %"timespec" @"get_stat_mtime"(%"stat"* %".122")
+  store %"timespec" %".123", %"timespec"* %".124"
+  %".126" = bitcast %"timespec"* %".124" to i128*
+  %".127" = load i128, i128* %".126"
+  %".128" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 1
+  %".129" = bitcast %"timespec"* %".128" to i128*
+  store i128 %".127", i128* %".129"
+  %".131" = load i8*, i8** %"dst_name"
+  %".132" = getelementptr [2 x %"timespec"], [2 x %"timespec"]* %"timespec", i32 0, i32 0
+  %".133" = call i32 @"utimens"(i8* %".131", %"timespec"* %".132")
+  %".134" = icmp eq i32 %".133", 0
+  br i1 %".134", label %"@9", label %"@8"
 "@8":
-  %".142" = load i8*, i8** %"dst_name"
-  %".143" = call i8* @"quotearg_style"(i32 4, i8* %".142")
-  store i8* %".143", i8** %"v7"
-  %".145" = getelementptr [32 x i8], [32 x i8]* @"aFailedToPreser", i32 0, i32 0
-  %".146" = call i8* @"gettext"(i8* %".145")
-  store i8* %".146", i8** %"v8"
-  %".148" = call i32* @"__errno_location"()
-  store i32* %".148", i32** %"v9"
-  %".150" = bitcast i32** %"v9" to i32*
-  %".151" = load i32, i32* %".150"
-  %".152" = load i8*, i8** %"v8"
-  %".153" = bitcast i8** %"v7" to i64*
-  %".154" = load i64, i64* %".153"
-  %".155" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".151", i8* %".152")
-  %".156" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".156"
+  %".136" = load i8*, i8** %"dst_name"
+  %".137" = call i8* @"quotearg_style"(i32 4, i8* %".136")
+  store i8* %".137", i8** %"v7"
+  %".139" = getelementptr [32 x i8], [32 x i8]* @"aFailedToPreser", i32 0, i32 0
+  %".140" = call i8* @"gettext"(i8* %".139")
+  store i8* %".140", i8** %"v8"
+  %".142" = call i32* @"__errno_location"()
+  store i32* %".142", i32** %"v9"
+  %".144" = load i32*, i32** %"v9"
+  %".145" = load i32, i32* %".144"
+  %".146" = load i8*, i8** %"v8"
+  %".147" = bitcast i8** %"v7" to i64*
+  %".148" = load i64, i64* %".147"
+  %".149" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".150" = call i8* (i32, i32, i8*, i64, ...) %".149"(i32 0, i32 %".145", i8* %".146", i64 %".148")
+  %".151" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".151"
   br label %"@23"
 "@9":
-  %".159" = load %"cp_options"*, %"cp_options"** %"xa"
-  %".160" = bitcast %"cp_options"* %".159" to i8*
-  %".161" = getelementptr i8, i8* %".160", i64 29
-  %".162" = bitcast i8* %".161" to %"cp_options"*
-  %".163" = bitcast %"cp_options"* %".162" to i8*
-  %".164" = load i8, i8* %".163"
-  %".165" = icmp eq i8 %".164", 0
-  br i1 %".165", label %"@14", label %"@10"
+  %".154" = load %"cp_options"*, %"cp_options"** %"xa"
+  %".155" = bitcast %"cp_options"* %".154" to i8*
+  %".156" = getelementptr i8, i8* %".155", i64 29
+  %".157" = bitcast i8* %".156" to %"cp_options"*
+  %".158" = bitcast %"cp_options"* %".157" to i8*
+  %".159" = load i8, i8* %".158"
+  %".160" = icmp eq i8 %".159", 0
+  br i1 %".160", label %"@14", label %"@10"
 "@10":
-  %".167" = load i8*, i8** %"dst_name"
-  %".168" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".169" = bitcast %"dir_attr"* %".168" to i8*
-  %".170" = getelementptr i8, i8* %".169", i64 28
-  %".171" = bitcast i8* %".170" to %"dir_attr"*
-  %".172" = bitcast %"dir_attr"* %".171" to i32*
-  %".173" = load i32, i32* %".172"
-  %".174" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".175" = bitcast %"dir_attr"* %".174" to i8*
-  %".176" = getelementptr i8, i8* %".175", i64 32
-  %".177" = bitcast i8* %".176" to %"dir_attr"*
-  %".178" = bitcast %"dir_attr"* %".177" to i32*
-  %".179" = load i32, i32* %".178"
-  %".180" = call i32 @"lchown"(i8* %".167", i32 %".173", i32 %".179")
-  %".181" = icmp eq i32 %".180", 0
-  br i1 %".181", label %"@14", label %"@11"
+  %".162" = load i8*, i8** %"dst_name"
+  %".163" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".164" = bitcast %"dir_attr"* %".163" to i8*
+  %".165" = getelementptr i8, i8* %".164", i64 28
+  %".166" = bitcast i8* %".165" to %"dir_attr"*
+  %".167" = bitcast %"dir_attr"* %".166" to i32*
+  %".168" = load i32, i32* %".167"
+  %".169" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".170" = bitcast %"dir_attr"* %".169" to i8*
+  %".171" = getelementptr i8, i8* %".170", i64 32
+  %".172" = bitcast i8* %".171" to %"dir_attr"*
+  %".173" = bitcast %"dir_attr"* %".172" to i32*
+  %".174" = load i32, i32* %".173"
+  %".175" = call i32 @"lchown"(i8* %".162", i32 %".168", i32 %".174")
+  %".176" = icmp eq i32 %".175", 0
+  br i1 %".176", label %"@14", label %"@11"
 "@11":
-  %".183" = load %"cp_options"*, %"cp_options"** %"xa"
-  %".184" = call i1 @"chown_failure_ok"(%"cp_options"* %".183")
-  %".185" = zext i1 %".184" to i8
-  %".186" = xor i8 %".185", 1
-  %".187" = icmp eq i8 %".186", 0
-  br i1 %".187", label %"@13", label %"@12"
+  %".178" = load %"cp_options"*, %"cp_options"** %"xa"
+  %".179" = call i1 @"chown_failure_ok"(%"cp_options"* %".178")
+  %".180" = zext i1 %".179" to i8
+  %".181" = xor i8 %".180", 1
+  %".182" = icmp eq i8 %".181", 0
+  br i1 %".182", label %"@13", label %"@12"
 "@12":
-  %".189" = load i8*, i8** %"dst_name"
-  %".190" = call i8* @"quotearg_style"(i32 4, i8* %".189")
-  store i8* %".190", i8** %"v11"
-  %".192" = getelementptr [36 x i8], [36 x i8]* @"aFailedToPreser_0", i32 0, i32 0
-  %".193" = call i8* @"gettext"(i8* %".192")
-  store i8* %".193", i8** %"v12"
-  %".195" = call i32* @"__errno_location"()
-  store i32* %".195", i32** %"v13"
-  %".197" = bitcast i32** %"v13" to i32*
-  %".198" = load i32, i32* %".197"
-  %".199" = load i8*, i8** %"v12"
-  %".200" = bitcast i8** %"v11" to i64*
-  %".201" = load i64, i64* %".200"
-  %".202" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".198", i8* %".199")
-  %".203" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".203"
+  %".184" = load i8*, i8** %"dst_name"
+  %".185" = call i8* @"quotearg_style"(i32 4, i8* %".184")
+  store i8* %".185", i8** %"v11"
+  %".187" = getelementptr [36 x i8], [36 x i8]* @"aFailedToPreser_0", i32 0, i32 0
+  %".188" = call i8* @"gettext"(i8* %".187")
+  store i8* %".188", i8** %"v12"
+  %".190" = call i32* @"__errno_location"()
+  store i32* %".190", i32** %"v13"
+  %".192" = load i32*, i32** %"v13"
+  %".193" = load i32, i32* %".192"
+  %".194" = load i8*, i8** %"v12"
+  %".195" = bitcast i8** %"v11" to i64*
+  %".196" = load i64, i64* %".195"
+  %".197" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".198" = call i8* (i32, i32, i8*, i64, ...) %".197"(i32 0, i32 %".193", i8* %".194", i64 %".196")
+  %".199" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".199"
   br label %"@23"
 "@13":
-  %".206" = load i8*, i8** %"dst_name"
-  %".207" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".208" = bitcast %"dir_attr"* %".207" to i8*
-  %".209" = getelementptr i8, i8* %".208", i64 32
-  %".210" = bitcast i8* %".209" to %"dir_attr"*
-  %".211" = bitcast %"dir_attr"* %".210" to i32*
-  %".212" = load i32, i32* %".211"
-  %".213" = call i32 @"lchown"(i8* %".206", i32 4294967295, i32 %".212")
-  store i32 %".213", i32* %"__x"
+  %".202" = load i8*, i8** %"dst_name"
+  %".203" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".204" = bitcast %"dir_attr"* %".203" to i8*
+  %".205" = getelementptr i8, i8* %".204", i64 32
+  %".206" = bitcast i8* %".205" to %"dir_attr"*
+  %".207" = bitcast %"dir_attr"* %".206" to i32*
+  %".208" = load i32, i32* %".207"
+  %".209" = call i32 @"lchown"(i8* %".202", i32 4294967295, i32 %".208")
+  store i32 %".209", i32* %"__x"
   br label %"@14"
 "@14":
-  %".216" = load %"cp_options"*, %"cp_options"** %"xa"
-  %".217" = bitcast %"cp_options"* %".216" to i8*
-  %".218" = getelementptr i8, i8* %".217", i64 30
-  %".219" = bitcast i8* %".218" to %"cp_options"*
-  %".220" = bitcast %"cp_options"* %".219" to i8*
-  %".221" = load i8, i8* %".220"
-  %".222" = icmp eq i8 %".221", 0
-  br i1 %".222", label %"@17", label %"@15"
+  %".212" = load %"cp_options"*, %"cp_options"** %"xa"
+  %".213" = bitcast %"cp_options"* %".212" to i8*
+  %".214" = getelementptr i8, i8* %".213", i64 30
+  %".215" = bitcast i8* %".214" to %"cp_options"*
+  %".216" = bitcast %"cp_options"* %".215" to i8*
+  %".217" = load i8, i8* %".216"
+  %".218" = icmp eq i8 %".217", 0
+  br i1 %".218", label %"@17", label %"@15"
 "@15":
-  %".224" = load i8*, i8** %"src_name"
-  %".225" = load i8*, i8** %"dst_name"
-  %".226" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".227" = bitcast %"dir_attr"* %".226" to i8*
-  %".228" = getelementptr i8, i8* %".227", i64 24
-  %".229" = bitcast i8* %".228" to %"dir_attr"*
-  %".230" = bitcast %"dir_attr"* %".229" to i32*
-  %".231" = load i32, i32* %".230"
-  %".232" = call i32 @"copy_acl"(i8* %".224", i32 4294967295, i8* %".225", i32 4294967295, i32 %".231")
-  %".233" = icmp eq i32 %".232", 0
-  br i1 %".233", label %"@20", label %"@16"
+  %".220" = load i8*, i8** %"src_name"
+  %".221" = load i8*, i8** %"dst_name"
+  %".222" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".223" = bitcast %"dir_attr"* %".222" to i8*
+  %".224" = getelementptr i8, i8* %".223", i64 24
+  %".225" = bitcast i8* %".224" to %"dir_attr"*
+  %".226" = bitcast %"dir_attr"* %".225" to i32*
+  %".227" = load i32, i32* %".226"
+  %".228" = call i32 @"copy_acl"(i8* %".220", i32 4294967295, i8* %".221", i32 4294967295, i32 %".227")
+  %".229" = icmp eq i32 %".228", 0
+  br i1 %".229", label %"@20", label %"@16"
 "@16":
-  %".235" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".235"
+  %".231" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".231"
   br label %"@23"
 "@17":
-  %".238" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".239" = bitcast %"dir_attr"* %".238" to i8*
-  %".240" = getelementptr i8, i8* %".239", i64 144
-  %".241" = bitcast i8* %".240" to %"dir_attr"*
-  %".242" = bitcast %"dir_attr"* %".241" to i8*
-  %".243" = load i8, i8* %".242"
-  %".244" = icmp eq i8 %".243", 0
-  br i1 %".244", label %"@20", label %"@18"
+  %".234" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".235" = bitcast %"dir_attr"* %".234" to i8*
+  %".236" = getelementptr i8, i8* %".235", i64 144
+  %".237" = bitcast i8* %".236" to %"dir_attr"*
+  %".238" = bitcast %"dir_attr"* %".237" to i8*
+  %".239" = load i8, i8* %".238"
+  %".240" = icmp eq i8 %".239", 0
+  br i1 %".240", label %"@20", label %"@18"
 "@18":
-  %".246" = load i8*, i8** %"dst_name"
-  %".247" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".248" = bitcast %"dir_attr"* %".247" to i8*
-  %".249" = getelementptr i8, i8* %".248", i64 24
-  %".250" = bitcast i8* %".249" to %"dir_attr"*
-  %".251" = bitcast %"dir_attr"* %".250" to i32*
-  %".252" = load i32, i32* %".251"
-  %".253" = call i32 @"lchmod"(i8* %".246", i32 %".252")
-  %".254" = icmp eq i32 %".253", 0
-  br i1 %".254", label %"@20", label %"@19"
+  %".242" = load i8*, i8** %"dst_name"
+  %".243" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".244" = bitcast %"dir_attr"* %".243" to i8*
+  %".245" = getelementptr i8, i8* %".244", i64 24
+  %".246" = bitcast i8* %".245" to %"dir_attr"*
+  %".247" = bitcast %"dir_attr"* %".246" to i32*
+  %".248" = load i32, i32* %".247"
+  %".249" = call i32 @"lchmod"(i8* %".242", i32 %".248")
+  %".250" = icmp eq i32 %".249", 0
+  br i1 %".250", label %"@20", label %"@19"
 "@19":
-  %".256" = load i8*, i8** %"dst_name"
-  %".257" = call i8* @"quotearg_style"(i32 4, i8* %".256")
-  store i8* %".257", i8** %"v14"
-  %".259" = getelementptr [38 x i8], [38 x i8]* @"aFailedToPreser_1", i32 0, i32 0
-  %".260" = call i8* @"gettext"(i8* %".259")
-  store i8* %".260", i8** %"v15"
-  %".262" = call i32* @"__errno_location"()
-  store i32* %".262", i32** %"v16"
-  %".264" = bitcast i32** %"v16" to i32*
-  %".265" = load i32, i32* %".264"
-  %".266" = load i8*, i8** %"v15"
-  %".267" = bitcast i8** %"v14" to i64*
-  %".268" = load i64, i64* %".267"
-  %".269" = call i8* (i32, i32, i8*, ...) @"error"(i32 0, i32 %".265", i8* %".266")
-  %".270" = bitcast i1* %"funcresult" to i8*
-  store i8 0, i8* %".270"
+  %".252" = load i8*, i8** %"dst_name"
+  %".253" = call i8* @"quotearg_style"(i32 4, i8* %".252")
+  store i8* %".253", i8** %"v14"
+  %".255" = getelementptr [38 x i8], [38 x i8]* @"aFailedToPreser_1", i32 0, i32 0
+  %".256" = call i8* @"gettext"(i8* %".255")
+  store i8* %".256", i8** %"v15"
+  %".258" = call i32* @"__errno_location"()
+  store i32* %".258", i32** %"v16"
+  %".260" = load i32*, i32** %"v16"
+  %".261" = load i32, i32* %".260"
+  %".262" = load i8*, i8** %"v15"
+  %".263" = bitcast i8** %"v14" to i64*
+  %".264" = load i64, i64* %".263"
+  %".265" = bitcast i8* (i32, i32, i8*, ...)* @"error" to i8* (i32, i32, i8*, i64, ...)*
+  %".266" = call i8* (i32, i32, i8*, i64, ...) %".265"(i32 0, i32 %".261", i8* %".262", i64 %".264")
+  %".267" = bitcast i1* %"funcresult" to i8*
+  store i8 0, i8* %".267"
   br label %"@23"
 "@20":
-  %".273" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".274" = bitcast %"dir_attr"* %".273" to i8*
-  %".275" = getelementptr i8, i8* %".274", i64 152
-  %".276" = bitcast i8* %".275" to %"dir_attr"*
-  %".277" = bitcast %"dir_attr"* %".276" to i64*
-  %".278" = load i64, i64* %".277"
-  %".279" = load i8*, i8** %"dst_name"
-  %".280" = getelementptr i8, i8* %".279", i64 %".278"
-  store i8 47, i8* %".280"
-  %".282" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".283" = bitcast %"dir_attr"* %".282" to i8*
-  %".284" = getelementptr i8, i8* %".283", i64 160
-  %".285" = bitcast i8* %".284" to %"dir_attr"*
-  %".286" = bitcast %"dir_attr"* %".285" to i64*
-  %".287" = load i64, i64* %".286"
-  %".288" = bitcast %"dir_attr"** %"p" to i64*
-  store i64 %".287", i64* %".288"
+  %".270" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".271" = bitcast %"dir_attr"* %".270" to i8*
+  %".272" = getelementptr i8, i8* %".271", i64 152
+  %".273" = bitcast i8* %".272" to %"dir_attr"*
+  %".274" = bitcast %"dir_attr"* %".273" to i64*
+  %".275" = load i64, i64* %".274"
+  %".276" = load i8*, i8** %"dst_name"
+  %".277" = getelementptr i8, i8* %".276", i64 %".275"
+  store i8 47, i8* %".277"
+  %".279" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".280" = bitcast %"dir_attr"* %".279" to i8*
+  %".281" = getelementptr i8, i8* %".280", i64 160
+  %".282" = bitcast i8* %".281" to %"dir_attr"*
+  %".283" = bitcast %"dir_attr"* %".282" to %"dir_attr"**
+  %".284" = load %"dir_attr"*, %"dir_attr"** %".283"
+  store %"dir_attr"* %".284", %"dir_attr"** %"p"
   br label %"@21"
 "@21":
-  %".291" = load %"dir_attr"*, %"dir_attr"** %"p"
-  %".292" = ptrtoint %"dir_attr"* %".291" to i64
-  %".293" = icmp ne i64 %".292", 0
-  br i1 %".293", label %"@6", label %"@22"
+  %".287" = load %"dir_attr"*, %"dir_attr"** %"p"
+  %".288" = ptrtoint %"dir_attr"* %".287" to i64
+  %".289" = icmp ne i64 %".288", 0
+  br i1 %".289", label %"@6", label %"@22"
 "@22":
-  %".295" = bitcast i1* %"funcresult" to i8*
-  store i8 1, i8* %".295"
+  %".291" = bitcast i1* %"funcresult" to i8*
+  store i8 1, i8* %".291"
   br label %"@23"
 "@23":
   %".10" = load i1, i1* %"funcresult"
