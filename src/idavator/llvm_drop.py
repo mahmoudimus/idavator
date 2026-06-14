@@ -157,6 +157,22 @@ _HELPER_INTRINSICS = frozenset({
     # (the SP-consistency machine wants x86_spec_info.alloca_calls populated by
     # binary-driven gen_microcode, unavailable at the preoptimized drop point).
     "alloca",
+    # A multiply-overflow test inlined by the compiler (gnulib ``xalloc`` family:
+    # ``is_mul_ok(a, b)`` wraps ``__builtin_mul_overflow``). IDA's own decompiler
+    # renders it as a literal ``v = is_mul_ok(s, n)`` named call, but it is NOT a
+    # real function -- it has NO standalone EA (the multiply + overflow-flag test
+    # is inlined at the call site, emitting no ``call`` instruction), so
+    # ``get_name_ea`` returns BADADDR and ``_emit_call`` raised
+    # ``unresolved callee @is_mul_ok``, sinking the whole drop to a native
+    # fallback. Structurally identical to ``alloca`` above: a no-EA decompiler
+    # pseudo-call. Routing it through the HELPER path (``rax = is_mul_ok(s, n)``,
+    # result captured into a kreg and consumed by the body's ``select``) is
+    # byte-faithful to the pristine native -- xnmalloc/xcalloc/xnrealloc/
+    # x2nrealloc all render ``v2 = !is_mul_ok(s, n)`` the same way. The result is
+    # LIVE (unlike the alloca cohort's dead buffer) but the helper path already
+    # supports a consumed result -- the rotate intrinsics return their value the
+    # same way.
+    "is_mul_ok",
 })
 
 # Pure-WRITER libc calls that write THROUGH their destination pointer arg WITHOUT
