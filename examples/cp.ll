@@ -8271,15 +8271,13 @@ define i8* @"hash_init"()
 "@1":
   %".5" = inttoptr i64 0 to %"Hash_tuning"*
   %".6" = call %"Hash_table"* @"hash_initialize"(i64 103, %"Hash_tuning"* %".5", i64 (i8*, i64)* @"src_to_dest_hash", i1 (i8*, i8*)* @"src_to_dest_compare", i8* (i8*)* @"src_to_dest_free")
-  %".7" = bitcast %"Hash_table"* %".6" to i8*
-  %".8" = bitcast %"Hash_table"** @"src_to_dest" to i8*
-  %".9" = call i8* @"memcpy"(i8* %".8", i8* %".7", i64 80)
-  %".10" = load %"Hash_table"*, %"Hash_table"** @"src_to_dest"
-  %".11" = ptrtoint %"Hash_table"* %".10" to i64
-  %".12" = icmp ne i64 %".11", 0
-  br i1 %".12", label %"@3", label %"@2"
+  store %"Hash_table"* %".6", %"Hash_table"** @"src_to_dest"
+  %".8" = load %"Hash_table"*, %"Hash_table"** @"src_to_dest"
+  %".9" = ptrtoint %"Hash_table"* %".8" to i64
+  %".10" = icmp ne i64 %".9", 0
+  br i1 %".10", label %"@3", label %"@2"
 "@2":
-  %".14" = call i8* @"xalloc_die"()
+  %".12" = call i8* @"xalloc_die"()
   br label %"@3"
 "@3":
   %".2" = load i8*, i8** %"funcresult"
