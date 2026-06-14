@@ -2346,8 +2346,36 @@ class LLVMDropConverter:
             self._fill(tmp, (d[0], d[1], fsz))
             arg.copy_mop(tmp)
             arg.size = fsz
-        # Result scaffolding: retregs/return_regs/spoiled keep the rax def
-        # consistent under value-numbering (50743/50740 class).
+        # Frame must be allocated at the call ea (else WARN_BAD_CALL_SP for the
+        # stack args / any &local), and record call_spd to match.
+        call_ea = (self._call_spd_ea
+                   if self._call_spd_ea is not None else ea)
+        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
+                                        call_ea) if ida_funcs.get_func(
+                                            mba.entry_ea) else 0
+        # RESULT-DISCARDED (e.g. quotearg_alloc_mem's 2nd quotearg_buffer_restyled,
+        # whose i64 return feeds nothing): seeding a retreg + ``mov => rax`` here
+        # declares a return register that no instruction consumes, so glbopt's
+        # callinfo re-derivation at MMAT_CALLS finds the retreg width (8) vs the
+        # discarded retval inconsistent -> INTERR 50743 ("size of registers
+        # returned from a call mismatches the retval size"). Native renders the
+        # discarded call BARE with ``d.size=0`` and EMPTY retregs/return_regs
+        # (verified: ``call $quotearg_buffer_restyled <cdecl:...>.0`` retregs=[]).
+        # Mirror the proven ``_emit_call_vararg_fixed`` discarded branch: a bare
+        # result-0 call (FCI_FINAL, no retregs) so the value-numbering pass has no
+        # phantom return register to re-derive a conflict from.
+        if not self._value_used(ins):
+            fi.flags |= hx.FCI_FINAL
+            mc = hx.minsn_t(call_ea)
+            mc.opcode = hx.m_call
+            mc.l.make_gvar(callee_ea)
+            mc.d._make_callinfo(fi)
+            mc.d.size = 0
+            blk.insert_into_block(mc, anchor)
+            return mc
+        # Result CONSUMED: retregs/return_regs/spoiled keep the rax def consistent
+        # under value-numbering (50743/50740 class); wrap in a mov to rax so the
+        # continuation captures the result like any other call.
         ret_mop = hx.mop_t()
         ret_mop.make_reg(eax, rsz)
         fi.retregs.push_back(ret_mop)
@@ -2356,13 +2384,6 @@ class LLVMDropConverter:
         fi.return_type = (rettype if rettype.get_size() not in
                           (0, ida_idaapi.BADADDR) and not rettype.is_void()
                           else self._int_tinfo(rsz))
-        # Frame must be allocated at the call ea (else WARN_BAD_CALL_SP for the
-        # stack args / any &local), and record call_spd to match.
-        call_ea = (self._call_spd_ea
-                   if self._call_spd_ea is not None else ea)
-        fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
-                                        call_ea) if ida_funcs.get_func(
-                                            mba.entry_ea) else 0
         # Inner m_call: l = callee gvar, d = mop_f(callinfo). Wrap in a mov to
         # rax so the continuation captures the result like any other call.
         inner = hx.minsn_t(call_ea)
@@ -2425,10 +2446,25 @@ class LLVMDropConverter:
             self._fill(tmp, (d[0], d[1], fsz))
             arg.copy_mop(tmp)
             arg.size = fsz
-        # Result scaffolding -- MIRROR NATIVE: retregs EMPTY, return_regs=rax. The
-        # empty retregs list is only legal because FCI_PROP is set below.
-        fi.return_regs.add(eax, rsz)
-        fi.spoiled.add(eax, rsz)
+        # Result scaffolding. A RESULT-DISCARDED indirect call (hash_free's
+        # ``data_freer(cursor->data)`` / readsource's ``s->handler(...)`` callback,
+        # both in a loop) declares NO return register: nothing consumes the result,
+        # so an rax def here is dead. Keeping ``return_regs=rax`` + a ``mov => rax``
+        # wrapper makes glbopt's callinfo re-derivation carry a phantom rax def that
+        # collides with the function's own return-register value-numbering across
+        # the loop back-edge -> INTERR 50406 (the closed-source callinfo partner of
+        # 50743; experimentally, emptying return_regs on this call clears it for
+        # both targets). Mirror the discarded DIRECT call shape (``free`` renders
+        # ``call $free <...>.0`` with retregs=[] AND return_regs empty): emit the
+        # icall BARE with ``d.size=0`` and no return register.
+        #
+        # A CONSUMED indirect call mirrors native's hash_lookup form: retregs EMPTY
+        # but return_regs=rax (the empty retregs list is legal only with FCI_PROP),
+        # wrapped in ``mov => rax`` so the continuation captures the result.
+        discarded = not self._value_used(ins)
+        if not discarded:
+            fi.return_regs.add(eax, rsz)
+            fi.spoiled.add(eax, rsz)
         fi.return_type = self._int_tinfo(rsz)
         fi.solid_args = len(call_args)
         # NATIVE flags (hash_lookup): FCI_PROP|FCI_DEAD|FCI_SPLOK. FCI_PROP makes
@@ -2440,8 +2476,7 @@ class LLVMDropConverter:
                                         call_ea) if ida_funcs.get_func(
                                             mba.entry_ea) else 0
         # Inner m_icall: l = cs.2 (code segment), r = callee fn-ptr VALUE.8,
-        # d = mop_f(callinfo). Wrap in a mov to rax so the continuation captures
-        # the result like any other call.
+        # d = mop_f(callinfo).
         cs = hx.reg2mreg(ida_idp.str2reg("cs"))
         inner = hx.minsn_t(call_ea)
         inner.opcode = hx.m_icall
@@ -2449,6 +2484,12 @@ class LLVMDropConverter:
         cdesc = self._desc(callee, vmap, 8)
         self._fill(inner.r, (cdesc[0], cdesc[1], 8))
         inner.d._make_callinfo(fi)
+        if discarded:
+            inner.d.size = 0
+            blk.insert_into_block(inner, anchor)
+            return inner
+        # Result CONSUMED: wrap in a mov to rax so the continuation captures the
+        # result like any other call.
         inner.d.size = rsz
         mov = hx.minsn_t(call_ea)
         mov.opcode = hx.m_mov
