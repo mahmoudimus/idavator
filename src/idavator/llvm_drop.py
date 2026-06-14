@@ -2998,6 +2998,62 @@ class LLVMDropConverter:
                     return True
         return False
 
+    # Matches scan_storeside.py exactly: a TYPED-pointer global declared
+    # ``@G = global T* ...`` (a POINTER-typed global) whose ADDRESS is bitcast to
+    # ``iN*`` and then STORED THROUGH (``store iN %v, iN* %p``). llvm.parse_assembly
+    # normalises everything to OPAQUE pointers, erasing the ``T*``-global-vs-iN*
+    # distinction this gate needs, so the detection runs on the raw committed IR
+    # text (``self._ir_text``), scoped to the one define under build.
+    _PTR_GLOBAL_RE = re.compile(
+        r'@"([^"]+)"\s*=\s*global\s+[^\n]*\*\s')
+    _GLOBAL_ADDR_BITCAST_RE = re.compile(
+        r'%"([^"]+)"\s*=\s*bitcast\s+[^\n]*?@"([^"]+)"\s+to\s+i(?:8|16|32|64)\*')
+    _STORE_THROUGH_RE = re.compile(
+        r'store\s+i(?:8|16|32|64)\s+[^,]+,\s+i(?:8|16|32|64)\*\s+%"([^"]+)"')
+
+    def _store_side_global_ptr_ambiguity(self, fn) -> bool:
+        """B5 gate: a zero-offset struct-FIELD WRITE through a pointer-typed global
+        that the ida-th87 lifter mis-lifts as a global-pointer REASSIGNMENT.
+
+        ``new_dst_res->dev = dst_stat->st_dev`` (a write to the FIRST field of the
+        object ``new_dst_res`` points at) is lifted as
+        ``%v = load <struct-field>; %p = bitcast %"fs_res"** @"new_dst_res.0" to
+        i64*; store i64 %v, i64* %p`` -- i.e. it stores INTO THE ADDRESS OF the
+        global pointer VARIABLE (a zero-offset field write collapsed onto the
+        pointer slot) instead of THROUGH the loaded pointer. The dropped body then
+        renders ``new_dst_res = (fs_res *)a2`` (pointer reassign) and feeds that
+        garbage to ``hash_insert`` -- a real semantic divergence, NOT a rendering
+        difference. A fresh re-lift reproduces it (it is a LIVE lifter bug, not a
+        stale committed body), so the converter must DECLINE (native fallback)
+        rather than ship the wrong body. Re-lifting cannot fix it and "fixing" the
+        IR to a field write risks shipping a DIFFERENT divergence; decline is the
+        B5-safe floor. The proper fix is the ida-th87 lifter's store-side
+        zero-offset disambiguation.
+
+        Detection mirrors scan_storeside.py byte-for-byte on the raw committed IR
+        (typed pointers), scoped to ``fn``'s define: a ``store iN`` whose pointer
+        operand is ``bitcast(&@G)`` where ``@G`` is a POINTER-typed global. Across
+        the whole corpus this predicate matches EXACTLY ONE define (utimecmpat), so
+        the gate cannot touch any faithful drop. Remove once the lifter
+        disambiguates store-side zero-offset field writes from pointer reassigns.
+        """
+        text = self._ir_text
+        ptr_globals = {m.group(1) for m in self._PTR_GLOBAL_RE.finditer(text)}
+        if not ptr_globals:
+            return False
+        body = re.search(
+            r'(?ms)^define[^\n]*@"' + re.escape(fn.name) + r'"\(.*?\n\}', text)
+        if body is None:
+            return False
+        body_text = body.group(0)
+        addr_bitcast = {m.group(1): m.group(2)
+                        for m in self._GLOBAL_ADDR_BITCAST_RE.finditer(body_text)}
+        for s in self._STORE_THROUGH_RE.finditer(body_text):
+            g = addr_bitcast.get(s.group(1))
+            if g is not None and g in ptr_globals:
+                return True
+        return False
+
     def _alloca_cohort_diverges(self, fn) -> bool:
         """B5 gate: a DYNAMIC-alloca function whose body ALSO builds a HEAP object
         through a pointer-typed stack alloca currently drops to a DIVERGENT body and
@@ -3740,6 +3796,15 @@ class LLVMDropConverter:
                 "dynamic-alloca cohort: heap object built through a pointer-typed "
                 "stack alloca -- struct copy mis-lowers under the alloca frame "
                 "model; native fallback (see _alloca_cohort_diverges)")
+        if self._store_side_global_ptr_ambiguity(fn):
+            # B5: a zero-offset struct-field write through a pointer-typed global is
+            # mis-lifted as a global-pointer reassignment (store INTO &@G, not
+            # THROUGH the loaded pointer) -> the dropped body diverges. The lifter
+            # bug is LIVE (re-lift reproduces it); decline for a native fallback.
+            raise NotImplementedError(
+                "store-side zero-offset ambiguity: a struct-field write through a "
+                "pointer-typed global mis-lifts as a global-pointer reassignment; "
+                "native fallback (see _store_side_global_ptr_ambiguity)")
         self._allocas = self._scan_allocas(mba, fn)
         self._scan_ptr_deref_aliases(fn)
         self._detect_ret_slot(fn)
