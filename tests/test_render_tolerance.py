@@ -6,6 +6,8 @@ from tests.render_tolerance import (
     count_int,
     int_renderings,
     search_with_ints,
+    structural_equiv,
+    structural_norm,
 )
 
 
@@ -87,3 +89,97 @@ class TestSearchWithInts:
         m = search_with_ints(
             r"fm_extent_count = {n};", "fm_extent_count = 99;", {"n": 0x48})
         assert m is None
+
+
+# A faithful weakly-typed (IR-drop) body and its richly-typed amd64-native twin,
+# differing ONLY on the benign axes structural_equiv tolerates.
+_DROP = (
+    "int __fastcall f(_DWORD *a0, _DWORD *a1)\n{\n"
+    "  int result; // eax\n"
+    "  if ( !valid(a0) )\n"
+    "    _assert_fail(\"m\", \"s.c\", 0xBC3u, \"f\");\n"
+    "  g = (const char *)a0;\n"
+    "  LOBYTE(result) = h((const char *)a0, (const char *)a1, a1);\n"
+    "  return result;\n}")
+_NATIVE = (
+    "bool __cdecl f(const char *src, const char *dst)\n{\n"
+    "  unsigned __int64 v3; // [rsp+8h]\n\n"
+    "  v3 = __readfsqword(0x28u);\n"
+    "  if ( !valid(src) )\n"
+    "    __assert_fail(\"m\", \"s.c\", 0xBC3u, \"f\");\n"
+    "  g = src;\n"
+    "  return h(src, dst, dst);\n}")
+
+
+class TestStructuralNorm:
+    def test_identical_bodies_match(self):
+        assert structural_norm(_DROP) == structural_norm(_DROP)
+
+    def test_norm_strips_canary_and_is_stable(self):
+        # The normalized native has no canary read and no BYREF decl noise.
+        assert "__readfsqword" not in structural_norm(_NATIVE)
+        assert "// " not in structural_norm(_NATIVE)
+
+
+class TestStructuralEquiv:
+    def test_benign_type_canary_underscore_split_tolerated(self):
+        # The faithful drop and its richly-typed amd64 twin are equivalent: the
+        # only deltas are the canary, casts/types, the __assert_fail underscore,
+        # the LOBYTE-materialized return, and the a0/a1-vs-src/dst value split.
+        assert structural_equiv(_DROP, _NATIVE)
+
+    def test_reflexive(self):
+        assert structural_equiv(_NATIVE, _NATIVE)
+
+    def test_wrong_callee_rejected(self):
+        bad = _DROP.replace("h((const char *)a0", "WRONG((const char *)a0")
+        assert not structural_equiv(bad, _NATIVE)
+
+    def test_missing_statement_rejected(self):
+        bad = _DROP.replace("  g = (const char *)a0;\n", "")
+        assert not structural_equiv(bad, _NATIVE)
+
+    def test_extra_statement_rejected(self):
+        bad = _DROP.replace("  return result;",
+                            "  extra(a0);\n  return result;")
+        assert not structural_equiv(bad, _NATIVE)
+
+    def test_wrong_constant_rejected(self):
+        bad = _DROP.replace("0xBC3u", "0xBC4u")
+        assert not structural_equiv(bad, _NATIVE)
+
+    def test_wrong_string_rejected(self):
+        bad = _DROP.replace('"m"', '"DIFFERENT"')
+        assert not structural_equiv(bad, _NATIVE)
+
+    def test_value_merge_rejected(self):
+        # The drop MERGING two distinct native values into one name is the UNSAFE
+        # direction and must be rejected (weak typing only ever SPLITS).
+        merge_native = "int f(int x, int y){ return p(x) + q(y); }"
+        merge_drop = "int f(int z){ return p(z) + q(z); }"
+        assert not structural_equiv(merge_drop, merge_native)
+
+    def test_value_split_tolerated(self):
+        # The drop SPLITTING one native value into two typed names is benign.
+        split_native = "int f(int x){ return p(x) + q(x); }"
+        split_drop = "int f(int x){ return p(x) + q(y); }"
+        assert structural_equiv(split_drop, split_native)
+
+    def test_field_access_vs_raw_offset_rejected(self):
+        # A struct-field access vs raw pointer-offset arithmetic (the
+        # transfer_entries amd64 divergence) is structural, not cosmetic.
+        drop = "int f(_DWORD *a0){ return *((_QWORD *)a0 + 3); }"
+        native = "int f(Hash_table *dst){ return dst->n_buckets_used; }"
+        assert not structural_equiv(drop, native)
+
+    def test_enum_scope_constant_rejected(self):
+        a = "int f(){ return g(style::shell_always); }"
+        b = "int f(){ return g(style::shell_never); }"
+        assert not structural_equiv(a, b)
+
+    def test_combined_vs_nested_branch_rejected(self):
+        # `if (a < 0 && b)` vs nested `if (a<0){ if (b) {...} }` (the
+        # create_hard_link amd64 divergence) is a real control-flow reshape.
+        combined = "int f(int a,int b){ if (a < 0 && b) p(); return 0; }"
+        nested = "int f(int a,int b){ if (a < 0){ if (b) p(); } return 0; }"
+        assert not structural_equiv(combined, nested)

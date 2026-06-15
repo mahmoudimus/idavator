@@ -27,10 +27,33 @@ def _idalib() -> bool:
         return False
 
 
+def _string_ea(content: str):
+    """Address of the IDB string literal whose decoded bytes equal ``content``,
+    or ``ida_idaapi.BADADDR`` if absent. Located by CONTENT (scanning the IDB
+    string table), NOT by IDA's auto-name: IDA names a literal from its content
+    and the chosen name is build-specific -- on arm64 the "valid_options
+    (options)" literal is ``aValidOptionsOptions`` but on amd64 IDA truncates it
+    to ``aValidOptionsOp``, so a name lookup is not portable. The drop's own
+    ``_strconst_ea`` resolves by content for the same reason; this mirrors it so
+    the test pins the resolver against a build-agnostic ground-truth ea."""
+    import ida_bytes
+    import ida_idaapi
+    import idautils
+
+    want = content.encode()
+    for s in idautils.Strings():
+        raw = ida_bytes.get_strlit_contents(s.ea, s.length, s.strtype)
+        if raw is not None and bytes(raw).rstrip(b"\x00") == want:
+            return s.ea
+    return ida_idaapi.BADADDR
+
+
 # A private string constant decayed (getelementptr) and passed as the pointer
 # VALUE arg of a real callee. The c"..." content ("valid_options (options)")
-# exists verbatim in the cp IDB string table (auto-named aValidOptionsOptions),
-# so it must resolve by content -- the LLVM name @msg never appears in the IDB.
+# exists verbatim in the cp IDB string table, so it must resolve by content --
+# the LLVM name @msg never appears in the IDB, and IDA's own auto-name for the
+# literal is build-specific (aValidOptionsOptions on arm64, aValidOptionsOp on
+# amd64), so the test locates the literal by content, never by name.
 PROBE = """
 @msg = private constant [24 x i8] c"valid_options (options)\\00"
 declare i64 @strlen(ptr)
@@ -70,9 +93,10 @@ class TestDropStringConst:
         try:
             assert ida_hexrays.init_hexrays_plugin()
             # The IDB literal the probe's c"..." must resolve to (by content);
-            # its IDB auto-name is NOT the LLVM symbol @msg.
-            lit_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "aValidOptionsOptions")
-            assert lit_ea != ida_idaapi.BADADDR, "expected aValidOptionsOptions literal"
+            # its IDB auto-name is build-specific and is NOT the LLVM symbol @msg.
+            lit_ea = _string_ea(_STRING)
+            assert lit_ea != ida_idaapi.BADADDR, (
+                f"expected an IDB literal with content {_STRING!r}")
             assert (
                 ida_name.get_name_ea(ida_idaapi.BADADDR, "msg") == ida_idaapi.BADADDR
             ), "the LLVM symbol must NOT exist in the IDB (proves content match)"
@@ -107,7 +131,6 @@ class TestDropStringConst:
             pytest.skip("idalib unavailable")
         import idapro
         import ida_idaapi
-        import ida_name
 
         binary = examples_dir / "cp"
         if not binary.exists():
@@ -117,7 +140,9 @@ class TestDropStringConst:
 
         idapro.open_database(str(binary), True)
         try:
-            lit_ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "aValidOptionsOptions")
+            # Ground-truth ea located by CONTENT (build-agnostic), not by the
+            # build-specific auto-name.
+            lit_ea = _string_ea(_STRING)
             assert lit_ea != ida_idaapi.BADADDR
             conv = LLVMDropConverter(PROBE)
             operand = '@msg = private constant [24 x i8] c"valid_options (options)\\00"'

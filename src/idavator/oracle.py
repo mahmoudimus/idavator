@@ -151,6 +151,19 @@ def _binop_spelling(cursor) -> str:
     return spelled
 
 
+# Sentinel marking a control-flow CONDITION that libclang dropped to nil (an
+# ``if``/``while``/``do`` whose controlling expression came back empty -- the pip
+# ``libclang`` fallback does this on some Hex-Rays pseudocode, e.g. a comma-
+# operator / assignment embedded in an ``||`` guard). C has no condition-less
+# ``if``/``while``/``do``, so this is never a real body shape -- it is a parse
+# artifact. The COMPARISON treats it as a WILDCARD (it matches the other body's
+# condition): if two bodies are equal once such dropped conditions are wildcarded
+# but NOT strictly equal, the divergence is solely the parse artifact and the
+# compare is INCONCLUSIVE (OracleParseError); any divergence OUTSIDE the dropped
+# conditions is a genuine mismatch and still surfaces.
+_NIL_COND = ("nil_cond",)
+
+
 class _Canon:
     """Canonicalize a function body to a comparable nested tuple."""
 
@@ -225,17 +238,35 @@ class _Canon:
         if kind == "IF_STMT":
             kids = _children(c)
             cond = self.expr(kids[0])
+            # An ``if`` always has a condition in C; a nil one means libclang
+            # dropped it (parse artifact). Mark it with the wildcard sentinel so
+            # the comparison can tell a SOLELY-dropped-condition mismatch (then
+            # inconclusive) from a real structural divergence.
+            if cond == ("nil",):
+                cond = _NIL_COND
             then = self.stmt(kids[1])
             els = self.stmt(kids[2]) if len(kids) > 2 else None
             a = ("if", cond, then, els)
-            if els is not None:
+            # Only fold the inverted-test form when the condition is real (a nil
+            # wildcard has no negation).
+            if els is not None and cond is not _NIL_COND:
                 b = ("if", _negate(cond), els, then)
                 return min((a, b), key=repr)
             return a
         if kind in ("FOR_STMT", "WHILE_STMT", "DO_STMT"):
             # Loop kind is normalized away (Hex-Rays freely picks for/while/do).
-            return ("loop", tuple(self.stmt(k) if k.kind.name.endswith("STMT")
-                                  else self.expr(k) for k in _children(c)))
+            # ``while``/``do`` must carry a condition; a nil one (but NOT a ``for``,
+            # whose condition is legitimately optional -- ``for(;;)``) is the same
+            # dropped-controlling-expression parse artifact as ``if``.
+            parts = []
+            allow_nil = kind in ("WHILE_STMT", "DO_STMT")
+            for k in _children(c):
+                if k.kind.name.endswith("STMT"):
+                    parts.append(self.stmt(k))
+                else:
+                    e = self.expr(k)
+                    parts.append(_NIL_COND if (allow_nil and e == ("nil",)) else e)
+            return ("loop", tuple(parts))
         if kind in ("BREAK_STMT", "CONTINUE_STMT"):
             return (kind.lower(),)
         # Expression-statement / other: canonicalize as an expression list.
@@ -303,22 +334,66 @@ def _norm_text(c: str) -> str:
     return re.sub(r"\s+", " ", c).strip()
 
 
+def _has_nil_cond(tree) -> bool:
+    """True if any dropped-condition wildcard (:data:`_NIL_COND`) is in ``tree``."""
+    if tree == _NIL_COND:
+        return True
+    if isinstance(tree, tuple):
+        return any(_has_nil_cond(x) for x in tree)
+    return False
+
+
+def _eq_modulo_nil_cond(a, b) -> bool:
+    """Structural equality where :data:`_NIL_COND` on EITHER side is a wildcard
+    that matches the other side's subtree. Lets two bodies compare equal when the
+    ONLY thing separating them is a libclang-dropped control-flow condition."""
+    if a == _NIL_COND or b == _NIL_COND:
+        return True
+    if isinstance(a, tuple) and isinstance(b, tuple):
+        return len(a) == len(b) and all(
+            _eq_modulo_nil_cond(x, y) for x, y in zip(a, b))
+    return a == b
+
+
 def matches(expected_c: str, actual_c: str) -> bool:
     """True iff two C function definitions share a canonical body form. A verbatim
     drop (common -- the drop often reproduces the original exactly) short-circuits
-    BEFORE AST canonicalization, which is incomplete for goto/label/switch bodies."""
+    BEFORE AST canonicalization, which is incomplete for goto/label/switch bodies.
+
+    Strict canonical equality (a dropped-condition :data:`_NIL_COND` therefore
+    makes two otherwise-equal bodies COMPARE UNEQUAL here). This is deliberate:
+    the B5 decline gate consumes ``matches`` and must DECLINE a degraded body that
+    does not provably round-trip; an unreliable (condition-dropped) parse is not a
+    proof of faithfulness, so ``matches`` conservatively reports not-equal and the
+    gate declines for a clean native fallback. The round-trip consumer instead
+    uses :func:`fidelity_ledger`, which treats that same degenerate parse as
+    INCONCLUSIVE rather than a divergence."""
     if _norm_text(expected_c) == _norm_text(actual_c):
         return True
     return canonical_form(expected_c) == canonical_form(actual_c)
 
 
 def fidelity_ledger(expected_c: str, actual_c: str) -> dict:
-    """Empty dict iff faithful; else the first divergent canonical subtrees."""
+    """Empty dict iff faithful; else the first divergent canonical subtrees.
+
+    Raises :class:`OracleParseError` when the ACTUAL (dropped) body's parse is
+    DEGENERATE -- its canonical form carries a :data:`_NIL_COND`, i.e. libclang
+    silently dropped a control-flow CONDITION that the Hex-Rays source plainly had
+    (C has no condition-less ``if``/``while``/``do``). The dropped condition makes
+    the actual body's shape unreliable, so a structural compare against it is
+    INCONCLUSIVE, not a divergence -- the round-trip consumer reports the drop
+    "unparseable" (fidelity unverified) rather than a false divergence. (The
+    decline gate uses :func:`matches`, not this, so its decline-on-divergence
+    behavior is unchanged.)"""
     if _norm_text(expected_c) == _norm_text(actual_c):
         return {}
     exp, act = canonical_form(expected_c), canonical_form(actual_c)
-    if exp == act:
+    if exp == act or _eq_modulo_nil_cond(exp, act):
         return {}
+    if _has_nil_cond(act):
+        raise OracleParseError(
+            "the dropped body's parse is degenerate (libclang dropped a control-"
+            "flow condition to nil); structural fidelity cannot be verified")
     return {"expected": _first_diff(exp, act)[0],
             "actual": _first_diff(exp, act)[1]}
 

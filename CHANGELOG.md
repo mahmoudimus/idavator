@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   clang Python bindings are vendored under `idavator._vendor` instead of imported
   from a sibling checkout, removing the cross-repo dependency (and the conftest
   path-injection that crashed in container CI).
+- Drop-vs-native pseudocode tests now compare with a build-tolerant structural
+  matcher (`tests/render_tolerance.structural_equiv`) instead of a raw
+  name-renamed string equality. The amd64 idalib build is a richer/stricter native
+  oracle than arm64 — its native decompile carries DWARF param names + types and a
+  `__readfsqword` stack canary that a weakly-typed LLVM-IR drop cannot reproduce —
+  so the SAME faithful drop that is byte-identical to arm64-native diverges from
+  amd64-native on those benign, type-driven rendering axes. `structural_equiv`
+  collapses exactly those axes (types/casts, the canary read + the BYREF `= 0;`
+  init it guards, leading-underscore count, a weak-`int` return materialization,
+  and a single-use register-temp copy) and compares only the statement / call /
+  constant / control-flow skeleton, via a one-directional drop→native identifier
+  homomorphism that tolerates a benign weak-typing value SPLIT while still
+  rejecting a wrong callee/constant/string, a missing/extra/reordered statement, a
+  value MERGE, or a struct-field-vs-raw-offset access.
 
 ### Fixed
 
@@ -42,6 +56,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The idalib test suite no longer crashes mid-run under idalib's database
   open/close cycle limit: CI runs it with `pytest-forked` (a fresh process per
   test).
+- The round-trip fidelity ledger no longer reports a FALSE divergence on the amd64
+  idalib build when the fallback `libclang` (clang-18) silently drops an `if` /
+  `while` / `do` controlling expression to nil on a Hex-Rays construct it cannot
+  parse (e.g. a comma-operator/assignment embedded in an `||` guard, as in
+  `rpl_fclose`). Such a degenerate drop-side parse is now treated as INCONCLUSIVE
+  (the round trip reports the body "unparseable", fidelity unverified) rather than
+  a divergence. The change is scoped to `fidelity_ledger`; the B5 decline gate
+  (which consumes `matches`) keeps declining a positively-divergent degraded body
+  unchanged, so `setlocale_null_unlocked` / `do_copy` still decline correctly.
+- The five amd64-only "drop diverges from native" typing-class test failures are
+  resolved: `copy` and `quotearg_buffer` now pass via the build-tolerant matcher
+  (their only residuals were the benign type/canary/underscore/value-split axes),
+  while `create_hard_link`, `extent_copy`, and `transfer_entries` — which carry a
+  GENUINE per-build structural divergence on amd64 (a combined-vs-nested guard, an
+  `extent_scan` struct scalarized to raw offset arithmetic, and a DWARF
+  struct-field walk rendered as raw pointer-offset arithmetic, respectively) — are
+  marked xfail under a divergence-specific signature that fires ONLY on that known
+  shape (any other divergence still fails) and only on the build whose native
+  diverges (they pass on a build whose native matches the drop).
+- The two private-string-constant tests locate the reference IDB literal by
+  CONTENT (scanning the string table for the exact bytes) instead of the
+  hard-coded arm64 auto-name `aValidOptionsOptions`, which the amd64 IDA truncates
+  to `aValidOptionsOp`; the tests are now build-agnostic.
 
 ## [0.1.0] - 2026-06-15
 

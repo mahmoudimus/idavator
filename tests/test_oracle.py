@@ -95,6 +95,43 @@ class TestFidelityLedger:
         assert "expected" in led and "actual" in led
 
 
+class TestNilCondHandling:
+    """The dropped-control-flow-condition handling (libclang-18 fallback nils an
+    ``if``/``while``/``do`` condition it cannot parse). Tested at the canonical-
+    tree level so it runs without a specific libclang version; the end-to-end
+    behaviour is covered by the rpl_fclose system round-trip on the amd64 build."""
+
+    def test_wildcard_matches_otherwise_identical(self):
+        from idavator.oracle import _NIL_COND, _eq_modulo_nil_cond
+        exp = ("if", ("bin", "<", ("call", "f", ()), ("int", 0)), ("return", None),
+               None)
+        act = ("if", _NIL_COND, ("return", None), None)
+        assert _eq_modulo_nil_cond(exp, act)
+        assert exp != act  # strictly unequal; only the dropped condition differs
+
+    def test_wildcard_rejects_real_divergence(self):
+        from idavator.oracle import _NIL_COND, _eq_modulo_nil_cond
+        # A divergence OUTSIDE the dropped condition (different THEN) is NOT masked.
+        exp = ("if", _NIL_COND, ("return", ("int", 1)), None)
+        act = ("if", _NIL_COND, ("return", ("int", 2)), None)
+        assert not _eq_modulo_nil_cond(exp, act)
+
+    def test_wildcard_rejects_structural_loss(self):
+        from idavator.oracle import _NIL_COND, _eq_modulo_nil_cond
+        # A dropped STATEMENT (different length) is not reconcilable by the
+        # wildcard -- this is the rpl_fclose case where the bad parse also loses
+        # statements, so fidelity_ledger raises (inconclusive) instead.
+        exp = ("block", (("if", _NIL_COND, ("return", None), None),
+                         ("stmt", (("call", "g", ()),))))
+        act = ("block", (("if", _NIL_COND, ("return", None), None),))
+        assert not _eq_modulo_nil_cond(exp, act)
+
+    def test_has_nil_cond_detects_marker(self):
+        from idavator.oracle import _NIL_COND, _has_nil_cond
+        assert _has_nil_cond(("if", _NIL_COND, ("return", None), None))
+        assert not _has_nil_cond(("if", ("var", 0), ("return", None), None))
+
+
 # --- round-trip: drop LLVM IR, assert the rendered body matches the oracle -----
 
 def _idalib() -> bool:
