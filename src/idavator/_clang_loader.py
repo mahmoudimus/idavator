@@ -1,11 +1,8 @@
 """Shared libclang discovery/loading helpers.
 
-Centralizes libclang lookup so runtime code and tests use the same logic.
-
-Vendored verbatim from  (``/core/clang_loader.py``) so idavator has no
-sibling-repo dependency: only the two ```` module imports are swapped --
-``.core.typing`` -> stdlib ``typing`` and the clang bindings now come from
-``idavator._vendor.clang``.
+Centralizes libclang lookup so runtime code and tests use the same logic. The
+clang Python bindings come from ``idavator._vendor.clang``; this module is fully
+self-contained (stdlib only).
 """
 
 from __future__ import annotations
@@ -69,8 +66,7 @@ def discover_libclang_candidates(
                 add(base / lib_name)
 
     # Explicit override path.
-    env_libclang = __import__("os").environ.get("IDAVATOR_LIBCLANG_PATH") \
-        or __import__("os").environ.get("_LIBCLANG_PATH")
+    env_libclang = __import__("os").environ.get("IDAVATOR_LIBCLANG_PATH")
     if env_libclang:
         add(pathlib.Path(env_libclang))
 

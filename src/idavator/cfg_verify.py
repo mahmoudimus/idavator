@@ -1,16 +1,15 @@
 """Microcode verification + INTERR diagnostics for the LLVM->microcode drop path.
 
-Vendored and trimmed from 's ``hexrays/mutation/cfg_verify.py`` (the only piece
-of  worth carrying for idavator's drop: LLVM IR is already the IR, so we do NOT
-bring 's portable IR -- we build microcode directly on LLVM and use THIS to
-decode *why* Hex-Rays rejects a hand-built ``mba_t``).
+We build microcode directly on LLVM (LLVM IR is already the IR, so there is no
+separate portable IR) and use this to decode *why* Hex-Rays rejects a hand-built
+``mba_t``.
 
 The key value is :class:`_InterrCatcher`: ``mba.verify(True)`` raises an opaque
 ``RuntimeError("Unknown exception")`` because the ``interr_exc_t`` doesn't match
 SWIG's typed catch blocks, but the ``hxe_interr`` event fires first and carries the
 numeric INTERR code -- so we capture it for precise failure identification.
 
-Self-contained: stdlib logging, ``typing.Any``, and env-var config (no  deps).
+Self-contained: stdlib logging, ``typing.Any``, and env-var config.
   IDAVATOR_VERIFY_CAPTURE=0       disable JSON failure-artifact capture (default on)
   IDAVATOR_VERIFY_CAPTURE_DIR=... where to write artifacts (default ./.idavator/verify)
 """

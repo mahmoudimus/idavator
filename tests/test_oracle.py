@@ -1,6 +1,6 @@
 """Tests for the libclang AST-canonicalization oracle + a drop round-trip.
 
-The oracle parses C with IDA's libclang (via 's clang_loader); these tests
+The oracle parses C with IDA's libclang (via the vendored clang_loader); these tests
 skip unless that is importable. The round-trip test additionally needs idalib.
 """
 from __future__ import annotations
@@ -16,7 +16,7 @@ from idavator.oracle import (
 )
 
 requires_clang = pytest.mark.skipif(
-    not clang_available(), reason="IDA libclang /  clang_loader unavailable")
+    not clang_available(), reason="IDA libclang unavailable")
 
 
 @requires_clang

@@ -86,7 +86,7 @@ _ROUNDTRIP = [
 
 
 @pytest.mark.skipif(not clang_available(),
-                    reason="IDA libclang /  clang_loader unavailable")
+                    reason="IDA libclang unavailable")
 @pytest.mark.ida
 class TestRealCpFunctionRoundTrip:
     """A TRUE round trip on real lifted IR: drop a cp.ll function's IR back into
@@ -165,7 +165,7 @@ class TestRealCpFunctionRoundTrip:
 
 
 @pytest.mark.skipif(not clang_available(),
-                    reason="IDA libclang /  clang_loader unavailable")
+                    reason="IDA libclang unavailable")
 @pytest.mark.ida
 class TestDropRoundTrip:
     @pytest.mark.parametrize("ir, fn, ref_c", _ROUNDTRIP)

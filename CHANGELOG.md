@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The AST-equivalence oracle is now fully self-contained: the libclang loader and
   clang Python bindings are vendored under `idavator._vendor` instead of imported
-  from a sibling `` checkout. Removes the cross-repo dependency (and the
-  conftest path-injection that crashed in container CI).
+  from a sibling checkout, removing the cross-repo dependency (and the conftest
+  path-injection that crashed in container CI).
 
 ## [0.1.0] - 2026-06-15
 

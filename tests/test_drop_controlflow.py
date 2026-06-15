@@ -3,7 +3,7 @@
 Step 1 (this file): prove block insertion + edge wiring works -- insert one block,
 redirect the entry to it, let Hex-Rays sweep the orphaned host blocks. Then the
 2-way if/else. Builds with block-ref gotos (l.make_blkref) + manual succset/predset
-wiring + mba.entry_ea EAs (the  patterns), gated by try_verify.
+wiring + mba.entry_ea EAs (the deferred-modification patterns), gated by try_verify.
 
 Run:  PYTHONPATH=src pytest -m ida tests/test_drop_controlflow.py -s
 """
@@ -24,7 +24,7 @@ def _idalib() -> bool:
 
 
 def _rewire(blk, new_succs):
-    """Replace blk's successors with new_succs, fixing predsets ( pattern)."""
+    """Replace blk's successors with new_succs, fixing predsets (deferred pattern)."""
     mba = blk.mba
     for old in [int(s) for s in blk.succset]:
         blk.succset._del(old)

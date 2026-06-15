@@ -4,7 +4,7 @@ The drop hooks the decompile at ``hxe_preoptimized``, rebuilds the target
 function's microcode from the LLVM IR (full-body replace), and lets the normal
 ``decompile()`` pipeline wire the CFG, allocate lvars, optimize, and build the
 ctree -> clean pseudocode. We build DIRECTLY on LLVM (LLVM IR is already the IR --
-no  portable IR); ``cfg_verify`` decodes any INTERR.
+no separate portable IR); ``cfg_verify`` decodes any INTERR.
 
 Proven slices folded here: full-body replace, the op map, SSA results via
 ``alloc_kreg`` scratch registers, ABI arg mapping, casts. Multi-block control flow

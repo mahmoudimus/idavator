@@ -1,8 +1,7 @@
 """Event emitter.
 
-Vendored from  (``/core/events.py``) with its typing imports swapped for
-the standard library. A tiny generic pub/sub: ``emit()`` calls handlers inline, so
-any asynchronous behaviour lives in what a handler does (e.g. enqueue), not here.
+A tiny generic pub/sub: ``emit()`` calls handlers inline, so any asynchronous
+behaviour lives in what a handler does (e.g. enqueue), not here.
 """
 from __future__ import annotations
 
