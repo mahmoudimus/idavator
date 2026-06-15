@@ -2419,11 +2419,29 @@ class LLVMDropConverter:
         rsz = rettype.get_size()
         if rsz in (0, ida_idaapi.BADADDR) or rettype.is_void():
             rsz = 8
-        # Fill each formal arg's mop VALUE (set_type already fixed its argloc +
-        # type); copy_mop overwrites only the mop_t base, preserving argloc/type.
-        # The verifier requires mop.size == formal type size (INTERR 50735), so
-        # a narrower LLVM value (e.g. i1 into an `int` slot) is widened first --
-        # exactly what Hex-Rays renders natively (xdu.4(%v.1)).
+        # A STACK-passed arg (ALOC_STACK) whose VALUE is a REGISTER tracing to an
+        # incoming FUNCTION ARGUMENT trips INTERR 52700 at MMAT_GLBOPT2: glbopt's
+        # sorted stkarg/stkvar side-table lookup (hexx64 sub_180126700, table at
+        # obj+0x540) has no entry for an incoming-arg register placed directly at a
+        # stack-call-arg location -- that registration is produced ONLY by the
+        # binary-driven gen_microcode (the real ``push [rbp+spill]`` sequence at
+        # MMAT_CALLS), which the drop, building at MMAT_PREOPTIMIZED, bypasses.
+        # Native instead PUSHES the value from a stack slot (``push
+        # [rbp+copy_into_self]``); the slot read IS a registered stkvar the table
+        # has. So we mirror native: SPILL each register-valued stack arg to a low
+        # frame slot (``mov reg, %scratch``) and fill the argloc with a stkvar READ
+        # of that slot -- the value at the call is then a stack memory reference,
+        # not a raw incoming-arg register, and the +0x540 lookup is consistent.
+        #
+        # The spill slots are CONSECUTIVE low offsets from 0 (k counts only spilled
+        # args), which land in the outgoing-args scratch region Hex-Rays folds with
+        # the stkvar area (MBA_CMNSTK). Probed faithful for the cp ``copy`` /
+        # ``extent_copy`` family (both flip BYTE-identical to native); a non-stack
+        # (register) arg, or a self-contained value (immediate / &global), needs no
+        # spill and takes the direct fill below. Only REGISTER-valued stack args are
+        # diverted -- an &local (mop_a stkvar) at a stack arg is a distinct shape
+        # (spilling its address is unfaithful) left to the native fallback.
+        spill_k = 0
         for i, a in enumerate(call_args):
             arg = fi.args[i]
             fsz = arg.type.get_size()
@@ -2441,14 +2459,36 @@ class LLVMDropConverter:
                     blk.insert_into_block(mi, anchor)
                     anchor = mi
                     d = ("reg", kreg, fsz)
+            is_stack_arg = arg.argloc.atype() == ida_typeinf.ALOC_STACK
+            if is_stack_arg and d[0] == "reg":
+                # Spill the register to a low scratch slot, then read it back as a
+                # stkvar -- the +0x540-consistent form (see the block comment).
+                soff = spill_k * 8
+                spill_k += 1
+                spill = hx.minsn_t(ea)
+                spill.opcode = hx.m_mov
+                self._fill(spill.l, d)
+                spill.d.make_stkvar(mba, soff)
+                spill.d.size = d[2]
+                blk.insert_into_block(spill, anchor)
+                anchor = spill
+                d = ("stkvar", soff, fsz)
             tmp = hx.mop_t()
             self._fill(tmp, (d[0], d[1], fsz))
             arg.copy_mop(tmp)
             arg.size = fsz
         # Frame must be allocated at the call ea (else WARN_BAD_CALL_SP for the
-        # stack args / any &local), and record call_spd to match.
+        # stack args / any &local), and record call_spd to match. When register
+        # stack args were SPILLED above, the scratch spill slots (and the stkvar
+        # reads feeding the call) are anchored at the rebuilt entry frame's SP --
+        # the call_spd MUST be measured at ``ea`` (the call's position in that
+        # frame), NOT the host resting-frame ea: an inconsistent ``_call_spd_ea``
+        # delta makes glbopt mis-map the outgoing-arg/spill region and the spill is
+        # undone (back to the raw incoming register -> INTERR 52700 returns). The
+        # &local stack arg in the SAME call (copy's ``&first_dir_created``) resolves
+        # correctly under the ``ea`` delta too (probed faithful).
         call_ea = (self._call_spd_ea
-                   if self._call_spd_ea is not None else ea)
+                   if self._call_spd_ea is not None and spill_k == 0 else ea)
         fi.call_spd = ida_frame.get_spd(ida_funcs.get_func(mba.entry_ea),
                                         call_ea) if ida_funcs.get_func(
                                             mba.entry_ea) else 0
