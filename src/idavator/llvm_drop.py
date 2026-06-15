@@ -463,6 +463,11 @@ class LLVMDropConverter:
         self._kreg_call_results = False  # off by default; the scoped 50342 retry in
         # ``drop`` flips it so ``_capture_call_result`` ALSO kills the ABI return
         # register after kreg-copying a call's result. See ``_capture_call_result``.
+        self._distinct_segment_eas = False  # off by default; the scoped 50342
+        # distinct-ea retry in ``drop`` flips it so ``_build_multiblock`` gives each
+        # segment a UNIQUE instruction ea (converging return-value defs then do not
+        # value-number-collide at the body-less ret merge). See
+        # ``_distinct_segment_ea_map``.
         self._struct_size = _parse_struct_layouts(ir_text)  # name -> (size, align)
         # name -> [byte offset of each field] (same natural-C/packed walk as the
         # size pass); feeds the struct-field GEP-on-stack resolution.
@@ -581,6 +586,29 @@ class LLVMDropConverter:
                 cf, box = cfk, boxk
                 is_late_failure = False
                 self.last_build_path = "KREG-RETRY"
+        # FAITHFUL 50342 DISTINCT-EA retry (scoped, zero-regression): a multi-pred
+        # body-less return merge whose converging return-value defs all share the
+        # synthesized function-entry ea value-number-COLLIDE (the def's (loc,size)
+        # is not uniquely registered at the fake STOP -> INTERR 50342 at
+        # MMAT_GLBOPT2/GLBOPT3). Retry the SAME (plain) module giving each segment a
+        # DISTINCT instruction ea (``_distinct_segment_ea_map``), mirroring native's
+        # per-instruction addressing so the converging defs are individually
+        # numberable. This stays FAITHFUL (identical IR, only addresses differ -- no
+        # SROA reshaping) and runs BEFORE the SROA fallback, so a fix here beats
+        # SROA's coarser body. Because it only runs when the plain build already
+        # FAILED LATE, every currently-passing function (incl. canaries that share
+        # the converging shape but do NOT collide) is byte-for-byte untouched.
+        if is_late_failure:
+            self._distinct_segment_eas = True
+            try:
+                cfd, boxd = self._drop_from_module(
+                    self.module, host_ea, llvm_fn_name)
+            finally:
+                self._distinct_segment_eas = False
+            if cfd is not None:
+                cf, box = cfd, boxd
+                is_late_failure = False
+                self.last_build_path = "DISTINCT-EA-RETRY"
         if is_late_failure:
             opt = self._get_sroa_module()
             if opt is not None and any(
@@ -1081,6 +1109,15 @@ class LLVMDropConverter:
         blk.mark_lists_dirty()
 
     @staticmethod
+    def _block_ea(blk, fallback) -> int:
+        """The block's real start address (a distinct per-block ea), or ``fallback``
+        (the function entry ea) for a synthetic / address-less block. Used to give
+        converging return-value defs DISTINCT addresses so Hex-Rays' value-number
+        table registers each one separately (INTERR 50342 otherwise)."""
+        s = int(blk.start)
+        return s if s != ida_idaapi.BADADDR else fallback
+
+    @staticmethod
     def _clear(blk) -> None:
         ins = blk.head
         while ins is not None:
@@ -1529,6 +1566,11 @@ class LLVMDropConverter:
             if self._is_ret_slot(ops[1], vmap):
                 # promoted return slot: write the return register directly (each
                 # path writes rax, matching native -- no post-merge read block).
+                # ``ea`` here is the EMITTING segment's address: on the 50342
+                # distinct-ea retry PASS A passes the block's own start ea, so
+                # several converging eax defs do not value-number-collide at the
+                # body-less ret merge (INTERR 50342); otherwise it is the shared
+                # entry ea (unchanged). See ``_distinct_segment_ea_map``.
                 _ar, eax, _d = self._abi()
                 mi = hx.minsn_t(ea)
                 mi.opcode = hx.m_mov
@@ -4446,6 +4488,35 @@ class LLVMDropConverter:
         segs.append(cur)
         return segs
 
+    def _distinct_segment_ea_map(self, mba, plan, ea) -> dict:
+        """``{segment_code: distinct_ea}`` giving EVERY plan segment a unique
+        instruction address, or ``{}`` when ``self._distinct_segment_eas`` is off.
+
+        Default-OFF: the whole multi-block body is synthesized at the shared
+        function-entry ea (historical behaviour -- byte-identical bodies). The map
+        is populated ONLY on the 50342 distinct-ea RETRY (a scoped fallback that
+        fires after the primary build failed LATE on the return-value value-number
+        collision). Hex-Rays value-numbers a definition by (location, size, ea);
+        when several return paths produce the return value with same-ea defs that
+        CONVERGE at the body-less ``ret`` block (directly or via propagation), the
+        same-(loc,ea) defs collide and the verifier asserts (50342). Native gives
+        each instruction its own decode address, so each segment is anchored at its
+        block's REAL start ea (``_block_ea``; the minted entry/trampoline blocks --
+        rare in a body that reaches this retry -- keep the entry ea). Real per-block
+        addresses are non-perturbing (they are the genuine instruction addresses);
+        a synthetic in-range ea instead mis-renders folding, so it is NOT used. The
+        retry is gated on a 50342 LATE failure, so a function with duplicate split-
+        segment addresses that does NOT fail (e.g. ``copy``, which would trip INTERR
+        50831 under real per-block addresses) never enters this path.
+        """
+        if not self._distinct_segment_eas:
+            return {}
+        out: dict = {}
+        for e in plan:
+            blk = mba.get_mblock(e["code"])
+            out[e["code"]] = self._block_ea(blk, ea)
+        return out
+
     def _build_multiblock(self, mba, fn, retb, eax, ds, vmap,
                           arg_preserve=None) -> None:
         """One microcode block per SEGMENT (an LLVM block split at calls).
@@ -4588,10 +4659,14 @@ class LLVMDropConverter:
                 entry_blk.insert_into_block(mv, anchor)
                 anchor = mv
 
-        # PASS A: per segment, capture the previous call's result, emit value
-        # instructions, then (for a call-segment) the call tail + fall-through.
+        # Per-segment ea map: empty (all segments share the entry ea) UNLESS the
+        # 50342 distinct-ea RETRY is active, in which case every segment gets a
+        # unique address so converging return-value defs do not value-number-
+        # collide at the body-less ret merge. See _distinct_segment_ea_map.
+        seg_ea = self._distinct_segment_ea_map(mba, plan, ea)
         for e in plan:
             blk = mba.get_mblock(e["code"])
+            bea = seg_ea.get(e["code"], ea)
             anchor = None
             if e is plan[0] and arg_preserve:
                 # The entry block already holds the arg-preservation copies; emit
@@ -4604,11 +4679,11 @@ class LLVMDropConverter:
                 # would be dead, and for a result-discarded call (e.g. a variadic
                 # printf modeled with d.size 0) it would read an undefined rax.
                 anchor = self._capture_call_result(
-                    mba, blk, anchor, ea, e["prev_call"], eax, vmap)
+                    mba, blk, anchor, bea, e["prev_call"], eax, vmap)
             for ins in e["values"]:
-                anchor = self._emit_value(mba, blk, anchor, ea, ins, vmap, ds)
+                anchor = self._emit_value(mba, blk, anchor, bea, ins, vmap, ds)
             if e["call"] is not None:
-                self._emit_call(mba, blk, anchor, ea, e["call"], vmap, argregs)
+                self._emit_call(mba, blk, anchor, bea, e["call"], vmap, argregs)
                 if e.get("noreturn"):
                     blk.type = hx.BLT_0WAY  # noreturn tail: control never leaves
                 else:
