@@ -19,10 +19,14 @@ def _setup_oracle_env() -> None:
     paths are env-overridable; missing paths are a silent no-op (oracle skips)."""
     _src = os.environ.get("_SRC")
     if not _src:
-        # idavator and  conventionally share an .../idapro/ parent.
-        candidate = Path(__file__).resolve().parents[3] / "" / "src"
-        if candidate.exists():
-            _src = str(candidate)
+        # idavator and  conventionally share an .../idapro/ parent. Search
+        # upward for a sibling /src instead of assuming a fixed depth -- a
+        # container checkout (e.g. /work) is too shallow for a hard-coded index.
+        for parent in Path(__file__).resolve().parents:
+            candidate = parent / "" / "src"
+            if candidate.exists():
+                _src = str(candidate)
+                break
     if _src and Path(_src).exists() and _src not in sys.path:
         sys.path.insert(0, _src)
     if not os.environ.get("IDA_INSTALL_DIR"):

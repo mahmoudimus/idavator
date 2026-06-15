@@ -53,12 +53,14 @@ class TestCpLlCoverage:
             pytest.skip("examples/cp.ll missing")
         cov = module_coverage(ll.read_text())
         assert cov.total > 300, cov.total
-        # Scalar-slot allocas (mem2reg-deferred locals) now drop, so >100 real
-        # functions are in the supported subset. The frontier is now ADDRESS-TAKEN
-        # allocas (structs / &local) -- still the top blocker.
-        assert len(cov.supported) >= 100, len(cov.supported)
+        # Scalar-slot and most address-taken allocas now drop, so well over half
+        # the module is in the supported subset. The unsupported frontier has
+        # shifted OFF allocas onto GEP shapes (struct/array indexing) and a tail
+        # of unhandled opcodes.
+        assert len(cov.supported) >= 200, len(cov.supported)
         hist = cov.reason_histogram()
-        assert hist.get("alloca", 0) > 100, hist
+        assert hist.get("gep", 0) > 50, hist          # GEP is now the top blocker
+        assert hist.get("alloca", 0) < 25, hist        # allocas largely supported
 
 
 # (ir, fn, reference_c) -- lifted-shape IR that stays in the supported subset and
