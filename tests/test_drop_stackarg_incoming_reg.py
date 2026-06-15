@@ -27,9 +27,31 @@ decompiled reference exactly (modulo lvar names) -- in particular the full argum
 list with the stack-passed, incoming-arg tail.
 
 NB: ``backupfile_internal`` (the third family member) is a DISTINCT shape -- its
-only stack call-arg is an ``&local`` (mop_a stkvar), not a register -- and is left
-to the native fallback (spilling an address value is unfaithful); it is intentionally
-NOT covered here.
+only stack call-arg is an ``&local`` (mop_a stkvar), not a register -- and is a
+PROVEN Hex-Rays frame-model boundary, left to the native fallback. A bare ``&local``
+mop_a at an ALOC_STACK arg drops FAITHFULLY when the call's microcode ``call_spd``
+is 0 (``extent_copy``'s ``sparse_copy`` args 9/10 are exactly this and are byte-
+faithful). ``backupfile_internal`` differs ONLY in that the host SP at its
+``numbered_backup`` call is a mid-frame ``-152`` (a ``sub rsp`` for locals + the
+``push &sdir`` precede it), whereas NATIVE's mcallinfo carries ``call_spd==0`` /
+``stkargs_top==8`` (gen_microcode normalises outgoing args into the callinfo, SP-
+neutral). The drop reuses the HOST frame, so ``get_spd`` at the call returns ``-152``
+and glbopt's +0x540 outgoing-stkarg side-table lookup (hexx64 ``sub_180126700``,
+keyed by ``call_spd``/``stkargs_top``) MISSES -> INTERR 52700 at MMAT_GLBOPT2.
+Forcing ``call_spd=0`` to register (native's value, measured at the ENTRY ea) DOES
+clear 52700 but LIES about the real ``-152`` SP: the host's address-taken slots
+(``funcresult``/``sdir``/...) are positioned for SP ``-152``, so SP=0 mis-maps every
+stack-offset and Hex-Rays emits "local variable allocation has failed" (a corrupt,
+rejected body -- verified across the full call_spd sweep {-152..+8}: only
+call_spd>=0 registers, and only call_spd>=0 corrupts). The register-spill
+alternative (materialise ``&sdir`` -> kreg, spill -> stkvar, mirroring native's
+``lea;push``) registers but (a) REGRESSES ``extent_copy`` by reshaping its already-
+faithful bare-mop_a args, and (b) trips the converging-return INTERR 50342 on the
+PRIMARY path whose own distinct-ea fix re-breaks the spill registration (52700
+returns). Recovery requires rebuilding ``backupfile_internal``'s frame with an
+SP=0-consistent outgoing-args region (what gen_microcode does), which is orthogonal
+to and far beyond the stack-arg registration mechanism. Intentionally NOT covered
+here; it stays a faithful native fallback.
 
 Run:  PYTHONPATH=src pytest -m ida tests/test_drop_stackarg_incoming_reg.py -s
 """
