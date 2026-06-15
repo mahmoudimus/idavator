@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The AST-equivalence oracle now treats a leading-underscore-count skew on libc
+  symbols as cosmetic (`__errno_location` == `_errno_location`, `__assert_fail` ==
+  `_assert_fail`), so the drop decline gate no longer false-declines a faithful
+  body when IDA renders a libc callee with a different underscore count across
+  builds. Conservative: it collapses only a run of 2+ leading underscores to one
+  and never merges two genuinely different symbols (`foo` and `_foo` stay
+  distinct).
 - The AST-equivalence oracle is now fully self-contained: the libclang loader and
   clang Python bindings are vendored under `idavator._vendor` instead of imported
   from a sibling checkout, removing the cross-repo dependency (and the conftest

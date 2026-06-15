@@ -32,6 +32,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.render_tolerance import contains_int
+
 
 def _idalib() -> bool:
     try:
@@ -107,22 +109,20 @@ class TestRetSlotResidual:
         assert "return result;" not in txt, (
             f"uninit slot-kreg return (computed value dropped):\n{txt}")
 
-    @pytest.mark.xfail(
-        reason="The errno branch IS recovered on IDA 9.3 Linux (the body renders "
-        "'if (*_errno_location() == 2) return 0; else return -1;'), but the -1 arm "
-        "renders as the decimal literal '-1', not hex '0xFFFFFFFF'. dev macOS IDA "
-        "renders 0xFFFFFFFF -- cosmetic render divergence, both arms are faithful.",
-        strict=False,
-    )
     def test_try_nocreate_recovers_errno_branch(self, examples_dir: Path) -> None:
         """``errno == 2 ? 0 : -1`` -- both arms must survive. The pre-fix drop lost
-        the ``return 0`` (errno==2) arm and returned ``0xFFFFFFFF`` unconditionally."""
+        the ``return 0`` (errno==2) arm and returned -1 unconditionally.
+
+        The -1 arm is asserted by VALUE: IDA 9.3 Linux renders it as decimal ``-1``,
+        dev macOS IDA as hex ``0xFFFFFFFF`` -- a cosmetic render divergence; both
+        arms are faithful, so ``contains_int(-1)`` accepts either base."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         txt = self._drop(examples_dir, "try_nocreate")
         assert "== 2" in txt, f"errno==2 branch folded away:\n{txt}"
         assert "return 0;" in txt, f"errno==2 -> return 0 arm dropped:\n{txt}"
-        assert "0xFFFFFFFF" in txt, f"the -1 arm lost:\n{txt}"
+        assert contains_int(txt, 0xFFFFFFFF, width=32), (
+            f"the -1 arm lost (no '-1'/'0xFFFFFFFF' return):\n{txt}")
 
     def test_source_is_dst_backup_recovers_success_compare(
             self, examples_dir: Path) -> None:

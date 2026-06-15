@@ -57,6 +57,24 @@ class TestAstEquivalence:
         assert not matches("__int64 f(char *p){ return strlen(p); }",
                            "__int64 f(char *p){ return strnlen(p); }")
 
+    def test_leading_underscore_count_is_invariant(self):
+        # A libc symbol Hex-Rays renders with a different leading-underscore count
+        # across IDA builds (``__errno_location`` vs ``_errno_location``,
+        # ``__assert_fail`` vs ``_assert_fail``) is NOT a divergence.
+        assert matches("int f(){ return *__errno_location(); }",
+                       "int g(){ return *_errno_location(); }")
+        assert matches("int f(){ return *__errno_location(); }",
+                       "int g(){ return *__errno_location(); }")
+        assert matches(
+            "void f(int x){ if (!x) __assert_fail(\"a\",\"b\",1,\"c\"); }",
+            "void g(int a0){ if (!a0) _assert_fail(\"a\",\"b\",1,\"c\"); }")
+
+    def test_single_vs_zero_underscore_still_differ(self):
+        # CONSERVATIVE: only a 2+ -> 1 collapse; a 1-vs-0 leading-underscore
+        # difference is a genuinely different identifier and must still diverge.
+        assert not matches("int f(){ return foo(); }",
+                           "int f(){ return _foo(); }")
+
     def test_missing_branch_is_detected(self):
         full = "int f(int x){ if (x) return 1; else return 2; }"
         flat = "int f(int x){ return 2; }"

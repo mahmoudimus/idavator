@@ -57,6 +57,21 @@ _TRANSPARENT = {
 }
 _COMMUTATIVE = {"+", "*", "&", "|", "^", "==", "!=", "&&", "||"}
 
+# A run of 2+ leading underscores on an identifier collapses to a single one, so a
+# libc symbol Hex-Rays renders with a DIFFERENT leading-underscore count across IDA
+# builds is not a divergence: ``__errno_location`` == ``_errno_location`` and
+# ``__assert_fail`` == ``_assert_fail`` (the dead-canary class). CONSERVATIVE -- it
+# only equates names that already share a leading underscore AND an identical
+# trailing name (``_foo`` (1) is left alone, so ``foo`` (0) and ``_foo`` (1) stay
+# distinct); it never merges two genuinely different symbols.
+_LEADING_UNDERSCORES = re.compile(r"^_{2,}")
+
+
+def _canon_ident(name: str) -> str:
+    """Collapse a run of 2+ leading underscores to one (libc-symbol render skew)."""
+    return _LEADING_UNDERSCORES.sub("_", name)
+
+
 _index = None
 _index_loaded = False
 
@@ -143,6 +158,9 @@ class _Canon:
         self._names: dict[str, int] = {}
 
     def alpha(self, name: str) -> int:
+        # Canonicalize the leading-underscore count so an address-taken libc symbol
+        # (``&__errno_location``) matches its single-underscore render.
+        name = _canon_ident(name)
         return self._names.setdefault(name, len(self._names))
 
     def expr(self, c):
@@ -167,7 +185,10 @@ class _Canon:
             return self._binop(_binop_spelling(c), self.expr(kids[0]),
                                self.expr(kids[1]))
         if kind == "CALL_EXPR":
-            callee = c.spelling or "?"
+            # Collapse a leading-underscore-count skew on the callee name so a libc
+            # symbol rendered ``__errno_location`` vs ``_errno_location`` across IDA
+            # builds is not a divergence.
+            callee = _canon_ident(c.spelling or "?")
             kids = _children(c)
             # first child is the (unexposed) callee ref; remainder are args.
             args = tuple(self.expr(k) for k in kids[1:])

@@ -84,15 +84,6 @@ def _drop_only(examples_dir: Path, name: str) -> str:
 
 @pytest.mark.ida
 class TestHostOffsetCollision:
-    @pytest.mark.xfail(
-        reason="The host-offset fix holds on IDA 9.3 Linux: 'punch_holes = a2' "
-        "binds correctly, there is no 'size = a2' aliasing, and the deallocation "
-        "is gated on punch_holes. But Linux IDA structures the guard in POSITIVE "
-        "form ('if ( punch_holes && punch_hole(...) < 0 )') whereas dev macOS IDA "
-        "emits the negated 'if ( !punch_holes )'. The 'if ( !punch_holes )' "
-        "substring assertion is thus IDA-version specific; the body is faithful.",
-        strict=False,
-    )
     def test_create_hole_punch_holes_not_aliased_to_size(
             self, examples_dir: Path) -> None:
         """The escaped ``punch_holes`` guard param must NOT be stored into the
@@ -100,7 +91,13 @@ class TestHostOffsetCollision:
 
         Fail-without-fix: synthetic ``punch_holes`` (+8) overlays host ``size``
         (+8); the drop binds the 3rd param to ``size`` (``size = a2``) and guards
-        the deallocation with the wrong value (``if ( !size )``)."""
+        the deallocation with the wrong value (``if ( !size )``).
+
+        The guard POLARITY is IDA-build specific and not asserted exactly: IDA 9.3
+        Linux structures it positively (``if ( punch_holes && punch_hole(...) < 0
+        )``) while dev macOS IDA emits the negated ``if ( !punch_holes )``. The
+        invariant under test -- the guard tests ``punch_holes``, never the
+        mis-aliased ``size`` -- holds in either form."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "create_hole")
@@ -111,11 +108,14 @@ class TestHostOffsetCollision:
             f"punch_holes param aliased onto the size slot:\n{dropped}")
         assert "punch_holes = a2" in dropped, (
             f"3rd param did not bind to punch_holes:\n{dropped}")
-        # The deallocation guard tests punch_holes, never the (mis-aliased) size.
+        # The deallocation guard tests punch_holes, never the (mis-aliased) size --
+        # in EITHER polarity. The mis-aliased guard (`if ( !size )` / `size &&`) and
+        # any test of the size slot must be absent; a real punch_holes guard
+        # (negated `if ( !punch_holes )` OR positive `punch_holes &&`) must appear.
         assert "if ( !size )" not in dropped, (
             f"deallocation gated on the wrong (aliased) value:\n{dropped}")
-        assert "if ( !punch_holes )" in dropped, (
-            f"deallocation not gated on punch_holes:\n{dropped}")
+        assert "if ( !punch_holes )" in dropped or "punch_holes &&" in dropped, (
+            f"deallocation not gated on punch_holes (neither polarity):\n{dropped}")
 
     def test_sparse_copy_total_n_read_not_swapped(
             self, examples_dir: Path) -> None:

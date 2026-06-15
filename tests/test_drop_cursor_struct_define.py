@@ -46,6 +46,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.render_tolerance import search_with_ints
+
 
 def _idalib() -> bool:
     try:
@@ -94,14 +96,6 @@ def _drop_only(examples_dir: Path, name: str) -> str:
 
 @pytest.mark.ida
 class TestCursorStructDefine:
-    @pytest.mark.xfail(
-        reason="The cursor advance IS a pointer define on IDA 9.3 Linux (not a "
-        "first-field deref), but the stride renders in decimal "
-        "('... + 24 * idx'), not hex ('... + 0x18 * idx'), so the hex-anchored "
-        "regex misses. dev macOS IDA renders hex -- cosmetic render divergence; "
-        "the cursor-define recovery is faithful.",
-        strict=False,
-    )
     def test_extent_scan_read_cursor_defines_not_derefs(
             self, examples_dir: Path) -> None:
         """``extent_scan_read`` advances the ``last_ei`` cursor by pointer
@@ -110,20 +104,24 @@ class TestCursorStructDefine:
 
         Fail-without-fix: the pointer-width arithmetic store renders as
         ``last_ei->ext_logical = <arith>`` (first-field deref) and the cursor is
-        never reassigned by arithmetic."""
+        never reassigned by arithmetic.
+
+        The stride (24) is asserted by VALUE: IDA 9.3 Linux renders ``+ 24 * idx``,
+        dev macOS IDA ``+ 0x18 * idx`` -- cosmetic render divergence; the
+        cursor-define recovery is faithful either way."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "extent_scan_read")
 
         # The cursor is ADVANCED by an arithmetic pointer DEFINE: at least one
-        # statement assigns the bare `last_ei` to (base + N * idx). The drop has no
+        # statement assigns the bare `last_ei` to (base + 24 * idx). The drop has no
         # recovered struct name for `a0`, so the base renders as
         # `*((_QWORD *)a0 + 5)` (== scan->ext_info) and the assign as
-        # `last_ei = (extent_info *)(... + 0x18 * idx)`.
-        define_re = re.compile(
-            r"\blast_ei\s*=\s*\(extent_info \*\)\([^;]*\+\s*0x18[L]*\s*\*")
-        assert define_re.search(dropped), (
-            "cursor advance lost -- no `last_ei = (extent_info *)(base + 0x18 * "
+        # `last_ei = (extent_info *)(... + 24 * idx)` (24 in any base).
+        assert search_with_ints(
+            r"\blast_ei\s*=\s*\(extent_info \*\)\([^;]*\+\s*{stride}\s*\*",
+            dropped, {"stride": 0x18}) is not None, (
+            "cursor advance lost -- no `last_ei = (extent_info *)(base + 24 * "
             f"idx)` pointer define:\n{dropped}")
 
         # The bug wrote the first field instead of defining the pointer: the
@@ -150,14 +148,6 @@ class TestCursorStructDefine:
             "ioctl lost its 3rd arg `&fiemap_buf` (2-arg ioctl writes nowhere):\n"
             f"{dropped}")
 
-    @pytest.mark.xfail(
-        reason="All three fiemap struct stores ARE present and distinct on IDA "
-        "9.3 Linux (no offset-0 collapse), but fm_extent_count's value renders in "
-        "decimal ('fiemap_buf.f.fm_extent_count = 72'), not hex ('= 0x48'). dev "
-        "macOS IDA renders hex -- cosmetic render divergence; the stores are "
-        "faithful.",
-        strict=False,
-    )
     def test_extent_scan_read_fiemap_struct_stores(
             self, examples_dir: Path) -> None:
         """The fiemap request fields ``fm_flags`` / ``fm_extent_count`` /
@@ -165,14 +155,20 @@ class TestCursorStructDefine:
         leaving only one survivor).
 
         Fail-without-fix: only a single ``fiemap_buf.f.fm_*`` store survives (the
-        rest overwrote each other at offset 0)."""
+        rest overwrote each other at offset 0).
+
+        ``fm_extent_count``'s value (72) is asserted by VALUE: IDA 9.3 Linux renders
+        ``= 72``, dev macOS IDA ``= 0x48`` -- cosmetic render divergence; the store
+        is faithful either way."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "extent_scan_read")
 
         assert "fiemap_buf.f.fm_flags = " in dropped, (
             f"fm_flags store lost (collapsed to offset 0):\n{dropped}")
-        assert "fiemap_buf.f.fm_extent_count = 0x48;" in dropped, (
-            f"fm_extent_count = 0x48 store lost:\n{dropped}")
+        assert search_with_ints(
+            r"fiemap_buf\.f\.fm_extent_count = {n};", dropped,
+            {"n": 0x48}) is not None, (
+            f"fm_extent_count = 72 (0x48) store lost:\n{dropped}")
         assert "fiemap_buf.f.fm_length = " in dropped, (
             f"fm_length store lost:\n{dropped}")

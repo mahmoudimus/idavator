@@ -150,14 +150,18 @@ class TestArgSpillAcrossCall:
             f"rpl_fflush fflush(stream) perturbed:\n{dropped}")
 
     @pytest.mark.xfail(
-        reason="renameatu's recovered body IS faithful on IDA 9.3 Linux (the 5-arg "
-        "renameat2 carries src/dst by value and the post-call reads resolve to the "
-        "params), but the WHOLE body diverges from Linux-IDA native elsewhere "
-        "(__readfsqword stack-canary / prologue render), so the B5 decline gate "
-        "routes to native and _drop_only sees 'decompile returned None'. Same "
-        "IDA-build divergence as TestDistinctEa50342.test_renameatu_recovers_"
-        "faithfully (proven via macOS clang-21 on the exact Linux text); dev macOS "
-        "IDA ships the body. The arg-preservation under test is itself correct.",
+        reason="GENUINE per-IDA-build NATIVE structural divergence (not a cosmetic "
+        "axis), so NOT made tolerant. The arg-preservation under test is itself "
+        "correct -- the recovered renameatu body carries the 5-arg renameat2 with "
+        "src/dst preserved -- but on IDA 9.3 Linux the NATIVE pre-drop pseudocode "
+        "emits an explicit '__readfsqword(40)' canary statement plus a differently "
+        "materialized 'err' flag (flipped 'if (!err)' structure) that the dropped "
+        "body does not mirror, so the B5 decline gate CORRECTLY routes to native and "
+        "_drop_only sees 'decompile returned None'. After the oracle's "
+        "leading-underscore normalization the errno helper no longer diverges, but "
+        "this canary/err structural difference remains. Same root cause as "
+        "TestDistinctEa50342.test_renameatu_recovers_faithfully; dev macOS IDA's "
+        "native matches the drop (canary elided identically) so the body ships there.",
         strict=False,
     )
     def test_pointer_arg_widened_byvalue_preserved(

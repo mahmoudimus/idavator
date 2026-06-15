@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.render_tolerance import contains_int, count_int, search_with_ints
+
 
 def _idalib() -> bool:
     try:
@@ -66,14 +68,6 @@ class TestRetSlotGeneralize:
         finally:
             idapro.close_database()
 
-    @pytest.mark.xfail(
-        reason="The dual-alias / uninit-return fix holds on IDA 9.3 Linux (no "
-        "duplicate x-> alias, no 'return vN' uninit), but the byte field-store "
-        "offset renders in decimal ('*((_BYTE *)a0 + 27)'), not hex "
-        "('*((_BYTE *)a0 + 0x1B)'). dev macOS IDA renders hex -- cosmetic render "
-        "divergence; the recovered stores are faithful.",
-        strict=False,
-    )
     def test_cp_options_default_no_dual_alias_no_uninit(
             self, examples_dir: Path) -> None:
         """The csweep RETSLOT exemplar: a non-noreturn ptr-returning fn whose ``%x``
@@ -81,12 +75,19 @@ class TestRetSlotGeneralize:
         rendered the SAME field stores TWICE -- once via ``a0[..]`` and again via a
         duplicate ``x->...`` alias -- and returned the uninit slot kreg ``v1``/``v2``.
         Stripping the reused host m_ret block kills the duplicate alias rendering and
-        the promotion stops the un-promoted-slot uninit read."""
+        the promotion stops the un-promoted-slot uninit read.
+
+        The field-store offset (27) is asserted by VALUE: IDA 9.3 Linux renders
+        ``*((_BYTE *)a0 + 27)``, dev macOS IDA ``*((_BYTE *)a0 + 0x1B)`` -- cosmetic
+        render divergence; the recovered store is faithful either way."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         txt = self._drop(examples_dir, "cp_options_default")
-        # the field stores must appear ONCE, through the ``a0`` arg pointer.
-        assert "*((_BYTE *)a0 + 0x1B)" in txt, f"field store lost:\n{txt}"
+        # the field store must appear, through the ``a0`` arg pointer (offset 27 in
+        # any base).
+        assert search_with_ints(r"\*\(\(_BYTE \*\)a0 \+ {off}\)", txt,
+                                {"off": 0x1B}) is not None, (
+            f"field store at offset 27 (0x1B) lost:\n{txt}")
         # the duplicate ``x->`` alias block (the csweep-flagged dual-alias) is gone.
         assert "x->owner_privileges" not in txt, (
             f"duplicate dual-alias var still rendered:\n{txt}")
@@ -94,25 +95,24 @@ class TestRetSlotGeneralize:
         for bad in ("return v1;", "return v2;", "return v0;"):
             assert bad not in txt, f"uninit return-slot kreg ({bad}):\n{txt}"
 
-    @pytest.mark.xfail(
-        reason="The leaf fn recovers faithfully on IDA 9.3 Linux (a single errno "
-        "store, the constant return), but the errno constant renders in decimal "
-        "('*_errno_location() = 95') so the 'count(\"0x5F\") == 1' hex assertion "
-        "sees zero. dev macOS IDA renders 0x5F -- cosmetic render divergence.",
-        strict=False,
-    )
     def test_setfscreatecon_no_duplicate_or_uninit(
             self, examples_dir: Path) -> None:
         """A leaf fn whose body lives in the host m_ret block must not leak that
-        block's side effects (duplicate ``*errno=0x5F``) nor return uninit."""
+        block's side effects (duplicate ``*errno=95``) nor return uninit.
+
+        The errno constant (95) and the -1 return are asserted by VALUE: IDA 9.3
+        Linux renders them in decimal (``95`` / ``-1``), dev macOS IDA in hex
+        (``0x5F`` / ``0xFFFFFFFF``) -- cosmetic render divergence; the leaf body is
+        faithful either way."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         txt = self._drop(examples_dir, "setfscreatecon")
-        # native: ``*__errno_location() = 0x5F; return 0xFFFFFFFF;`` -- exactly ONE
-        # errno store, the constant -1 return.
-        assert txt.count("0x5F") == 1, (
+        # native: ``*__errno_location() = 95; return -1;`` -- exactly ONE errno
+        # store (value 95, any base), the constant -1 return (any base).
+        assert count_int(txt, 0x5F) == 1, (
             f"duplicate errno store (uncleared host m_ret block):\n{txt}")
-        assert "0xFFFFFFFF" in txt, f"constant -1 return lost:\n{txt}"
-        # no dereference-of-slot-kreg garbage (``*v1 = 0x5F`` etc.) and no
+        assert contains_int(txt, 0xFFFFFFFF, width=32), (
+            f"constant -1 return lost:\n{txt}")
+        # no dereference-of-slot-kreg garbage (``*v1 = 95`` etc.) and no
         # raw byte_ global write-through.
         assert "byte_" not in txt, f"garbage global operand:\n{txt}"

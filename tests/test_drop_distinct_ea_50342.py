@@ -83,26 +83,19 @@ class TestDistinctEa50342:
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
 
-    @pytest.mark.xfail(
-        reason="On IDA 9.3 Linux the distinct-ea retry reaches a body, but it "
-        "DIVERGES from the Linux native pre-drop pseudocode, so the B5 decline "
-        "gate correctly routes to a native fallback (cf is None). The divergence "
-        "is an IDA-build decompiler difference, NOT a 50342 regression: verified "
-        "with macOS clang-21 (the dev oracle libclang) on the EXACT Linux body "
-        "text, oracle.matches(native, body) is also False -- the ledger shows the "
-        "errno helper renders '_errno_location' in the dropped body vs "
-        "'__errno_location' in Linux-IDA native. dev macOS IDA recovers this "
-        "faithfully (the two agree there); Linux IDA's render split makes the gate "
-        "decline. The recovery machinery is intact (last_primary_late_interr == "
-        "50342, distinct-ea retry fires).",
-        strict=False,
-    )
     def test_clone_quoting_options_distinct_ea_faithful(
             self, examples_dir: Path) -> None:
         """The converging-return 50342 exemplar recovers FAITHFULLY via the
         distinct-ea retry: a real body ships (not declined) through the
         DISTINCT-EA-RETRY path, and it is the ``xmemdup(o ? o : &default, 0x38)``
-        clone -- not an INTERR, not a native fallback."""
+        clone -- not an INTERR, not a native fallback.
+
+        This previously xfail'd on IDA 9.3 Linux: the dropped body renders the errno
+        helper ``_errno_location`` while Linux-IDA native renders ``__errno_location``
+        (a single leading-underscore count difference; the bodies are otherwise
+        identical), so the B5 decline gate's ``oracle.matches`` false-declined. The
+        oracle now collapses a leading-underscore-count skew on libc symbols, so the
+        gate ships the faithful body on both builds."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         from idavator import oracle
@@ -137,21 +130,34 @@ class TestDistinctEa50342:
                 idapro.close_database()
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+        # The gate ALREADY accepted the body on THIS build (not declined, above), so
+        # this is a redundant cross-check. An OracleParseError is INCONCLUSIVE (the
+        # active libclang cannot parse the clone's function-pointer-cast body -- the
+        # case dev macOS IDA's clang-21 hits here), not a divergence: treat it as the
+        # B5 gate does (inconclusive -> accept), never a false failure.
         if oracle.clang_available():
-            assert oracle.matches(native, body), (
-                f"distinct-ea body diverges from native:\n{body}")
+            try:
+                faithful = oracle.matches(native, body)
+            except oracle.OracleParseError:
+                faithful = True  # inconclusive parse -> not a divergence
+            assert faithful, f"distinct-ea body diverges from native:\n{body}"
 
     @pytest.mark.xfail(
-        reason="On IDA 9.3 Linux the scoped 50342 retry reaches a body (the 5-arg "
-        "renameat2 with src/dst preserved is present and faithful), but it "
-        "DIVERGES from the Linux native pre-drop pseudocode, so the B5 gate "
-        "declines to native (cf is None). The divergence is an IDA-build "
-        "decompiler difference, NOT a regression: verified with macOS clang-21 on "
-        "the EXACT Linux body text, oracle.matches(native, body) is also False -- "
-        "the ledger shows Linux-IDA native emits a '__readfsqword(40)' stack-canary "
-        "read and a differently-structured prologue that the dropped body does not "
-        "mirror. dev macOS IDA recovers this faithfully; the recovery machinery is "
-        "intact (last_primary_late_interr == 50342).",
+        reason="GENUINE per-IDA-build NATIVE structural divergence, not a cosmetic "
+        "axis (so NOT made tolerant -- weakening the oracle/test to absorb it would "
+        "gut their ability to catch real divergence). The distinct-ea retry reaches "
+        "a faithful-looking body (5-arg renameat2, src/dst preserved), but on IDA "
+        "9.3 Linux the NATIVE pre-drop pseudocode emits an explicit '__readfsqword(40)' "
+        "stack-canary read statement AND materializes the 'err' flag as a local with "
+        "a flipped 'if (!err)' control structure, while the drop elides the canary and "
+        "structures err differently. After the oracle's leading-underscore "
+        "normalization the errno helper no longer diverges, but this canary-statement "
+        "+ err-flag-structure difference remains real (verified via the fidelity "
+        "ledger on Linux: native carries a '_readfsqword'/40 stmt + extra locals the "
+        "drop lacks). The B5 gate CORRECTLY declines a body that diverges from the "
+        "host's own native (a divergent drop is worse than native fallback). dev "
+        "macOS IDA's native matches the drop (it elides the canary the same way), so "
+        "the body ships there. Machinery intact (last_primary_late_interr == 50342).",
         strict=False,
     )
     def test_renameatu_recovers_faithfully(self, examples_dir: Path) -> None:

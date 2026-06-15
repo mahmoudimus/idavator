@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.render_tolerance import contains_int
+
 
 def _idalib() -> bool:
     try:
@@ -73,12 +75,6 @@ _SWITCH_IR = (
 
 @pytest.mark.ida
 class TestSwitchDrop:
-    @pytest.mark.xfail(
-        reason="IDA 9.3 Linux renders the case constants in decimal "
-        "(100/200/300), not hex (0x64/0xC8/0x12C); dev macOS IDA renders hex "
-        "-- cosmetic render divergence, the switch lowering itself is faithful",
-        strict=False,
-    )
     def test_synthetic_switch_lowers(self, examples_dir: Path) -> None:
         if not _idalib():
             pytest.skip("idalib unavailable")
@@ -108,25 +104,17 @@ class TestSwitchDrop:
             assert conv.last_interr is None, f"INTERR {conv.last_interr}"
             assert cf is not None, "decompile failed"
             assert "local variable allocation has failed" not in text, text
-            # Each case constant must survive, and a dispatch (switch/if) over x.
-            for needle in ("0x64", "0xC8", "0x12C"):
-                assert needle in text, f"missing case {needle!r} in:\n{text}"
+            # Each case constant must survive (by VALUE: decimal on Linux IDA, hex
+            # on dev macOS IDA -- cosmetic render divergence), and a dispatch
+            # (switch/if) over x.
+            for value in (100, 200, 300):
+                assert contains_int(text, value), (
+                    f"missing case {value} (any base) in:\n{text}")
             assert ("switch" in text or "if" in text), \
                 f"no switch/if dispatch in:\n{text}"
         finally:
             idapro.close_database()
 
-    @pytest.mark.xfail(
-        reason="version_etc_arn correctly DECLINES on both IDA builds, but the "
-        "decline REASON differs: dev macOS IDA resolves fprintf as a vararg "
-        "prototype and declines via the '_emit_call_vararg' stack-passed-variadic "
-        "path ('stack-passed variadic tail'); IDA 9.3 Linux's get_tinfo returns a "
-        "non-vararg fprintf prototype, so the drop declines one branch earlier via "
-        "_emit_call_stackargs ('stack-passed args: prototype arity 2 != call arity "
-        "7 for @fprintf'). The OUTCOME (clean native fallback) is identical; only "
-        "the asserted error string is IDA-version specific.",
-        strict=False,
-    )
     def test_real_version_etc_switch(self, examples_dir: Path) -> None:
         """cp!version_etc_arn must DECLINE to a clean native fallback.
 
@@ -145,6 +133,15 @@ class TestSwitchDrop:
         oracle. (Earlier this test asserted a faithful if-ladder drop; that never
         held -- the native renders a real ``switch`` (case arms), not an ``== N``
         ladder, and the >6-arg arms cannot be lowered. Ticket d81-nh63.)
+
+        The asserted invariant is the DECLINE itself plus that it is the
+        stack-passed-args issue on the ``fprintf`` author-vararg arm -- NOT the
+        exact reason string, which is IDA-build specific: dev macOS IDA resolves
+        ``fprintf`` as a vararg prototype and declines via ``_emit_call_vararg``
+        ('stack-passed variadic tail'); IDA 9.3 Linux's ``get_tinfo`` returns a
+        non-vararg ``fprintf`` prototype, so the drop declines one branch earlier
+        via ``_emit_call_stackargs`` ('stack-passed args: prototype arity 2 != call
+        arity 7 for @fprintf'). The OUTCOME (clean native fallback) is identical.
         """
         if not _idalib():
             pytest.skip("idalib unavailable")
@@ -169,13 +166,18 @@ class TestSwitchDrop:
                 pytest.skip("version_etc_arn not in this build")
             conv = LLVMDropConverter(ll.read_text())
             conv.drop(ea, "version_etc_arn")
-            # Clean decline: an error is recorded and it names the stack-passed
-            # variadic tail (the supported, intentional fallback path). The
-            # harness classifies a recorded error as real_drop=False -> native.
+            # Clean decline: an error is recorded (the harness classifies a recorded
+            # error as real_drop=False -> native fallback). The drop cannot lower the
+            # >6-arg ``fprintf`` author-vararg arm, so it declines on a stack-passed
+            # call issue -- accept EITHER build's reason string for that same cause.
             assert conv.last_error is not None, (
-                "expected version_etc_arn to DECLINE (stack-passed variadic "
-                "tail), but the drop reported no error")
-            assert "stack-passed variadic tail" in conv.last_error, (
-                f"declined for an unexpected reason:\n{conv.last_error}")
+                "expected version_etc_arn to DECLINE (the >6-arg fprintf vararg "
+                "arm cannot be lowered), but the drop reported no error")
+            err = conv.last_error
+            stack_passed_decline = (
+                "stack-passed variadic tail" in err          # dev macOS IDA
+                or "stack-passed args" in err)               # IDA 9.3 Linux
+            assert stack_passed_decline, (
+                f"declined for an unexpected (non stack-passed) reason:\n{err}")
         finally:
             idapro.close_database()
