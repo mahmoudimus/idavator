@@ -62,6 +62,9 @@ version = { attr = "idavator.__version__" }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"idavator._vendor.clang" = ["LICENSE"]
+
 # Coverage configuration
 [tool.coverage.run]
 source = ["src/idavator"]

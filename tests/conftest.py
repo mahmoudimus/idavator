@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -14,21 +13,11 @@ EXAMPLES_DIR = ROOT / "examples"
 
 
 def _setup_oracle_env() -> None:
-    """Best-effort: make 's clang_loader importable and point at IDA's
-    libclang so the AST oracle (idavator.oracle) works without manual env. All
-    paths are env-overridable; missing paths are a silent no-op (oracle skips)."""
-    _src = os.environ.get("_SRC")
-    if not _src:
-        # idavator and  conventionally share an .../idapro/ parent. Search
-        # upward for a sibling /src instead of assuming a fixed depth -- a
-        # container checkout (e.g. /work) is too shallow for a hard-coded index.
-        for parent in Path(__file__).resolve().parents:
-            candidate = parent / "" / "src"
-            if candidate.exists():
-                _src = str(candidate)
-                break
-    if _src and Path(_src).exists() and _src not in sys.path:
-        sys.path.insert(0, _src)
+    """Best-effort: point at IDA's bundled libclang so the AST oracle
+    (idavator.oracle) works without manual env. Env-overridable; a missing IDA
+    install is a silent no-op (the oracle reports clang_available() == False and
+    its tests skip). The clang loader + bindings are vendored under
+    idavator._vendor -- no sibling-repo path injection needed."""
     if not os.environ.get("IDA_INSTALL_DIR"):
         for app in sorted(Path("/Applications").glob("IDA*.app"), reverse=True):
             macos = app / "Contents" / "MacOS"

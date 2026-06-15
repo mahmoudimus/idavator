@@ -7,7 +7,7 @@ a test while swapping the arms of an ``if``. A textual diff therefore produces
 false mismatches.
 
 This oracle parses both C functions with **IDA's libclang** (discovered through
-'s ``clang_loader``) and compares a CANONICAL form of each function body --
+the vendored ``clang_loader``) and compares a CANONICAL form of each function body --
 the AST after the normalizations that undo those cosmetic choices:
 
 * locals/params are alpha-renamed to positional ids (``#0``, ``#1`` ...);
@@ -34,7 +34,7 @@ from __future__ import annotations
 import re
 
 try:
-    from .core.clang_loader import load_clang_index
+    from idavator._clang_loader import load_clang_index
 
     _CLANG_IMPORT_ERROR: Exception | None = None
 except Exception as _e:  # noqa: BLE001 - optional dependency (IDA's libclang)
@@ -69,7 +69,7 @@ def _get_index():
     global _index
     if load_clang_index is None:
         raise RuntimeError(
-            f"libclang unavailable ( clang_loader import failed): "
+            f"libclang unavailable (clang_loader import failed): "
             f"{_CLANG_IMPORT_ERROR}")
     if _index is None:
         _index, _, _ = load_clang_index()
