@@ -1,0 +1,32 @@
+#!/bin/sh
+# Pre-commit hook. Enable once per clone:  git config core.hooksPath .githooks
+#
+#   1. Keep ida-plugin.json's version in sync with idavator.__version__ (the IDA
+#      Plugin Repository and hcli read the version out of the manifest). If the
+#      sync changes the manifest, the change is staged into this commit.
+#   2. Warn -- never block -- when src/ changes land without a CHANGELOG.md note.
+
+# --- 1. version sync -------------------------------------------------------
+if command -v python3 >/dev/null 2>&1; then
+    if python3 tools/sync_plugin_version.py; then
+        if ! git diff --quiet -- ida-plugin.json; then
+            git add ida-plugin.json
+            echo "pre-commit: synced ida-plugin.json version and staged it"
+        fi
+    else
+        echo "pre-commit: sync_plugin_version.py failed; aborting commit" >&2
+        exit 1
+    fi
+else
+    echo "pre-commit: python3 not found, skipping ida-plugin.json version sync" >&2
+fi
+
+# --- 2. changelog reminder (warning only) ----------------------------------
+staged=$(git diff --cached --name-only)
+if printf '%s\n' "$staged" | grep -q '^src/' \
+   && ! printf '%s\n' "$staged" | grep -q '^CHANGELOG\.md$'; then
+    echo "pre-commit: note -- src/ changed but CHANGELOG.md was not updated." >&2
+    echo "            Add an entry under '## [Unreleased]' if this is user-facing." >&2
+fi
+
+exit 0

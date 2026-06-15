@@ -2,7 +2,7 @@
     "IDAMetadataDescriptorVersion": 1,
     "plugin": {
         "name": "idavator",
-        "entryPoint": "idavator.gui",
+        "entryPoint": "src/idavator/gui/__init__.py",
         "categories": [
             "decompilation"
         ],

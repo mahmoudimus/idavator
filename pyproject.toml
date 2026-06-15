@@ -9,7 +9,34 @@ dynamic = ["version"]
 authors = [{ name = "Mahmoud Abdelkader", email = "mabdelkader@gmail.com" }]
 description = "IDAvator is a bi-directional bridge between IDA Pro's Hex-Rays microcode and LLVM IR. It lets you lift decompiler microcode into LLVM for analysis, optimization, or deobfuscation. Then, drop it back into IDA, patched and ready for further exploration."
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = [
+    "ida pro",
+    "hex-rays",
+    "decompiler",
+    "microcode",
+    "llvm",
+    "reverse engineering",
+    "binary analysis",
+    "deobfuscation",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Plugins",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Software Development :: Disassemblers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = ["llvmlite>=0.44.0", "numpy>=2.0.0", "typer>=0.10.0"]
+
+[project.urls]
+Homepage = "https://github.com/mahmoudimus/idavator"
+Documentation = "https://github.com/mahmoudimus/idavator/blob/main/README.md"
+Source = "https://github.com/mahmoudimus/idavator"
+Issues = "https://github.com/mahmoudimus/idavator/issues"
 
 [project.optional-dependencies]
 dev = [

@@ -51,6 +51,30 @@ pip install -e .
 
 Requires Python `>= 3.10`, IDA Pro 9+ with idalib, and dependencies from `pyproject.toml` (llvmlite, numpy, typer).
 
+### Install with hcli
+
+[`hcli`](https://hcli.docs.hex-rays.com/) is Hex-Rays' command-line tool; it installs IDAvator from the IDA Plugin Repository. Install `hcli` once:
+
+```bash
+curl -LsSf https://hcli.docs.hex-rays.com/install | sh        # macOS/Linux
+iwr -useb https://hcli.docs.hex-rays.com/install.ps1 | iex    # Windows (PowerShell)
+```
+
+Then authenticate (see the [hcli docs](https://hcli.docs.hex-rays.com/)) and install the plugin:
+
+```bash
+hcli plugin search idavator
+hcli plugin install idavator
+```
+
+`hcli` downloads the plugin into `$IDAUSR/plugins` (`~/.idapro/plugins` on macOS/Linux), where IDA loads it on the next launch. Requires IDA 9.0+.
+
+Because IDAvator is a multi-module package with third-party dependencies (`llvmlite`, `numpy`, `typer`) that `hcli` does not install, also install the package into IDA's Python so those imports resolve:
+
+```bash
+pip install idavator
+```
+
 ### Lift (ida2llvm)
 
 Lift a binary to LLVM IR (headless via idalib):
@@ -133,6 +157,16 @@ python -m idavator ida2llvm -f binary -o output.ll
 ### Requirements
 
 - Python `>= 3.10`, llvmlite, and IDA Pro 9+ with idalib
+
+## Contributing
+
+The version lives in one place: `__version__` in `src/idavator/__init__.py` (`pyproject.toml` derives the package version from it). The IDA Plugin Repository and `hcli` read the version out of `ida-plugin.json`, so the two must agree. To keep them in step automatically, enable the repo's git hook once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+The pre-commit hook (`.githooks/pre-commit`) runs `tools/sync_plugin_version.py`, which copies `__version__` into `ida-plugin.json` and stages it, so the manifest can never drift behind a version bump. The test suite runs the same check (`tests/test_plugin_manifest.py`) as a CI backstop.
 
 ## Acknowledgements
 
