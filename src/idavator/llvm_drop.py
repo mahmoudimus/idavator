@@ -1151,6 +1151,22 @@ class LLVMDropConverter:
             if ea != ida_idaapi.BADADDR:
                 return ("gvaraddr", ea, 8) if ptr_value \
                     else ("gvar", ea, default_size)
+            # An INTERIOR-aggregate global (``@data_24188`` == the ``src_info``
+            # field of ``x_tmp.2`` at ``&x_tmp.2 + 0x48``) gets NO head name from
+            # ``get_name_ea`` (IDA names only the item HEAD). Its name encodes the
+            # EA; decode it the SAME way ``_global_ea`` does. This MUST precede the
+            # numeric-tail fallback below: ``str(@data_24188)`` is the global's full
+            # definition ``'@data_24188 = global i64 -1'``, whose trailing ``-1``
+            # the int regex would otherwise capture, collapsing the store target to
+            # ``*(_QWORD *)0xFFFFFFFFFFFFFFFF`` (the do_copy ``x_tmp_2.src_info``
+            # store reached here THROUGH a ``bitcast @data_24188 to ptr`` -- a
+            # no-op cast that calls ``_desc`` on the global, unlike the sibling
+            # fields stored through the bare ``@data_24XXX`` which route via
+            # ``_global_ea`` at the store site).
+            anr = self._addr_named_global_ea(nm)
+            if anr is not None:
+                return ("gvaraddr", anr, 8) if ptr_value \
+                    else ("gvar", anr, default_size)
             sea = self._strconst_ea(s)
             if sea is not None:
                 return ("gvaraddr", sea, 8) if ptr_value \
