@@ -351,4 +351,10 @@ class TestModel2Hook:
             print(f"EDIT VISIBLE (CAFEBABE/3405691582): "
                   f"{'CAFEBABE' in text.upper() or '3405691582' in text}")
         finally:
+            # Release live Hex-Rays objects (cfunc_t / mba / hook) and run their
+            # destructors BEFORE closing: idalib segfaults in close_database when
+            # a decompiler object is still alive (seen on Linux CI, not macOS).
+            cf = m = hook = None  # noqa: F841
+            import gc
+            gc.collect()
             idapro.close_database()
