@@ -550,6 +550,47 @@ def lift_type_from_address(ea: int, pfunc=None):
     return tif
 
 
+def _callee_has_real_proto(tif: ida_typeinf.tinfo_t, callnum: int) -> bool:
+    """True if ``tif`` is a function type that already declares at least as many
+    arguments as the call site passes -- i.e. a real prototype we must not
+    override. A prototype-less import (zero declared args) is NOT real here."""
+    if tif is None or not (tif.is_func() or tif.is_funcptr()):
+        return False
+    ftif = tif.get_ptrarr_object() if tif.is_funcptr() else tif
+    return ftif.is_func() and ftif.get_nargs() >= callnum and ftif.get_nargs() > 0
+
+
+def _apply_callsite_proto(callee_ea: int, mcallinfo) -> bool:
+    """Commit a call site's recovered signature onto ``callee_ea`` as its
+    prototype, so subsequent decompiles keep the call's arguments.
+
+    The signature (return type, calling convention, solid argument types) is
+    taken from the decompiler's own ``mcallinfo`` for the call -- the arguments
+    it inferred from the call ABI. Returns True iff a non-empty prototype was
+    synthesized and applied. Best-effort: any failure returns False and leaves
+    the existing (caller-refresh) recovery path to run.
+    """
+    solid = getattr(mcallinfo, "solid_args", 0)
+    if solid <= 0:
+        return False
+    try:
+        fti = ida_typeinf.func_type_data_t()
+        fti.rettype = mcallinfo.return_type
+        fti.cc = mcallinfo.cc
+        for i in range(solid):
+            arg = ida_typeinf.funcarg_t()
+            arg.type = mcallinfo.args.at(i).type
+            fti.push_back(arg)
+        tif = ida_typeinf.tinfo_t()
+        if not tif.create_func(fti):
+            return False
+        return bool(
+            ida_typeinf.apply_tinfo(callee_ea, tif, ida_typeinf.TINFO_DEFINITE)
+        )
+    except Exception:  # noqa: BLE001 - best-effort recovery, never fatal
+        return False
+
+
 def analyze_insn(module, ida_insn, ea):
     """
     Analyzes function call instructions for parameter count mismatches.
@@ -586,6 +627,18 @@ def analyze_insn(module, ida_insn, ea):
                         func_name = f"data_{hex(ea)[2:]}"
                     if hasattr(module.get_global(func_name), "args"):
                         argnum = len(module.get_global(func_name).args)
+
+                # Callee UNDER-specifies the call: the call site carries MORE
+                # solid arguments than the callee's stored prototype declares
+                # (classically a prototype-LESS import the decompiler typed as a
+                # zero-arg `__int64()`). Re-decompiling the CALLER here would
+                # discard the call-site argument list the decompiler already
+                # recovered (collapsing `f(a,b,c)` to `f()`); instead, commit the
+                # call-site signature onto the callee so every decompile keeps the
+                # arguments, and leave the caller's cached body untouched.
+                if callnum > argnum and not _callee_has_real_proto(tif, callnum):
+                    if _apply_callsite_proto(temp_ea, ida_insn.d.f):
+                        return
 
                 if callnum != argnum:
                     ida_hf = ida_hexrays.hexrays_failure_t()
@@ -2202,6 +2255,26 @@ def lift_insn(
                     ltype.return_type, new_args, var_arg=True
                 ).as_pointer()
                 l = typecast(l, new_func_type, builder)
+            elif len(args) > len(l_pointee.args):
+                # Non-variadic callee whose LLVM signature UNDER-specifies the call:
+                # the callee function was declared with fewer fixed params than the
+                # call site actually passes. This happens for a prototype-less
+                # import the decompiler typed as zero-arg `i64()` -- its `@callee`
+                # global was created with no params before the real call-site
+                # signature was recovered (see `_apply_callsite_proto`). The surplus
+                # operands are genuine arguments, so preserve them by casting the
+                # callee to a fixed (non-vararg) function type carrying every actual
+                # arg. Truncating to the short declaration would silently drop real
+                # arguments (rendering `renameat2()` for the 5-arg `renameat2`
+                # call). The fixed prefix was already typecast by the loop above.
+                ltype = l_pointee
+                new_args = list(ltype.args)
+                for i in range(len(new_args), len(args)):
+                    new_args.append(args[i].type)
+                new_func_type = ir.FunctionType(
+                    ltype.return_type, new_args, var_arg=False
+                ).as_pointer()
+                l = typecast(l, new_func_type, builder)
             else:
                 # Non-variadic callee: drop any surplus operands beyond the fixed
                 # signature (preserves prior behavior for fixed-arity calls).
@@ -2467,8 +2540,26 @@ class BIN2LLVMController:
         ptext: dict to save decompile results {ea:decompile}
         str_dict: dict to save all strings
         """
-        # Step 1: Decompile all functions and cache the decompiled results
-        for func in idautils.Functions():
+        # Step 1: Decompile all functions and cache the decompiled results.
+        #
+        # NON-THUNK functions are decompiled FIRST, thunks last. Decompiling a
+        # thunk (`.foo` -> `jmp foo_ptr`) to a prototype-LESS import makes IDA
+        # commit that import's type as a zero-arg `__int64()`, which then COLLAPSES
+        # the call arguments at every site that calls it through the thunk (the
+        # caller's cached cfunc loses `f(a,b,c)` down to `f()`). A real caller's
+        # decompile materializes the correct call-site argument list (recovered
+        # from the call ABI), so by caching every real body BEFORE any thunk is
+        # decompiled, those argument lists are locked in and survive the later
+        # thunk decompile. (Concretely: decompiling the `.renameat2` thunk was
+        # zero-arg-poisoning `renameat2`, dropping `renameat2(fd1, src, fd2, dst,
+        # flags)` to `renameat2()` in `renameatu`.)
+        funcs = list(idautils.Functions())
+        non_thunks, thunks = [], []
+        for func in funcs:
+            f = ida_funcs.get_func(func)
+            (thunks if f is not None and (f.flags & ida_funcs.FUNC_THUNK)
+             else non_thunks).append(func)
+        for func in non_thunks + thunks:
             try:
                 pfunc = ida_hexrays.decompile(func)
                 if pfunc is not None:

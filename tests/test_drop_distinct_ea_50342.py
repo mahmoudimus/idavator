@@ -127,24 +127,78 @@ class TestDistinctEa50342:
             assert oracle.matches(native, body), (
                 f"distinct-ea body diverges from native:\n{body}")
 
-    def test_renameatu_no_late_interr_50342(self, examples_dir: Path) -> None:
-        """``renameatu`` (an 11-pred body-less return merge) must NO LONGER fail
-        LATE with an unhandled 50342 surfacing on the host: the distinct-ea retry
-        clears the value-number collision (the body reaches MMAT_LVARS). The B5
-        gate then DECLINES it to native fallback on the orthogonal 0-arg
-        ``renameat2`` divergence -- that decline is correct, not a 50342 leak."""
+    def test_renameatu_recovers_faithfully(self, examples_dir: Path) -> None:
+        """``renameatu`` (an 11-pred body-less return merge) recovers FAITHFULLY:
+        its PRIMARY path still fails LATE on the 50342 value-number collision, but
+        the scoped 50342 retry now reaches MMAT_LVARS with a body that ROUND-TRIPS
+        (canonically == native), so the B5 gate ships it (no decline).
+
+        This is the joint payoff of two fixes that removed the divergences the
+        body previously carried: (1) the lifter now emits the 5-argument
+        ``renameat2(fd1, src, fd2, dst, flags)`` call (the import was lifted as a
+        0-arg ``renameat2()`` because decompiling the ``.renameat2`` thunk
+        zero-arg-poisoned the prototype); (2) the drop's spill-across-call analysis
+        now preserves the ``flags``/``src``/``dst`` params consumed BY VALUE by
+        that call and re-read afterwards (previously rendered as uninitialised
+        locals). The 5-arg call is the canonical witness the body is faithful."""
         if not _idalib():
             pytest.skip("idalib unavailable")
-        conv, _body, desc = self._drop(examples_dir, "renameatu")
+        from idavator import oracle
+
+        conv, body, desc = self._drop(examples_dir, "renameatu")
         assert conv.last_primary_late_interr == 50342, (
             "renameatu's PRIMARY path should fail LATE on 50342 "
             f"(else the fixture no longer exercises the shape): {desc}")
-        # The retry built a body (50342 cleared); the decline gate then vetoed it.
-        assert conv.last_build_path == "DISTINCT-EA-RETRY", (
-            f"expected distinct-ea retry to reach a body, got "
-            f"{conv.last_build_path}")
-        assert conv.last_declined_divergent, (
-            "renameatu's recovered body diverges (0-arg renameat2) -> must DECLINE")
+        assert body is not None, (
+            f"renameatu: no body (INTERR/decline): {desc}")
+        assert not conv.last_declined_divergent, (
+            f"renameatu's recovered body must be faithful (not declined):\n{body}")
+        assert "renameat2(" in body, (
+            f"renameatu body lost the renameat2 call:\n{body}")
+        # The lifted/dropped call must carry all five arguments -- the witness that
+        # the 0-arg-import lift defect is repaired (``renameat2()`` would be wrong).
+        # Match the balanced argument list (cast args nest parens), then count the
+        # top-level commas.
+        import re as _re
+
+        start = body.index("renameat2(") + len("renameat2(")
+        depth, args = 1, ""
+        for ch in body[start:]:
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            args += ch
+        top_commas = sum(
+            1 for i, ch in enumerate(args)
+            if ch == "," and args[:i].count("(") == args[:i].count(")"))
+        assert args.strip() and top_commas == 4, (
+            f"renameat2 call is not 5-arg (args={args!r}):\n{body}")
+        # Canonically equivalent to the native decompile (variable names aside).
+        import ida_hexrays
+        import ida_idaapi
+        import ida_name
+        import idapro
+
+        binary = examples_dir / "cp"
+        tmp = Path(tempfile.mkdtemp(prefix="renameatu_native_"))
+        try:
+            dst = tmp / "cp"
+            shutil.copy(binary, dst)
+            idapro.open_database(str(dst), True)
+            try:
+                assert ida_hexrays.init_hexrays_plugin()
+                ea = ida_name.get_name_ea(ida_idaapi.BADADDR, "renameatu")
+                native = str(ida_hexrays.decompile(ea))
+            finally:
+                idapro.close_database()
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        if oracle.clang_available():
+            assert oracle.matches(native, body), (
+                f"renameatu body diverges from native:\n{body}")
 
     def test_do_copy_no_late_interr_50342(self, examples_dir: Path) -> None:
         """``do_copy`` (an inner body-less merge, not the ret-block) likewise has

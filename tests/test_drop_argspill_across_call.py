@@ -27,13 +27,16 @@ keyed only on the arg SSA name read directly past a call -- ``create_hole`` read
 the value through its spill SLOT, so the across-call read is of ``%size``, not the
 ``%.4`` arg name, and the c3f71ce gate never fired.
 
-FIX: a NON-POINTER scalar arg that is passed by value to a call and re-read after
-must rest in a real FRAME SLOT (not a scalar kreg) AND have its source register
-KILLED after the entry spill -- so Hex-Rays cannot back-substitute the raw
-register past the spill and must anchor on the stable slot, exactly as native does
-(the arg register is dead after the spill store). NARROW: pointer args
-(rpl_fflush ``stream``, the hash-table cursor pointers) are preserved naturally
-and are left untouched (inert).
+FIX: an arg that is passed by value to a call and re-read after must rest in a
+real FRAME SLOT (not a scalar kreg) AND have its source register KILLED after the
+entry spill -- so Hex-Rays cannot back-substitute the raw register past the spill
+and must anchor on the stable slot, exactly as native does (the arg register is
+dead after the spill store). NARROW: a pointer arg passed/re-read AS A POINTER
+(rpl_fflush ``stream``, the hash-table cursor pointers) is preserved naturally and
+left untouched (inert); a pointer arg REINTERPRETED to an integer and passed by
+value (``renameatu``'s ``src``/``dst``, ``bitcast i8** %slot to i64*; load i64``
+for the 5-arg ``renameat2``) IS clobbered like a scalar and is preserved by the
+same kill -- the integer-reinterpret load is the discriminator.
 
 Fail-without-fix: ``create_hole`` renders ``punch_hole(a0, (off_t)v4 - v5, v5)``
 with ``v5`` uninitialised instead of ``punch_hole(a0, (off_t)v4 - a3, a3)`` with
@@ -133,9 +136,10 @@ class TestArgSpillAcrossCall:
             f"lseek no longer called with the size param a3:\n{dropped}")
 
     def test_pointer_arg_fn_unaffected(self, examples_dir: Path) -> None:
-        """A POINTER arg spilled-and-reread (``rpl_fflush``'s ``stream``) is
-        preserved by Hex-Rays naturally and must stay faithful -- the narrow
-        scalar-only gate leaves it untouched (inert)."""
+        """A POINTER arg spilled-and-reread AS A POINTER (``rpl_fflush``'s
+        ``stream``) is preserved by Hex-Rays naturally and must stay faithful --
+        the gate's pointer path only arms an INTEGER-reinterpreted by-value pass
+        (below), so a plain pointer load leaves it untouched (inert)."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "rpl_fflush")
@@ -144,3 +148,31 @@ class TestArgSpillAcrossCall:
             f"rpl_fflush stream pointer perturbed:\n{dropped}")
         assert "fflush((FILE *)a0)" in dropped, (
             f"rpl_fflush fflush(stream) perturbed:\n{dropped}")
+
+    def test_pointer_arg_widened_byvalue_preserved(
+            self, examples_dir: Path) -> None:
+        """A POINTER arg REINTERPRETED to an integer and passed BY VALUE to a
+        clobbering call, then re-read, must be preserved like a scalar -- the case
+        a plain ``ptr`` filter would miss.
+
+        ``renameatu`` hands ``src`` (a1) and ``dst`` (a3) to the 5-arg
+        ``renameat2(fd1, src, fd2, dst, flags)`` via ``bitcast i8** %slot to i64*;
+        load i64`` (the pointer slot read AS an integer ABI argument, clobbering
+        the register), then re-reads them for ``strlen``/``lstatat``/``renameat``.
+        Without the integer-reinterpret arming, the post-call reads render as
+        uninitialised locals and the body declines. WITH it, the params survive
+        and the whole body recovers faithfully (see TestDistinctEa50342)."""
+        if not _idalib():
+            pytest.skip("idalib unavailable")
+        dropped = _drop_only(examples_dir, "renameatu")
+        # The clobbering 5-arg call carries src (a1) and dst (a3) by value.
+        assert re.search(r"renameat2\(\s*\(unsigned int\)a0", dropped), (
+            f"renameat2 lost its 5-arg shape:\n{dropped}")
+        # The POST-clobber re-reads must resolve to the params, NOT uninit locals:
+        # strlen(src=a1), and renameat(...) with src (a1) and dst (a3).
+        assert re.search(r"strlen\(\(const char \*\)a1\)", dropped), (
+            f"src (a1) lost across renameat2 (rendered uninit):\n{dropped}")
+        assert re.search(r"renameat\(\s*a0\s*,\s*\(const char \*\)a1\s*,\s*a2\s*,"
+                         r"\s*\(const char \*\)a3\s*\)", dropped), (
+            f"src (a1)/dst (a3) lost across renameat2 (rendered uninit):\n"
+            f"{dropped}")

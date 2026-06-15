@@ -3557,10 +3557,18 @@ class LLVMDropConverter:
         if spill_slots:
             arg_index = {a.name: i for i, a in enumerate(fn.arguments)}
             for slot_name, arg_name in spill_slots.items():
-                # Only a pure scalar (load/store-only) spill slot -- a GEP'd or
-                # already-escaped slot has its own handling.
-                if slot_name in gepd or slot_name in escaped:
+                # A GEP'd slot has its own (offset-tracked) handling -- leave it.
+                if slot_name in gepd:
                     continue
+                # Anchor the slot in a real frame slot AND kill its source register.
+                # The register kill is the load-bearing half: it severs Hex-Rays'
+                # copy-propagation of the raw incoming register past the entry spill
+                # so the post-clobber re-read anchors on the stable slot. A slot can
+                # ALREADY be in ``escaped`` because it is bitcast to ``i64*`` for an
+                # ABI-widened by-value call argument (``renameatu``'s ``src``/``dst``
+                # pointer slots); that escape gives it a frame home but does NOT kill
+                # the register, so the kill must still be recorded here -- otherwise
+                # the re-read renders an uninitialised local.
                 escaped.add(slot_name)
                 i = arg_index.get(arg_name)
                 if i is not None and i < len(argregs):
@@ -4392,9 +4400,21 @@ class LLVMDropConverter:
           local, not a param spill."""
         if not reg_arg_names:
             return {}
-        # Non-pointer reg-arg SSA names (pointer args are preserved naturally).
+        # Candidate reg-arg SSA names, plus the set whose declared type is a
+        # POINTER. A pointer arg is USUALLY preserved naturally (Hex-Rays keeps the
+        # pointer register live across a plain pointer pass, e.g.
+        # transfer_entries/hash_insert_if_absent/rpl_fflush/safe_hasher, whose slots
+        # are loaded back AS pointers). It needs a kill ONLY when it is reinterpreted
+        # to an INTEGER and consumed BY VALUE -- the ABI-widening of ``renameatu``'s
+        # ``src``/``dst`` (``bitcast i8** %slot to i64*; load i64; renameat2(..)``),
+        # which turns the pointer register into a clobberable scalar. So a pointer
+        # arm requires the by-value LOAD to produce a non-pointer integer (handled
+        # below); a plain pointer load never arms it, leaving the natural-preserve
+        # cases untouched.
+        ptr_arg_names = {a.name for i, a in enumerate(fn.arguments)
+                         if a.name in reg_arg_names and str(a.type) == "ptr"}
         scalar_args = {a.name for i, a in enumerate(fn.arguments)
-                       if a.name in reg_arg_names and str(a.type) != "ptr"}
+                       if a.name in reg_arg_names}
         if not scalar_args:
             return {}
         # Map each spill alloca to the scalar arg it is the (sole, entry) spill
@@ -4413,25 +4433,63 @@ class LLVMDropConverter:
                     spill[ops[1].name] = ops[0].name
         if not spill:
             return {}
-        # A load of a spill slot used directly as a CALL argument marks that slot
-        # as "consumed by value" at that call; a later load of the same slot is the
+        # A load of a spill slot used as a CALL argument marks that slot as
+        # "consumed by value" at that call; a later load of the same slot is the
         # post-clobber re-read. Walk in order: a value-arg load arms the slot; a
         # subsequent load confirms the lost-across-clobbering-call pattern.
+        #
+        # The value reaching the call may be cast at either end of the load:
+        #  * the SLOT is reinterpreted before the load -- a pointer spill slot
+        #    read back as an integer for an ABI-widened call argument
+        #    (``%c = bitcast i8** %slot to i64*; load i64, i64* %c``); the load's
+        #    pointer operand is then ``%c``, not ``%slot``; and/or
+        #  * the loaded VALUE is width-adjusted before the call
+        #    (``load i32 %slot; zext to i64; call f(..., %zext)``).
+        # Follow bitcast/gep aliases of the slot AND zext/sext/trunc/bitcast chains
+        # of the value, so the slot is still armed -- else the by-value consumption
+        # is missed and the post-clobber re-read renders an uninitialised local
+        # (``renameatu``'s ``flags`` widened to i64, and ``src``/``dst`` whose
+        # pointer slots are bitcast to ``i64*`` for the 5-arg ``renameat2`` call).
+        _CAST_OPS = {"zext", "sext", "trunc", "bitcast"}
         out: dict = {}
         armed: set = set()         # slot loaded as a call arg, awaiting a re-read
-        load_def: dict = {}        # load-result SSA name -> slot it loaded
+        load_def: dict = {}        # load/cast-result SSA name -> slot it derives from
+        slot_alias: dict = {}      # bitcast/gep-of-slot SSA name -> the slot name
         for bb in fn.blocks:
             for ins in bb.instructions:
+                if ins.opcode in ("bitcast", "getelementptr"):
+                    # A reinterpret/zero-offset alias of a spill slot ADDRESS reads
+                    # the same slot; remember it so a load THROUGH it counts.
+                    co = list(ins.operands)
+                    if co:
+                        base = co[0].name
+                        root = slot_alias.get(base, base)
+                        if root in spill:
+                            slot_alias[ins.name] = root
                 if ins.opcode == "load":
                     ld = list(ins.operands)
-                    if ld and ld[0].name in spill:
-                        if (store_count.get(ld[0].name, 0) == 1
-                                and ld[0].name in armed):
-                            out[ld[0].name] = spill[ld[0].name]
-                        load_def[ins.name] = ld[0].name
+                    slot = slot_alias.get(ld[0].name, ld[0].name) if ld else None
+                    if slot in spill:
+                        if (store_count.get(slot, 0) == 1 and slot in armed):
+                            out[slot] = spill[slot]
+                        # A POINTER arg only counts as by-value-clobbered when this
+                        # load read it AS a non-pointer integer (the ABI-widening
+                        # reinterpret); a plain pointer load is naturally preserved
+                        # and must not arm the slot. Drop such loads from tracking.
+                        if (spill[slot] in ptr_arg_names
+                                and str(ins.type) == "ptr"):
+                            pass  # plain pointer load -> do not track for arming
+                        else:
+                            load_def[ins.name] = slot
+                elif ins.opcode in _CAST_OPS:
+                    # A width-adjusting cast of a tracked load propagates the slot
+                    # association to the cast result (load -> zext -> call arg).
+                    co = list(ins.operands)
+                    if co and co[0].name in load_def:
+                        load_def[ins.name] = load_def[co[0].name]
                 elif ins.opcode == "call":
-                    # Arm each spill slot whose load feeds this call BY VALUE
-                    # (a direct call operand). The callee operand is the last.
+                    # Arm each spill slot whose load (possibly through a cast) feeds
+                    # this call BY VALUE (a direct call operand). Callee is last.
                     call_ops = list(ins.operands)[:-1]
                     for op in call_ops:
                         slot = load_def.get(op.name)
