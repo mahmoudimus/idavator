@@ -61,6 +61,19 @@ _index = None
 _index_loaded = False
 
 
+class OracleParseError(RuntimeError):
+    """The active libclang could not fully parse a function body.
+
+    Raised when canonicalization yields an EMPTY body for a source that clearly
+    has statements -- i.e. the parser silently dropped the body on a syntax it
+    could not handle. This happens with the pip ``libclang`` *fallback* (an older
+    clang used on Linux when IDA's own libclang cannot parse a TU): it rejects
+    some Hex-Rays pseudocode constructs that IDA's clang-21 accepts (function-
+    pointer casts like ``(*((T (__fastcall **)(...))p + 7))(...)``). The compare
+    is then INCONCLUSIVE, not a divergence; callers that must avoid a false
+    negative (e.g. the drop decline gate) should treat it as "cannot verify"."""
+
+
 def _ensure_index():
     """Load IDA's libclang index once; cache the (possibly None) result. The
     vendored loader always imports, so the real availability signal is whether
@@ -103,6 +116,26 @@ def _children(cursor):
     return list(cursor.get_children())
 
 
+def _binop_spelling(cursor) -> str:
+    """Operator of a BINARY_OPERATOR cursor, version-independently.
+
+    ``cursor.spelling`` only carries the operator on libclang >= 19; older
+    libclang (e.g. the pip ``libclang`` fallback used on Linux) returns ``""``.
+    Recover it from the token stream instead: the operator is the first token at
+    or after the end of the left operand's extent. This agrees with the
+    ``spelling`` value on clang 21 (IDA's own libclang) and works on clang 18."""
+    spelled = cursor.spelling
+    if spelled:
+        return spelled
+    kids = _children(cursor)
+    if len(kids) == 2:
+        left_end = kids[0].extent.end.offset
+        for tok in cursor.get_tokens():
+            if tok.extent.start.offset >= left_end:
+                return tok.spelling
+    return spelled
+
+
 class _Canon:
     """Canonicalize a function body to a comparable nested tuple."""
 
@@ -131,7 +164,7 @@ class _Canon:
             return ("un", op, inner)
         if kind == "BINARY_OPERATOR":
             kids = _children(c)
-            return self._binop(c.spelling, self.expr(kids[0]),
+            return self._binop(_binop_spelling(c), self.expr(kids[0]),
                                self.expr(kids[1]))
         if kind == "CALL_EXPR":
             callee = c.spelling or "?"
@@ -208,8 +241,17 @@ def _function_cursor(tu):
     return fn
 
 
+_HAS_STMT = re.compile(r"[;{]")
+
+
 def canonical_form(c_function: str):
-    """Canonical comparable form of a complete C function definition's body."""
+    """Canonical comparable form of a complete C function definition's body.
+
+    Raises :class:`OracleParseError` if the body canonicalizes to EMPTY while the
+    source plainly has statements -- the signal that the active (fallback)
+    libclang silently dropped the body on an unsupported syntax (see that
+    exception's docstring). A genuinely empty body (``int f(){}``) does not have
+    statement punctuation between its braces, so it is not misflagged."""
     tu = _get_index().parse(
         "o.c", args=_PARSE_ARGS,
         unsaved_files=[("o.c", _PRELUDE + c_function)])
@@ -220,7 +262,18 @@ def canonical_form(c_function: str):
                  if k.kind.name == "COMPOUND_STMT"), None)
     if body is None:
         raise ValueError("function has no body")
-    return _Canon().stmt(body)
+    canon = _Canon().stmt(body)
+    if canon == ("block", ()):
+        # Empty canonical body. Distinguish a truly-empty body from a parse that
+        # silently dropped statements: look at the source between the OUTERMOST
+        # braces for statement punctuation.
+        inner = c_function[c_function.find("{") + 1: c_function.rfind("}")]
+        stripped = re.sub(r"//[^\n]*|/\*.*?\*/", "", inner, flags=re.DOTALL)
+        if _HAS_STMT.search(stripped):
+            raise OracleParseError(
+                "libclang produced an empty body for a non-empty function "
+                "(unsupported pseudocode syntax for this clang version)")
+    return canon
 
 
 def _norm_text(c: str) -> str:

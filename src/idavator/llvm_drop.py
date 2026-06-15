@@ -676,6 +676,13 @@ class LLVMDropConverter:
             if not oracle.clang_available():
                 return True
             return oracle.matches(native_c, str(cf))
+        except oracle.OracleParseError:
+            # The active (fallback) libclang cannot parse this body -- the
+            # comparison is INCONCLUSIVE, not a divergence. Per this gate's
+            # contract (decline only on a POSITIVE divergence finding), ship.
+            logger.debug("degraded-body fidelity check inconclusive "
+                         "(libclang could not parse the body); shipping")
+            return True
         except Exception:  # noqa: BLE001 -- inconclusive -> ship (no false decline)
             logger.debug("degraded-body fidelity check errored; shipping",
                          exc_info=True)

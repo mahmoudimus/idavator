@@ -41,6 +41,15 @@ Issues = "https://github.com/mahmoudimus/idavator/issues"
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-forked",
+    # Fallback libclang for the AST oracle on platforms where IDA's bundled
+    # libclang cannot parse a translation unit (notably the Linux idalib build,
+    # whose libclang.so exposes only the type-info API and returns a null TU from
+    # clang_parseTranslationUnit). The pip wheel bundles a parse-capable
+    # libclang shared library + matching clang.cindex bindings. macOS keeps using
+    # IDA's own (working) libclang; this is only consulted when a parse smoke-test
+    # fails. See idavator._clang_loader.load_clang_index.
+    "libclang>=16",
 ]
 
 [tool.pytest.ini_options]

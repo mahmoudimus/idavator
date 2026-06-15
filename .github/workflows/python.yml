@@ -94,7 +94,10 @@ jobs:
                       set -e
                       python3 -m pip install --upgrade pip
                       pip install -e '.[dev]'
-                      pytest -v
+                      # idalib only tolerates ~40 database open/close cycles per
+                      # process before it crashes; run each test in a fresh
+                      # forked process (pytest-forked comes via .[dev]).
+                      pytest -v --forked -p no:cacheprovider
                   "
                   docker compose logs
 

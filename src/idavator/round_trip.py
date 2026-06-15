@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 import llvmlite.binding as llvm
 
-from idavator.oracle import clang_available, fidelity_ledger
+from idavator.oracle import OracleParseError, clang_available, fidelity_ledger
 
 # NB: the coverage analyzer (is_supported / module_coverage) is deliberately
 # IDA-free (llvmlite only) so it runs standalone. Only round_trip() drops, and it
@@ -156,6 +156,12 @@ def round_trip(ir_text: str, fn_name: str, host_ea: int,
         # No oracle -> report the drop succeeded but fidelity unverified.
         return RoundTripResult(fn_name, True, dropped_c=dropped,
                                ledger={"oracle": "unavailable"})
-    ledger = fidelity_ledger(original_c, dropped)
+    try:
+        ledger = fidelity_ledger(original_c, dropped)
+    except OracleParseError:
+        # The fallback libclang cannot parse this body -> fidelity unverified
+        # (not a divergence). Report drop success without a faithful claim.
+        return RoundTripResult(fn_name, True, dropped_c=dropped,
+                               ledger={"oracle": "unparseable"})
     return RoundTripResult(fn_name, ledger == {}, ledger=ledger,
                            dropped_c=dropped)

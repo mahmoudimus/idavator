@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `clang_available()` now reflects whether IDA's native libclang actually loads,
   not merely whether the vendored loader imports, so the oracle tests skip
   cleanly where IDA is absent (e.g. CI) instead of erroring.
+- The AST oracle now works on Linux idalib, where IDA's bundled libclang creates
+  an `Index` but cannot parse a translation unit (its parsing frontend returns a
+  null TU). The loader smoke-tests a parse and falls back to the pip `libclang`
+  wheel (with its own matched bindings) when IDA's libclang cannot parse; macOS
+  keeps using IDA's own libclang. The operator-equivalence canonicalization no
+  longer depends on a libclang >= 19 feature (it derives binary operators from
+  tokens), and an un-parseable pseudocode body is reported as inconclusive rather
+  than a false divergence.
+- The idalib test suite no longer crashes mid-run under idalib's database
+  open/close cycle limit: CI runs it with `pytest-forked` (a fresh process per
+  test).
 
 ## [0.1.0] - 2026-06-15
 
