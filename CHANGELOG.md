@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Release guard: tagging a release now fails fast if the git tag does not match
+  `idavator.__version__`, preventing a silent version-mismatch publish.
+
 ## [0.1.0] - 2026-06-15
 
 Initial release: a bi-directional bridge between IDA Pro's Hex-Rays microcode and

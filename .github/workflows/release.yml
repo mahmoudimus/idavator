@@ -60,6 +60,17 @@ jobs:
                     echo "already=false" >> "$GITHUB_OUTPUT"
                   fi
 
+            - name: Validate tag matches idavator.__version__
+              if: steps.version.outputs.should_release == 'true' && steps.guard.outputs.already == 'false'
+              run: |
+                  PKG=$(python3 -c "import ast,pathlib; m=ast.parse(pathlib.Path('src/idavator/__init__.py').read_text()); print([ast.literal_eval(n.value) for n in m.body if isinstance(n,ast.Assign) and any(getattr(t,'id','')=='__version__' for t in n.targets)][0])")
+                  TAG_VER="${{ steps.version.outputs.version }}"
+                  echo "package __version__=$PKG  tag version=$TAG_VER"
+                  if [ "$PKG" != "$TAG_VER" ]; then
+                    echo "::error::tag v$TAG_VER does not match idavator.__version__ ($PKG); bump src/idavator/__init__.py before tagging"
+                    exit 1
+                  fi
+
             - name: Build sdist
               if: steps.version.outputs.should_release == 'true' && steps.guard.outputs.already == 'false'
               run: |
@@ -121,6 +132,17 @@ jobs:
               with:
                   ref: ${{ steps.version.outputs.ref }}
                   fetch-tags: true
+
+            - name: Validate tag matches idavator.__version__
+              if: steps.guard.outputs.already == 'false'
+              run: |
+                  PKG=$(python3 -c "import ast,pathlib; m=ast.parse(pathlib.Path('src/idavator/__init__.py').read_text()); print([ast.literal_eval(n.value) for n in m.body if isinstance(n,ast.Assign) and any(getattr(t,'id','')=='__version__' for t in n.targets)][0])")
+                  TAG_VER="${{ steps.version.outputs.version }}"
+                  echo "package __version__=$PKG  tag version=$TAG_VER"
+                  if [ "$PKG" != "$TAG_VER" ]; then
+                    echo "::error::tag v$TAG_VER does not match idavator.__version__ ($PKG); bump src/idavator/__init__.py before tagging"
+                    exit 1
+                  fi
 
             - name: Build sdist
               if: steps.guard.outputs.already == 'false'
