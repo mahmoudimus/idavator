@@ -790,9 +790,121 @@ class LLVMDropConverter:
                     return _type_size(ops[0].type)
         return 4
 
+    @staticmethod
+    def _is_pointer_to_pointer(fn, arg) -> bool:
+        """True iff ``arg`` is a POINTER-TO-POINTER that is ARRAY-INDEXED (e.g.
+        ``i8** file`` accessed ``file[i]``) -- the ONLY pointer shape whose element
+        STRIDE matters to the rendering, and the one a ``_DWORD *`` (4-byte) host
+        prototype mis-strides (do_copy's ``*(char **)&a[2*i - 2]`` vs native's
+        ``file[i]``).
+
+        Opaque ``ptr`` (LLVM 14+) erases ``i8**`` -- llvmlite even rewrites the
+        spill ``alloca i8**`` to ``alloca ptr`` -- so this is recovered from the
+        ACCESS SHAPE, not the type. The lifter lowers ``file[i]`` to a textbook
+        array-of-pointers index:
+
+            %off = mul i64 8, %i          ; 8-byte ELEMENT stride
+            %p   = getelementptr i8, i8* %base, i64 %off
+            %e   = load i64, i64* (bitcast %p)
+            %ptr = inttoptr i64 %e to i8* ; the element is ITSELF a pointer
+
+        The gate requires exactly this: a NON-CONSTANT GEP index off the param's
+        reloaded value whose loaded element feeds an ``inttoptr``. This is narrow by
+        construction -- it rejects:
+          * a STRUCT pointer (``Hash_table *``), only field-accessed at CONSTANT
+            offsets (no variable index), even though its offset-0 field is a pointer
+            read via the same load+inttoptr idiom (the ``hash_free`` false positive);
+          * a plain ``T*`` (even an 8-byte ``int64 *``), never array-indexed to a
+            pointer element.
+        so only a genuine indexed ``T**`` is widened, leaving every other pointer
+        param's host type byte-identical to before (bounded blast radius)."""
+        def consumers(value_name):
+            out = []
+            for bb in fn.blocks:
+                for ins in bb.instructions:
+                    for j, o in enumerate(ins.operands):
+                        if getattr(o, "name", None) == value_name:
+                            out.append((ins.opcode, j, ins, list(ins.operands)))
+            return out
+
+        def feeds_inttoptr(value_name):
+            for bb in fn.blocks:
+                for ins in bb.instructions:
+                    ops = list(ins.operands)
+                    if (ins.opcode == "inttoptr" and ops
+                            and ops[0].name == value_name):
+                        return True
+            return False
+
+        def element_is_pointer(gep_name, depth=0):
+            """The GEP'd element is loaded (through optional ``bitcast``s) and the
+            loaded value is used AS a pointer (``inttoptr``)."""
+            if depth > 4:
+                return False
+            for op, j, ins, _ops in consumers(gep_name):
+                if op == "load" and j == 0 and feeds_inttoptr(ins.name):
+                    return True
+                if op == "bitcast" and j == 0 and element_is_pointer(ins.name,
+                                                                     depth + 1):
+                    return True
+            return False
+
+        def chase(value_name, depth=0):
+            """Follow ``value_name`` (the reloaded param) through ``bitcast``s to a
+            GEP with a NON-CONSTANT index whose element is a pointer."""
+            if depth > 5:
+                return False
+            for op, j, ins, ops in consumers(value_name):
+                if op == "getelementptr" and j == 0:
+                    has_var_index = any(
+                        not getattr(o, "is_constant", True) for o in ops[1:])
+                    if has_var_index and element_is_pointer(ins.name):
+                        return True
+                    if chase(ins.name, depth + 1):  # const-GEP forward
+                        return True
+                if op == "bitcast" and j == 0 and chase(ins.name, depth + 1):
+                    return True
+            return False
+
+        def slots_for(value_name):
+            return [ops[1].name for op, j, _ins, ops in consumers(value_name)
+                    if op == "store" and j == 0]
+
+        def reloads_of(slot_name):
+            return [ins.name for op, j, ins, _ops in consumers(slot_name)
+                    if op == "load" and j == 0]
+
+        # arg -> spill slot -> reload (the live param), tolerating one further spill
+        # hop (do_copy's ``file -> filea`` re-spill before the indexing).
+        for slot in slots_for(arg.name):
+            for reload_name in reloads_of(slot):
+                if chase(reload_name):
+                    return True
+                for slot2 in slots_for(reload_name):
+                    for reload2 in reloads_of(slot2):
+                        if chase(reload2):
+                            return True
+        return False
+
     @classmethod
     def _arg_ctype(cls, arg, fn) -> str:
         if getattr(arg.type, "is_pointer", False) or str(arg.type) == "ptr":
+            # A POINTER-TO-POINTER param (``i8** file``, opaque ``ptr``) must carry
+            # an 8-byte element stride so an indexed access renders as the native
+            # ``file[i]`` -- a ``_DWORD *`` (4-byte) stride instead emits the doubled
+            # ``*(char **)&a[2*i - 2]`` that diverged do_copy from native. Gated to a
+            # GENUINE pointer-to-pointer (``_is_pointer_to_pointer``): the value it
+            # points at is itself used as a pointer (load -> inttoptr). Every plain
+            # ``T*`` keeps the legacy width-derived type below, so the change is
+            # invisible to all non-``T**`` pointer params (zero blast radius there).
+            if cls._is_pointer_to_pointer(fn, arg):
+                # ``char **``: an 8-byte element stride whose element is ITSELF a
+                # pointer, so an indexed read (``file[i]``) is already a ``char *``
+                # and needs no reinterpret cast -- matching native's ``char **file``
+                # exactly. (A plain ``__int64 *`` strides 8 correctly but its element
+                # is an integer, forcing a ``(const char *)file[i]`` cast that native
+                # does not emit.)
+                return "char **"
             # Match the pointee C type to the access width so an N-byte ldx/stx
             # renders as a clean ``*a`` (no reinterpret cast).
             return {1: "char *", 2: "__int16 *", 4: "_DWORD *",
@@ -1074,8 +1186,46 @@ class LLVMDropConverter:
             ea = ida_name.get_name_ea(ida_idaapi.BADADDR, operand.name)
             if ea != ida_idaapi.BADADDR:
                 return ea
+            addr_ea = self._addr_named_global_ea(operand.name)
+            if addr_ea is not None:
+                return addr_ea
             return self._strconst_ea(s)
         return None
+
+    @staticmethod
+    def _addr_named_global_ea(name: str):
+        """Resolve an ADDRESS-ENCODING global name (IDA's ``data_<hex>`` /
+        ``unk_<hex>`` / ``byte_<hex>`` auto-name convention) to its literal EA when
+        ``get_name_ea`` fails because the address is INTERIOR to a larger named item.
+
+        The lifter emits a distinct global per byte-offset of a stack-spilled
+        aggregate (do_copy's ``x_tmp.2`` struct copy: ``@data_24148`` == the field at
+        ``0x24148`` == ``&x_tmp.2 + 8``). IDA only carries a name at the item HEAD
+        (``x_tmp.2`` @ ``0x24140``), so ``get_name_ea('data_24148')`` is BADADDR and
+        the store target collapsed to ``*(_QWORD *)0xFFFFFFFFFFFFFFFF`` (BADADDR).
+        The name itself encodes the address, so decode it and accept only when the
+        EA lies inside a real defined item (``get_item_head`` is mapped) -- a
+        conservative check that resolves the interior-aggregate stores while
+        rejecting any name that merely looks address-like but points nowhere.
+
+        Additive: reached ONLY after ``get_name_ea`` already returned BADADDR, so it
+        can only RECOVER a currently-broken reference, never alter a resolved one."""
+        m = re.fullmatch(r"(?:data|unk|byte|word|dword|qword|off|stru|asc)_"
+                         r"([0-9A-Fa-f]+)", name)
+        if not m:
+            return None
+        try:
+            ea = int(m.group(1), 16)
+        except ValueError:
+            return None
+        if not ida_bytes.is_mapped(ea):
+            return None
+        # Must be interior to (or the head of) a real defined item -- guards against
+        # an address-shaped name that happens to fall in an unmapped/undefined gap.
+        head = ida_bytes.get_item_head(ea)
+        if head == ida_idaapi.BADADDR or not ida_bytes.is_mapped(head):
+            return None
+        return ea
 
     def _fp_compare_operands(self, iops):
         """If both operands of an icmp are fptoui/fptosi conversions of float
