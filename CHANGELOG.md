@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from a sibling checkout, removing the cross-repo dependency (and the conftest
   path-injection that crashed in container CI).
 
+### Fixed
+
+- `clang_available()` now reflects whether IDA's native libclang actually loads,
+  not merely whether the vendored loader imports, so the oracle tests skip
+  cleanly where IDA is absent (e.g. CI) instead of erroring.
+
 ## [0.1.0] - 2026-06-15
 
 Initial release: a bi-directional bridge between IDA Pro's Hex-Rays microcode and

@@ -58,22 +58,38 @@ _TRANSPARENT = {
 _COMMUTATIVE = {"+", "*", "&", "|", "^", "==", "!=", "&&", "||"}
 
 _index = None
+_index_loaded = False
+
+
+def _ensure_index():
+    """Load IDA's libclang index once; cache the (possibly None) result. The
+    vendored loader always imports, so the real availability signal is whether
+    the native libclang library could actually be discovered and loaded."""
+    global _index, _index_loaded
+    if not _index_loaded:
+        _index_loaded = True
+        if load_clang_index is not None:
+            try:
+                _index, _, _ = load_clang_index()
+            except Exception:  # noqa: BLE001 - any load failure => unavailable
+                _index = None
+    return _index
 
 
 def clang_available() -> bool:
-    """True if IDA's libclang could be loaded (oracle usable)."""
-    return load_clang_index is not None
+    """True only if IDA's libclang actually LOADS (oracle usable). Importing the
+    vendored loader is not enough -- without the native libclang library the
+    oracle tests must skip (e.g. CI without IDA)."""
+    return _ensure_index() is not None
 
 
 def _get_index():
-    global _index
-    if load_clang_index is None:
+    idx = _ensure_index()
+    if idx is None:
         raise RuntimeError(
-            f"libclang unavailable (clang_loader import failed): "
-            f"{_CLANG_IMPORT_ERROR}")
-    if _index is None:
-        _index, _, _ = load_clang_index()
-    return _index
+            "libclang unavailable: IDA's native libclang could not be loaded "
+            f"(loader import error: {_CLANG_IMPORT_ERROR})")
+    return idx
 
 
 def _litval(cursor) -> int:
