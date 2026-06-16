@@ -42,6 +42,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Two drop-vs-native idalib tests now also tolerate the amd64 IDA 9.2 build (a
+  different decompiler version than 9.3, with benign per-build renderings).
+  (1) `test_drop_cursor_struct_define::test_extent_scan_read_ioctl_has_buffer_arg`
+  broadens its ioctl detection to match BOTH the plain `ioctl(...)` (9.3) and the
+  cast-wrapped `((signed __int32 (__fastcall *)(...))ioctl)(...)` (9.2) renderings
+  of the SAME 3-arg call, while STILL verifying the `&fiemap_buf` buffer operand is
+  a call argument (not weakened to match any ioctl; a buffer-dropped ioctl still
+  fails). (2) `test_drop_stackargs`'s `create_hard_link` xfail signature now keys
+  on the build-invariant weak-`int`-vs-`bool` return-materialization axis (native
+  returns a bare two-arm `return 1;`/`return 0;`; the drop materializes
+  `LOBYTE(<tmp>) = 1/0; return <tmp>`), so it recognizes BOTH the 9.3 nested-guard
+  rendering AND the 9.2 full-suite rendering where the drop also combines the guard
+  and Hex-Rays aliases one register temp across the (intact) variadic `printf`/
+  `error` args. The cp.ll IR genuinely carries the 5-arg `error` / 2-arg `printf`
+  and the deterministic converter lifts them in full, so the collapsed visible arg
+  list is a Hex-Rays lvar-aliasing render artifact, not a dropped arg. The
+  signature stays specific: a wrong callee/constant, a dropped IR arg, a corrupted
+  body, a return into a global, or a native that also materializes still FAIL.
+- The `set_program_name` and `hash_lookup` idalib drop tests are now build-
+  conditional, recognizing two amd64 behaviours the arm64-centric assertions
+  previously misflagged as failures. (1) `set_program_name` stores to the glibc
+  interposition externs `__progname` / `__progname_full`, which amd64 IDA exposes
+  only as type-library display names with no get_name_ea-resolvable address -- so
+  BOTH the drop AND Hex-Rays' own native decompile render those stores as
+  `*(_QWORD *)0xFFFFFFFFFFFFFFFF` (faithful, not a crash; full-body faithfulness is
+  asserted by `test_drop_global_reloc::test_set_program_name_drop_equals_native`),
+  so the no-BADADDR assertion now applies only where the extern is nameable
+  (arm64). (2) `hash_lookup` carries a pre-existing SROA-residual divergence severe
+  enough on amd64 to trip the B5 self-verify decline gate, so the drop correctly
+  falls back to native there -- the over-deref invariant is asserted only where the
+  drop survives.
 - `clang_available()` now reflects whether IDA's native libclang actually loads,
   not merely whether the vendored loader imports, so the oracle tests skip
   cleanly where IDA is absent (e.g. CI) instead of erroring.

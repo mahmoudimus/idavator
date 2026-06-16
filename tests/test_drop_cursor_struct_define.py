@@ -137,12 +137,28 @@ class TestCursorStructDefine:
         """``ioctl`` carries its 3rd arg ``&fiemap_buf`` (the stale cp.ll lost it).
 
         Fail-without-fix: drops the 2-arg ``ioctl(*a0, 0xC020660B)`` -- the
-        FIEMAP buffer pointer is never passed and the kernel writes nowhere."""
+        FIEMAP buffer pointer is never passed and the kernel writes nowhere.
+
+        Two per-build renderings of the SAME 3-arg call are accepted:
+
+          * IDA 9.3 Linux -- a plain ``ioctl(*a0, 0xC020660Bu, &fiemap_buf)``;
+          * IDA 9.2 amd64 -- a cast-wrapped ``((signed __int32 (__fastcall *)
+            (...))ioctl)((signed __int64)&fiemap_buf)`` (9.2 is a different
+            decompiler version that fn-pointer-casts the untyped callee).
+
+        Both carry the ``&fiemap_buf`` buffer operand IN the call; the detection
+        below matches the callee token in either form and STILL verifies the
+        buffer operand is a call argument (it is NOT weakened to match any
+        ioctl)."""
         if not _idalib():
             pytest.skip("idalib unavailable")
         dropped = _drop_only(examples_dir, "extent_scan_read")
 
-        m = re.search(r"ioctl\(([^;]*)\);", dropped)
+        # Match the call-argument list after the `ioctl` callee token in either
+        # the plain `ioctl(<args>)` (9.3) or the cast-wrapped `(...ioctl)(<args>)`
+        # (9.2) form: an optional `)` closes the function-pointer cast before the
+        # arg-list `(`.
+        m = re.search(r"ioctl\)?\(([^;]*)\);", dropped)
         assert m is not None, f"no ioctl call in extent_scan_read:\n{dropped}"
         assert "&fiemap_buf" in m.group(1), (
             "ioctl lost its 3rd arg `&fiemap_buf` (2-arg ioctl writes nowhere):\n"
