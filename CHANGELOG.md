@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release guard: tagging a release now fails fast if the git tag does not match
   `idavator.__version__`, preventing a silent version-mismatch publish.
+- HCLI releases now install the matching `idavator` package and its Python
+  dependencies automatically.
 
 ### Changed
 
