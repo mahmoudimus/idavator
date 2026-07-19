@@ -67,12 +67,16 @@ hcli plugin search idavator
 hcli plugin install idavator
 ```
 
-`hcli` downloads the plugin into `$IDAUSR/plugins` (`~/.idapro/plugins` on macOS/Linux), where IDA loads it on the next launch. Requires IDA 9.0+.
+`hcli` installs the plugin under `$IDAUSR/plugins/idavator` and first installs
+the matching `idavator` wheel into IDA's Python environment. The wheel declares
+`llvmlite`, `numpy`, and `typer`, so no separate `pip install` is needed for an
+HCLI installation. IDA loads the plugin on its next launch. Requires IDA 9.0+.
 
-Because IDAvator is a multi-module package with third-party dependencies (`llvmlite`, `numpy`, `typer`) that `hcli` does not install, also install the package into IDA's Python so those imports resolve:
+For source checkouts, embedders, or manual installs, install the package with
+the Python interpreter IDA uses:
 
 ```bash
-pip install idavator
+python -m pip install idavator
 ```
 
 ### Lift (ida2llvm)
@@ -166,7 +170,11 @@ The version lives in one place: `__version__` in `src/idavator/__init__.py` (`py
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook (`.githooks/pre-commit`) runs `tools/sync_plugin_version.py`, which copies `__version__` into `ida-plugin.json` and stages it, so the manifest can never drift behind a version bump. The test suite runs the same check (`tests/test_plugin_manifest.py`) as a CI backstop.
+The pre-commit hook (`.githooks/pre-commit`) runs
+`tools/sync_plugin_version.py`, which copies `__version__` into the HCLI
+manifest version and its exact `idavator==VERSION` dependency before staging
+the manifest. The test suite runs the same check (`tests/test_plugin_manifest.py`)
+as a CI backstop.
 
 ## Acknowledgements
 

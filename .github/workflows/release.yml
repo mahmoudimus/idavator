@@ -7,158 +7,121 @@ on:
     workflow_dispatch:
         inputs:
             tag:
-                description: "Release tag name (e.g. v1.2.3). If empty, uses the pushed tag."
-                required: false
-                default: ""
-    workflow_run:
-        workflows: [idavator tests]
-        types:
-            - completed
+                description: "Release tag name (for example, v0.1.1)"
+                required: true
+                type: string
+            publish:
+                description: "Create the GitHub release and publish to PyPI"
+                required: true
+                default: false
+                type: boolean
 
 concurrency:
-    group: ${{ github.workflow }}-${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.ref || github.run_id }}
+    group: ${{ github.workflow }}-${{ inputs.tag || github.ref || github.run_id }}
     cancel-in-progress: true
 
 permissions:
     contents: write
 
 jobs:
-    release-from-workflow-run:
+    release:
         runs-on: ubuntu-latest
-        if: >
-            github.event_name == 'workflow_run' &&
-            github.event.workflow_run.conclusion == 'success'
+        outputs:
+            publish: ${{ steps.guard.outputs.already == 'false' && (github.event_name == 'push' || inputs.publish == true) }}
         steps:
-            - uses: actions/checkout@v4
-              with:
-                  ref: ${{ github.event.workflow_run.head_sha }}
-                  fetch-tags: true
-
-            - name: Extract version from tag
+            - name: Resolve release tag
               id: version
-              run: |
-                  TAGS=$(git tag --points-at HEAD | tr -d '\r')
-                  TAG=$(printf '%s\n' "$TAGS" | grep -E '^v' | head -n1 || true)
-                  if [ -z "$TAG" ]; then
-                      echo "should_release=false" >> "$GITHUB_OUTPUT"
-                      exit 0
-                  fi
-                  echo "ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
-                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-                  echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-                  echo "should_release=true" >> "$GITHUB_OUTPUT"
-
-            - name: Skip if release already exists
-              id: guard
-              if: steps.version.outputs.should_release == 'true'
               env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  REQUESTED_TAG: ${{ inputs.tag }}
               run: |
-                  if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
-                    echo "already=true" >> "$GITHUB_OUTPUT"
+                  if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+                    TAG="$REQUESTED_TAG"
                   else
-                    echo "already=false" >> "$GITHUB_OUTPUT"
+                    TAG="${GITHUB_REF#refs/tags/}"
                   fi
-
-            - name: Validate tag matches idavator.__version__
-              if: steps.version.outputs.should_release == 'true' && steps.guard.outputs.already == 'false'
-              run: |
-                  PKG=$(python3 -c "import ast,pathlib; m=ast.parse(pathlib.Path('src/idavator/__init__.py').read_text()); print([ast.literal_eval(n.value) for n in m.body if isinstance(n,ast.Assign) and any(getattr(t,'id','')=='__version__' for t in n.targets)][0])")
-                  TAG_VER="${{ steps.version.outputs.version }}"
-                  echo "package __version__=$PKG  tag version=$TAG_VER"
-                  if [ "$PKG" != "$TAG_VER" ]; then
-                    echo "::error::tag v$TAG_VER does not match idavator.__version__ ($PKG); bump src/idavator/__init__.py before tagging"
+                  TAG="${TAG#refs/tags/}"
+                  if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+                    echo "Release tag must use vMAJOR.MINOR.PATCH: $TAG" >&2
                     exit 1
                   fi
+                  {
+                    echo "ref=refs/tags/$TAG"
+                    echo "tag=$TAG"
+                    echo "version=${TAG#v}"
+                  } >> "$GITHUB_OUTPUT"
 
-            - name: Build sdist
-              if: steps.version.outputs.should_release == 'true' && steps.guard.outputs.already == 'false'
-              run: |
-                  python -m pip install --upgrade pip build
-                  python -m build --sdist
-
-            - name: Publish GitHub release
-              if: steps.version.outputs.should_release == 'true' && steps.guard.outputs.already == 'false'
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ steps.version.outputs.tag }}
-                  name: ${{ steps.version.outputs.tag }}
-                  files: dist/*
-                  generate_release_notes: true
-                  draft: false
-                  prerelease: ${{ contains(steps.version.outputs.version, '-') }}
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    release-from-tag:
-        runs-on: ubuntu-latest
-        if: >
-            (
-              github.event_name == 'push' &&
-              startsWith(github.ref, 'refs/tags/v')
-            ) || (
-              github.event_name == 'workflow_dispatch'
-            )
-        steps:
-            - name: Extract version from tag
-              id: version
-              run: |
-                  if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ github.event.inputs.tag }}" ]; then
-                    IN='${{ github.event.inputs.tag }}'
-                    if [[ "$IN" == refs/* ]]; then REF="$IN"; else REF="refs/tags/$IN"; fi
-                    TAG="${REF#refs/tags/}"
-                    echo "ref=$REF" >> "$GITHUB_OUTPUT"
-                    echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-                    echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "ref=${GITHUB_REF}" >> "$GITHUB_OUTPUT"
-                    echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-                    echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Skip if release already exists
+            - name: Check for an existing release
               id: guard
               env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  TAG: ${{ steps.version.outputs.tag }}
               run: |
-                  if gh release view "${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+                  if gh release view "$TAG" >/dev/null 2>&1; then
                     echo "already=true" >> "$GITHUB_OUTPUT"
                   else
                     echo "already=false" >> "$GITHUB_OUTPUT"
                   fi
 
-            - uses: actions/checkout@v4
-              if: steps.guard.outputs.already == 'false'
+            - name: Checkout release tag
+              if: ${{ steps.guard.outputs.already == 'false' }}
+              uses: actions/checkout@v5
               with:
                   ref: ${{ steps.version.outputs.ref }}
-                  fetch-tags: true
 
-            - name: Validate tag matches idavator.__version__
-              if: steps.guard.outputs.already == 'false'
+            - name: Set up Python
+              if: ${{ steps.guard.outputs.already == 'false' }}
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.10"
+
+            - name: Build and validate release artifacts
+              if: ${{ steps.guard.outputs.already == 'false' }}
+              env:
+                  VERSION: ${{ steps.version.outputs.version }}
               run: |
-                  PKG=$(python3 -c "import ast,pathlib; m=ast.parse(pathlib.Path('src/idavator/__init__.py').read_text()); print([ast.literal_eval(n.value) for n in m.body if isinstance(n,ast.Assign) and any(getattr(t,'id','')=='__version__' for t in n.targets)][0])")
-                  TAG_VER="${{ steps.version.outputs.version }}"
-                  echo "package __version__=$PKG  tag version=$TAG_VER"
-                  if [ "$PKG" != "$TAG_VER" ]; then
-                    echo "::error::tag v$TAG_VER does not match idavator.__version__ ($PKG); bump src/idavator/__init__.py before tagging"
-                    exit 1
-                  fi
+                  python -m pip install --upgrade pip build twine pytest
+                  python tools/sync_plugin_version.py --check
+                  python -m pytest tests/test_hcli_packaging.py tests/test_plugin_manifest.py -v
+                  python -m build
+                  twine check dist/*
+                  python tools/build_hcli_archive.py --output "dist/idavator-${VERSION}.zip"
 
-            - name: Build sdist
-              if: steps.guard.outputs.already == 'false'
-              run: |
-                  python -m pip install --upgrade pip build
-                  python -m build --sdist
-
-            - name: Publish GitHub release
-              if: steps.guard.outputs.already == 'false'
+            - name: Create GitHub release
+              if: ${{ steps.guard.outputs.already == 'false' && (github.event_name == 'push' || inputs.publish == true) }}
               uses: softprops/action-gh-release@v2
               with:
+                  files: dist/*
                   tag_name: ${{ steps.version.outputs.tag }}
                   name: ${{ steps.version.outputs.tag }}
-                  files: dist/*
                   generate_release_notes: true
-                  draft: false
                   prerelease: ${{ contains(steps.version.outputs.version, '-') }}
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+            - name: Upload PyPI distributions
+              if: ${{ steps.guard.outputs.already == 'false' && (github.event_name == 'push' || inputs.publish == true) }}
+              uses: actions/upload-artifact@v4
+              with:
+                  name: pypi-distributions
+                  path: |
+                      dist/*.tar.gz
+                      dist/*.whl
+                  if-no-files-found: error
+
+    pypi-publish:
+        needs: release
+        if: ${{ needs.release.outputs.publish == 'true' && github.repository_owner == 'mahmoudimus' }}
+        runs-on: ubuntu-latest
+        permissions:
+            id-token: write
+        steps:
+            - name: Download PyPI distributions
+              uses: actions/download-artifact@v4
+              with:
+                  name: pypi-distributions
+                  path: dist
+
+            - name: Publish to PyPI
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  packages-dir: dist/

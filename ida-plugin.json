@@ -1,13 +1,35 @@
 {
+    "$schema": "https://hcli.docs.hex-rays.com/schemas/ida-plugin.json",
     "IDAMetadataDescriptorVersion": 1,
     "plugin": {
         "name": "idavator",
-        "entryPoint": "src/idavator/gui/__init__.py",
+        "entryPoint": "entry_stub.py",
         "categories": [
             "decompilation"
         ],
         "idaVersions": ">=9.0",
         "description": "IDAvator is a bi-directional bridge between IDA Pro's Hex-Rays microcode and LLVM IR. It lets you lift decompiler microcode into LLVM for analysis, optimization, or deobfuscation. Then, drop it back into IDA, patched and ready for further exploration.",
-        "version": "0.1.0"
+        "version": "0.1.1",
+        "license": "MIT",
+        "keywords": [
+            "llvm",
+            "microcode",
+            "decompilation",
+            "deobfuscation",
+            "ida2llvm"
+        ],
+        "pythonDependencies": [
+            "idavator==0.1.1"
+        ],
+        "urls": {
+            "repository": "https://github.com/mahmoudimus/idavator",
+            "homepage": "https://mahmoudimus.com"
+        },
+        "authors": [
+            {
+                "name": "Mahmoud Abdelkader",
+                "email": "m{_no-spam_}@mahmoudimus.com"
+            }
+        ]
     }
 }

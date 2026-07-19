@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Keep ``ida-plugin.json``'s version in sync with ``idavator.__version__``.
+"""Keep HCLI metadata in sync with ``idavator.__version__``.
 
 The single source of truth for the version is ``__version__`` in
 ``src/idavator/__init__.py`` (``pyproject.toml`` already derives the package
 version from it). The IDA Plugin Repository and ``hcli`` read the version out
 of ``ida-plugin.json``, so the two must agree. This script copies the package
-version into the manifest.
+version into both the manifest version and its exact PyPI dependency.
 
 It reads ``__version__`` by parsing the source with ``ast`` rather than
 importing the module, because importing ``idavator`` pulls in third-party
@@ -47,6 +47,10 @@ def manifest_version(text: str) -> str:
     return json.loads(text)["plugin"]["version"]
 
 
+def manifest_dependencies(text: str) -> list[str]:
+    return json.loads(text)["plugin"].get("pythonDependencies", [])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -57,15 +61,17 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     version = package_version()
+    requirement = f"idavator=={version}"
     text = MANIFEST.read_text(encoding="utf-8")
     current = manifest_version(text)
+    dependencies = manifest_dependencies(text)
 
-    if current == version:
+    if current == version and dependencies == [requirement]:
         return 0
 
     if args.check:
         print(
-            f"ida-plugin.json version {current!r} != idavator.__version__ "
+            "ida-plugin.json metadata does not match idavator.__version__ "
             f"{version!r}; run: python tools/sync_plugin_version.py",
             file=sys.stderr,
         )
@@ -77,8 +83,16 @@ def main(argv=None) -> int:
     )
     if n != 1:
         raise SystemExit("could not locate the version field in ida-plugin.json")
+    new_text, n = re.subn(
+        r'("pythonDependencies"\s*:\s*\[\s*")[^"]*(")',
+        r"\g<1>" + requirement + r"\g<2>",
+        new_text,
+        count=1,
+    )
+    if n != 1:
+        raise SystemExit("could not locate pythonDependencies in ida-plugin.json")
     MANIFEST.write_text(new_text, encoding="utf-8")
-    print(f"synced ida-plugin.json version {current} -> {version}")
+    print(f"synced ida-plugin.json metadata to {version}")
     return 0
 
 

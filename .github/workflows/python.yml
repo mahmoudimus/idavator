@@ -18,6 +18,31 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
+    hcli-lint:
+        name: HCLI plugin archive validation
+        runs-on: ubuntu-24.04
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v5
+              with:
+                  persist-credentials: false
+
+            - name: Validate HCLI metadata
+              run: |
+                  curl -LsSf --retry 3 \
+                    https://github.com/HexRaysSA/ida-hcli/releases/download/v0.18.5/hcli-linux-x86_64-0.18.5 \
+                    -o /tmp/hcli
+                  echo "b35eb351ce9e706709212604f937118643eee861bf4411bc4cac94217245b277  /tmp/hcli" \
+                    | sha256sum --check
+                  chmod 0755 /tmp/hcli
+                  curl -LsSf --retry 3 \
+                    https://raw.githubusercontent.com/HexRaysSA/plugin-repository/3cee9691f72459c5ac75b028c827016e93e58923/plugin-repository.json \
+                    -o /tmp/plugin-repository-v1.json
+                  python3 tools/sync_plugin_version.py --check
+                  python3 tools/build_hcli_archive.py --output /tmp/idavator-hcli.zip
+                  /tmp/hcli plugin --repo /tmp/plugin-repository-v1.json lint .
+                  /tmp/hcli plugin --repo /tmp/plugin-repository-v1.json lint /tmp/idavator-hcli.zip
+
     pytest-offline:
         name: pytest (no idalib)
         runs-on: ubuntu-24.04
@@ -111,5 +136,6 @@ jobs:
                     -H 'X-GitHub-Api-Version: 2022-11-28' \
                     https://api.github.com/users/mahmoudimus/packages/container/idapro-linux/versions | \
                     jq -r ".[]|select(.metadata.container.tags[]==\"${TAG}\")|.name")
+                  # shellcheck disable=SC2046,SC2086
                   docker save $(docker images --format '{{.Repository}}')@${SHA_NAME} \
                     -o /tmp/docker-cache/${{ matrix.service }}.tar || true
